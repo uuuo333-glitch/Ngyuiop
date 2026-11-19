@@ -269,6 +269,7 @@ export default function App() {
   const [customerModalTab, setCustomerModalTab] = useState<'account' | 'wishlist'>('account');
   const [adminOpen, setAdminOpen] = useState(false);
   const [cartNotice, setCartNotice] = useState('');
+  const [bgMediaError, setBgMediaError] = useState(false);
 
   // Sync HTML dir/lang with active storefront language
   useEffect(() => {
@@ -415,24 +416,72 @@ export default function App() {
       .catch(() => {});
   }, [customerToken]);
 
-  // Dynamic Hidden SEO & Schema.org JSON-LD injection in <head>
+  useEffect(() => {
+    setBgMediaError(false);
+  }, [settings?.siteBackgroundUrl, settings?.siteBackgroundType]);
+
+  // Dynamic SEO Keywords (Store + Selected Product, up to 15 each) & Schema.org JSON-LD injection in <head>
   useEffect(() => {
     if (!settings) return;
-    document.title = `${settings.storeName} | ${settings.storeTagline}`;
 
-    const setMeta = (selector: string, content: string) => {
-      const el = document.querySelector(selector);
-      if (el) el.setAttribute('content', content);
+    const upsertMeta = (
+      attr: 'name' | 'property',
+      key: string,
+      content: string
+    ) => {
+      if (!content) return;
+      let el = document.querySelector(`meta[${attr}="${key}"]`);
+      if (!el) {
+        el = document.createElement('meta');
+        el.setAttribute(attr, key);
+        document.head.appendChild(el);
+      }
+      el.setAttribute('content', content);
     };
 
-    const keywords = Array.from(
-      new Set(products.flatMap((p) => p.seoKeywords || [p.name, p.category]))
-    ).join('، ');
+    const storeKeywords = (settings.seoKeywords || [])
+      .map((k) => k.trim())
+      .filter(Boolean)
+      .slice(0, 15);
+    const activeProductKeywords = selectedProduct
+      ? (selectedProduct.seoKeywords || [selectedProduct.name, selectedProduct.category])
+          .map((k) => k.trim())
+          .filter(Boolean)
+          .slice(0, 15)
+      : [];
+    const fallbackProductsKeywords = products
+      .flatMap((p) => p.seoKeywords || [p.name, p.category])
+      .map((k) => k.trim())
+      .filter(Boolean);
 
-    setMeta('meta[name="description"]', settings.aboutUsText.slice(0, 160));
-    if (keywords) setMeta('meta[name="keywords"]', keywords);
-    setMeta('meta[property="og:title"]', `${settings.storeName} | ${settings.storeTagline}`);
-    setMeta('meta[property="og:description"]', settings.aboutUsText.slice(0, 160));
+    const combinedKeywords = Array.from(
+      new Set(
+        selectedProduct
+          ? [...activeProductKeywords, ...storeKeywords]
+          : [...storeKeywords, ...fallbackProductsKeywords]
+      )
+    ).slice(0, 15);
+
+    const pageTitle = selectedProduct
+      ? `${selectedProduct.seoTitle || selectedProduct.name} | ${settings.storeName}`
+      : `${settings.storeName} | ${settings.storeTagline}`;
+    const pageDesc = selectedProduct
+      ? (selectedProduct.seoDescription || selectedProduct.description || settings.aboutUsText).slice(
+          0,
+          160
+        )
+      : settings.aboutUsText.slice(0, 160);
+
+    document.title = pageTitle;
+
+    upsertMeta('name', 'description', pageDesc);
+    if (combinedKeywords.length > 0) {
+      upsertMeta('name', 'keywords', combinedKeywords.join('، '));
+    }
+    upsertMeta('property', 'og:title', pageTitle);
+    upsertMeta('property', 'og:description', pageDesc);
+    upsertMeta('name', 'twitter:title', pageTitle);
+    upsertMeta('name', 'twitter:description', pageDesc);
 
     let scriptEl = document.getElementById('products-schema-jsonld') as HTMLScriptElement | null;
     if (!scriptEl) {
@@ -441,33 +490,68 @@ export default function App() {
       scriptEl.type = 'application/ld+json';
       document.head.appendChild(scriptEl);
     }
-    const schemaPayload = {
-      '@context': 'https://schema.org',
-      '@type': 'ItemList',
-      name: settings.storeName,
-      itemListElement: products.map((p, idx) => ({
-        '@type': 'ListItem',
-        position: idx + 1,
-        item: p.schemaMarkup || {
+
+    const schemaPayload = selectedProduct
+      ? {
+          '@context': 'https://schema.org',
           '@type': 'Product',
-          name: p.name,
-          sku: p.sku || p.id,
-          description: p.seoDescription || p.description,
-          category: p.category,
-          image: p.images,
+          name: selectedProduct.name,
+          sku: selectedProduct.sku || selectedProduct.id,
+          description: selectedProduct.seoDescription || selectedProduct.description,
+          category: selectedProduct.category,
+          ...(combinedKeywords.length > 0 ? { keywords: combinedKeywords.join(', ') } : {}),
+          image: (selectedProduct.images || []).filter(
+            (u) => typeof u === 'string' && u.length > 0 && !u.startsWith('data:')
+          ),
           offers: {
             '@type': 'Offer',
             priceCurrency: 'SAR',
-            price: p.priceSar,
-            availability: p.inStock
+            price: selectedProduct.priceSar,
+            availability: selectedProduct.inStock
               ? 'https://schema.org/InStock'
               : 'https://schema.org/OutOfStock',
           },
-        },
-      })),
-    };
+        }
+      : {
+          '@context': 'https://schema.org',
+          '@type': 'ItemList',
+          name: settings.storeName,
+          ...(storeKeywords.length > 0 ? { keywords: storeKeywords.join(', ') } : {}),
+          itemListElement: products.map((p, idx) => {
+            const cleanImgs = (p.images || []).filter(
+              (u) => typeof u === 'string' && u.length > 0 && !u.startsWith('data:')
+            );
+            const fallbackItem = {
+              '@type': 'Product',
+              name: p.name,
+              sku: p.sku || p.id,
+              description: p.seoDescription || p.description,
+              category: p.category,
+              ...(p.seoKeywords?.length ? { keywords: p.seoKeywords.slice(0, 15).join(', ') } : {}),
+              image: cleanImgs,
+              offers: {
+                '@type': 'Offer',
+                priceCurrency: 'SAR',
+                price: p.priceSar,
+                availability: p.inStock
+                  ? 'https://schema.org/InStock'
+                  : 'https://schema.org/OutOfStock',
+              },
+            };
+            return {
+              '@type': 'ListItem',
+              position: idx + 1,
+              item: p.schemaMarkup
+                ? {
+                    ...p.schemaMarkup,
+                    ...(cleanImgs.length > 0 ? { image: cleanImgs } : {}),
+                  }
+                : fallbackItem,
+            };
+          }),
+        };
     scriptEl.textContent = JSON.stringify(schemaPayload);
-  }, [settings, products]);
+  }, [settings, products, selectedProduct]);
 
   const categories = useMemo(() => {
     const activeConfigured = (settings?.categories || [])
@@ -681,7 +765,7 @@ export default function App() {
       }
     >
       {/* Optional Owner Global Background (Video, Animated Image/GIF, or Static Image) */}
-      {settings.siteBackgroundType !== 'none' && settings.siteBackgroundUrl && (
+      {settings.siteBackgroundType !== 'none' && settings.siteBackgroundUrl && !bgMediaError && (
         <div
           className="fixed inset-0 z-0 pointer-events-none overflow-hidden"
           style={{ opacity: settings.siteBackgroundOpacity ?? 0.24 }}
@@ -694,6 +778,7 @@ export default function App() {
               loop
               muted
               playsInline
+              onError={() => setBgMediaError(true)}
               style={
                 settings.siteBackgroundFilter
                   ? { filter: settings.siteBackgroundFilter }
@@ -706,6 +791,7 @@ export default function App() {
               src={settings.siteBackgroundUrl}
               alt=""
               referrerPolicy="no-referrer"
+              onError={() => setBgMediaError(true)}
               style={
                 settings.siteBackgroundFilter
                   ? { filter: settings.siteBackgroundFilter }
@@ -899,7 +985,7 @@ export default function App() {
 
         {/* Floating Product Comparison Bar */}
         {comparedProducts.length > 0 && (
-          <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:start-1/2 sm:-translate-x-1/2 z-40 max-w-xl rounded-2xl border border-[#D4AF37]/50 bg-[#121216]/95 backdrop-blur-md p-3 shadow-2xl flex items-center justify-between gap-3">
+          <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 z-40 max-w-xl rounded-2xl border border-[#D4AF37]/50 bg-[#121216]/95 backdrop-blur-md p-3 shadow-2xl flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <Scale className="w-4 h-4 text-[#E5C158] shrink-0" />
               <span className="text-xs font-bold text-[#F5F2EB] truncate">
@@ -929,7 +1015,7 @@ export default function App() {
 
         {/* Cart Notification Toast */}
         {cartNotice && (
-          <div className="fixed bottom-20 end-4 sm:end-6 z-40 px-4 py-3 rounded-xl border border-[#D4AF37]/50 bg-[#14120E] text-xs sm:text-sm text-[#E5C158] shadow-2xl">
+          <div className="fixed top-24 start-4 sm:start-6 z-50 px-4 py-3 rounded-xl border border-[#D4AF37]/50 bg-[#14120E] text-xs sm:text-sm text-[#E5C158] shadow-2xl">
             {cartNotice}
           </div>
         )}

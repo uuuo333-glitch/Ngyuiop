@@ -87,7 +87,7 @@ export function CharityCornerPopup({ settings }: CharityProps) {
   const verse = settings.charityPopupVerse || DEFAULT_VERSE;
 
   return (
-    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-30 max-w-[320px] sm:max-w-[350px]">
+    <div className="fixed bottom-4 end-4 sm:bottom-6 sm:end-6 z-30 max-w-[320px] sm:max-w-[350px]">
       <a
         href={targetUrl}
         target="_blank"
@@ -102,12 +102,12 @@ export function CharityCornerPopup({ settings }: CharityProps) {
             setDismissed(true);
           }}
           aria-label="إغلاق التذكير"
-          className="absolute top-2.5 left-2.5 w-6 h-6 rounded-full border border-white/15 bg-black/60 hover:border-[#D4AF37] text-[#C5BFB2] hover:text-white flex items-center justify-center cursor-pointer"
+          className="absolute top-2.5 end-2.5 w-6 h-6 rounded-full border border-white/15 bg-black/60 hover:border-[#D4AF37] text-[#C5BFB2] hover:text-white flex items-center justify-center cursor-pointer"
         >
           <X className="w-3.5 h-3.5" />
         </button>
 
-        <div className="space-y-2.5 pl-6">
+        <div className="space-y-2.5 pe-6">
           <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#E5C158]">
             <Sparkles className="w-3.5 h-3.5 shrink-0" />
             <span>منصة إحسان الخيرية</span>
@@ -117,7 +117,7 @@ export function CharityCornerPopup({ settings }: CharityProps) {
             {title}
           </div>
 
-          <p className="text-[11px] text-[#D8C798] leading-relaxed border-r-2 border-[#D4AF37]/60 pr-2">
+          <p className="text-[11px] text-[#D8C798] leading-relaxed border-s-2 border-[#D4AF37]/60 ps-2">
             {verse}
           </p>
 

@@ -116,7 +116,7 @@ export function ShippingCarriersLogos({
                 key={carrierName}
                 type="button"
                 onClick={() => onSelectCarrier?.(carrierName)}
-                className={`p-2 rounded-xl border text-right flex items-center gap-2 transition-colors cursor-pointer ${
+                className={`p-2 rounded-xl border text-start flex items-center gap-2 transition-colors cursor-pointer ${
                   active
                     ? 'border-[#D4AF37] bg-[#1A160D]'
                     : 'border-white/10 bg-[#141418] hover:border-white/25'

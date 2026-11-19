@@ -76,7 +76,7 @@ export function ShareButton({
 
       {open && (
         <div
-          className="absolute left-0 bottom-full mb-2 z-40 w-56 rounded-xl border border-[#D4AF37]/30 bg-[#121216] shadow-2xl p-2 text-right"
+          className="absolute end-0 bottom-full mb-2 z-40 w-56 rounded-xl border border-[#D4AF37]/30 bg-[#121216] shadow-2xl p-2 text-start"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="px-2.5 py-1.5 text-xs text-[#9E988C] border-b border-white/10 mb-1">

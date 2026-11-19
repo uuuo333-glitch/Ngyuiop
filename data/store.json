@@ -202,7 +202,8 @@
     "autoWhatsappAlertsEnabled": true,
     "ownerRecoveryEmail": "uuuo333@gmail.com",
     "ownerTwoFactorEnabled": false,
-    "ownerTwoFactorMethod": "totp"
+    "ownerTwoFactorMethod": "totp",
+    "seoKeywords": []
   },
   "products": [
     {

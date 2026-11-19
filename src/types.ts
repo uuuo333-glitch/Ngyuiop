@@ -162,6 +162,7 @@ export interface StoreSettings {
     url: string;
   }[];
   seoAutoUpdateEnabled: boolean;
+  seoKeywords?: string[];
   seoLastAutoRun?: string;
   // Owner-only private WhatsApp AI Assistant, Password Recovery, Promo Codes & 2FA settings
   promoDiscountCodes?: PromoDiscountCode[];

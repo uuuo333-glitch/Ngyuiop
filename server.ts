@@ -79,11 +79,31 @@ import {
   lookupVehicleCompatibilityWithSearch,
   optimizeBackgroundWithAi,
   runOwnerAssistantTurn,
-  scrapeProductFromUrl,
+  scrapeProductFromUrlOrName,
   scrapeSimilarProductsFromUrl,
   translateProductToEnglishWithAi,
 } from './server/ai.ts';
 import type { OrderItem, OrderStatus, Product } from './src/types.ts';
+
+function parseSeoKeywordsList(input: unknown): string[] {
+  const rawList = Array.isArray(input)
+    ? input.map((item) => String(item || ''))
+    : typeof input === 'string'
+      ? input.split(/[،,]+/)
+      : [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of rawList) {
+    const cleaned = item.trim();
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(cleaned);
+    if (result.length >= 15) break;
+  }
+  return result;
+}
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -190,6 +210,12 @@ app.get('/api/products/:id/reviews', (req, res) => {
 });
 
 app.post('/api/products/:id/reviews', (req, res) => {
+  const productId = String(req.params.id);
+  const existing = getProductByIdAdmin(productId);
+  if (!existing) {
+    res.status(404).json({ error: 'المنتج المطلوب غير موجود.' });
+    return;
+  }
   const { customerName, rating, comment } = req.body as {
     customerName?: string;
     rating?: number;
@@ -200,7 +226,7 @@ app.post('/api/products/:id/reviews', (req, res) => {
     return;
   }
   const review = addProductReview({
-    productId: String(req.params.id),
+    productId,
     customerName,
     rating: Number(rating) || 5,
     comment,
@@ -303,6 +329,8 @@ app.post('/api/orders', async (req: CustomerRequest, res) => {
     }
 
     const published = getPublishedProducts();
+    const adminSettingsSnapshot = getAdminSettings();
+    const isWholesaleMode = adminSettingsSnapshot.priceDisplayMode === 'wholesale';
     const resolvedItems: OrderItem[] = [];
     let totalSar = 0;
 
@@ -310,13 +338,17 @@ app.post('/api/orders', async (req: CustomerRequest, res) => {
       const prod = published.find((p) => p.id === reqItem.productId);
       if (!prod) continue;
       const qty = Math.max(1, Math.min(99, Math.floor(Number(reqItem.quantity) || 1)));
-      totalSar += prod.priceSar * qty;
+      const effectivePriceSar =
+        isWholesaleMode && typeof prod.wholesalePriceSar === 'number' && prod.wholesalePriceSar > 0
+          ? prod.wholesalePriceSar
+          : prod.priceSar;
+      totalSar += effectivePriceSar * qty;
       resolvedItems.push({
         productId: prod.id,
         name: prod.name,
-        priceSar: prod.priceSar,
+        priceSar: effectivePriceSar,
         quantity: qty,
-        image: prod.images[0] || '',
+        image: (prod.images || [])[0] || '',
       });
     }
 
@@ -1015,7 +1047,11 @@ app.delete('/api/admin/reviews/:id', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/settings', requireAdmin, (req, res) => {
-  const updated = updateSettings(req.body);
+  const patch = { ...(req.body as Partial<Record<string, unknown>>) };
+  if ('seoKeywords' in patch) {
+    patch.seoKeywords = parseSeoKeywordsList(patch.seoKeywords);
+  }
+  const updated = updateSettings(patch);
   res.json({ settings: updated });
 });
 
@@ -1243,7 +1279,7 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
     profitMarginPercent: body.profitMarginPercent ? Number(body.profitMarginPercent) : undefined,
     seoTitle: body.seoTitle,
     seoDescription: body.seoDescription,
-    seoKeywords: body.seoKeywords,
+    seoKeywords: parseSeoKeywordsList(body.seoKeywords),
     createdAt: new Date().toISOString(),
   };
   createProduct(product);
@@ -1251,7 +1287,11 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/products/:id', requireAdmin, (req, res) => {
-  const updated = updateProduct(String(req.params.id), req.body);
+  const patch = { ...(req.body as Partial<Product>) };
+  if ('seoKeywords' in patch) {
+    patch.seoKeywords = parseSeoKeywordsList(patch.seoKeywords);
+  }
+  const updated = updateProduct(String(req.params.id), patch);
   if (!updated) {
     res.status(404).json({ error: 'المنتج غير موجود.' });
     return;
@@ -1268,43 +1308,65 @@ app.delete('/api/admin/products/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Secret AI Product Scraper -> Saves as Hidden/Private Draft by default
+// Secret AI Product Scraper -> Supports URL or direct product name, auto-generates 1000x1000 Gemini image when missing, writes Arabic marketing copy, and publishes directly
 app.post('/api/admin/scrape-product', requireAdmin, async (req, res) => {
   try {
-    const { url } = req.body as { url?: string };
-    if (!url || !/^https?:\/\//i.test(url.trim())) {
+    const { url, productName, category } = req.body as {
+      url?: string;
+      productName?: string;
+      category?: string;
+    };
+    const cleanUrl = (url || '').trim();
+    const cleanName = (productName || '').trim();
+
+    if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
       res.status(400).json({ error: 'يرجى إدخال رابط منتج صحيح يبدأ بـ http:// أو https://' });
       return;
     }
+    if (!cleanUrl && !cleanName) {
+      res.status(400).json({ error: 'يرجى إدخال رابط المنتج أو كتابة اسمه ليتم إنشاؤه وسحبه تلقائياً.' });
+      return;
+    }
 
-    const extracted = await scrapeProductFromUrl(url.trim());
-    const draftProduct: Product = {
-      id: `draft-${crypto.randomUUID().slice(0, 8)}`,
+    const extracted = await scrapeProductFromUrlOrName({
+      url: cleanUrl || undefined,
+      productName: cleanName || undefined,
+      category: category?.trim() || undefined,
+    });
+
+    const scrapedProduct: Product = {
+      id: `prod-${crypto.randomUUID().slice(0, 8)}`,
       name: extracted.name,
+      nameEn: extracted.nameEn,
       category: extracted.category,
       priceSar: extracted.priceSar,
       description: extracted.description,
+      descriptionEn: extracted.descriptionEn,
       images: extracted.images,
       specs: extracted.specs,
+      seoKeywords: parseSeoKeywordsList(extracted.seoKeywords),
       inStock: true,
-      isPublished: false,
-      isScrapedDraft: true,
-      sourceUrl: url.trim(),
+      isPublished: true,
+      isScrapedDraft: false,
+      sourceUrl: cleanUrl || undefined,
       originalExtractedPrice: extracted.originalExtractedPrice,
       createdAt: new Date().toISOString(),
     };
 
-    createProduct(draftProduct);
+    createProduct(scrapedProduct);
     await notifyOwnerWebhookIfConfigured(
-      'scraped_draft_saved',
-      `تم سحب وحفظ مسودة سرية جديدة للمراجعة: ${draftProduct.name}`
+      'scraped_product_published',
+      `تم سحب وتوليد منتج جديد بالذكاء الاصطناعي ونشره في المتجر: ${scrapedProduct.name}`
     );
-    res.status(201).json({ product: draftProduct });
+    res.status(201).json({
+      product: scrapedProduct,
+      aiGeneratedImage: Boolean(extracted.aiGeneratedImage),
+    });
   } catch (error) {
     console.error('AI scrape error:', error);
     res.status(500).json({
       error:
-        error instanceof Error ? error.message : 'تعذر استخراج بيانات المنتج من الرابط.',
+        error instanceof Error ? error.message : 'تعذر استخراج أو توليد بيانات المنتج بالذكاء الاصطناعي.',
     });
   }
 });
@@ -1683,6 +1745,7 @@ app.get('/api/seo/schema', (req, res) => {
   const origin = resolveSiteOrigin(req);
   const settings = getPublicSettings();
   const products = getPublishedProducts().map((p) => stripPrivateProductFields(p));
+  const storeKeywords = parseSeoKeywordsList(settings.seoKeywords);
   res.json({
     '@context': 'https://schema.org',
     '@graph': [
@@ -1691,6 +1754,7 @@ app.get('/api/seo/schema', (req, res) => {
         name: settings.storeName,
         url: `${origin}/`,
         description: settings.aboutUsText,
+        ...(storeKeywords.length > 0 ? { keywords: storeKeywords.join(', ') } : {}),
         telephone: settings.whatsappNumber,
         email: settings.contactEmail,
         currenciesAccepted: 'SAR',
@@ -1700,26 +1764,38 @@ app.get('/api/seo/schema', (req, res) => {
       {
         '@type': 'ItemList',
         name: settings.storeName,
-        itemListElement: products.map((p, index) => ({
-          '@type': 'ListItem',
-          position: index + 1,
-          url: `${origin}/?product=${encodeURIComponent(p.id)}`,
-          item: p.schemaMarkup || {
-            '@type': 'Product',
-            name: p.name,
-            sku: p.sku || p.id,
-            description: p.seoDescription || p.description,
-            image: p.images,
-            offers: {
-              '@type': 'Offer',
-              priceCurrency: 'SAR',
-              price: p.priceSar,
-              availability: p.inStock
-                ? 'https://schema.org/InStock'
-                : 'https://schema.org/OutOfStock',
-            },
-          },
-        })),
+        itemListElement: products.map((p, index) => {
+          const cleanImages = (p.images || []).filter(
+            (u) => typeof u === 'string' && u.length > 0 && !u.startsWith('data:')
+          );
+          const itemPayload = p.schemaMarkup
+            ? {
+                ...p.schemaMarkup,
+                ...(cleanImages.length > 0 ? { image: cleanImages } : {}),
+              }
+            : {
+                '@type': 'Product',
+                name: p.name,
+                sku: p.sku || p.id,
+                description: p.seoDescription || p.description,
+                keywords: parseSeoKeywordsList(p.seoKeywords).join(', '),
+                image: cleanImages,
+                offers: {
+                  '@type': 'Offer',
+                  priceCurrency: 'SAR',
+                  price: p.priceSar,
+                  availability: p.inStock
+                    ? 'https://schema.org/InStock'
+                    : 'https://schema.org/OutOfStock',
+                },
+              };
+          return {
+            '@type': 'ListItem',
+            position: index + 1,
+            url: `${origin}/?product=${encodeURIComponent(p.id)}`,
+            item: itemPayload,
+          };
+        }),
       },
     ],
   });

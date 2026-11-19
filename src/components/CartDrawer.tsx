@@ -90,6 +90,13 @@ export function CartDrawer({
   const [copiedIban, setCopiedIban] = useState(false);
 
   useEffect(() => {
+    const carriers = settings.shippingCarriers;
+    if (carriers && carriers.length > 0) {
+      setShippingCompany((prev) => (carriers.includes(prev) ? prev : carriers[0]));
+    }
+  }, [settings.shippingCarriers]);
+
+  useEffect(() => {
     if (customer) {
       setName((prev) => prev || customer.name);
       setPhone((prev) => prev || customer.phone);
@@ -107,7 +114,7 @@ export function CartDrawer({
     (sum, item) => sum + getItemUnitSar(item.product) * item.quantity,
     0
   );
-  const coinValueSar = Number(settings.coinValueSar) || 0.1;
+  const coinValueSar = settings.coinValueSar ?? 0.1;
   const availableCoins = customer?.goldenCoins ?? 0;
   const unusedCoupons = (customer?.coupons || []).filter((c) => !c.isUsed);
   const matchedCoupon =
@@ -139,7 +146,7 @@ export function CartDrawer({
   const totalSar = Number(Math.max(0, subtotalSar - discountSar).toFixed(2));
   const estimatedCoinsEarned =
     customer && settings.loyaltyEnabled !== false
-      ? Math.floor((totalSar / 100) * (Number(settings.coinsPer100SarPurchase) || 50))
+      ? Math.floor((totalSar / 100) * (settings.coinsPer100SarPurchase ?? 50))
       : 0;
   const totalUsd = Number((totalSar * settings.sarToUsdRate).toFixed(2));
   const rawDigits = settings.whatsappNumber.replace(/\D/g, '');
@@ -171,7 +178,9 @@ export function CartDrawer({
       ...(discountSar > 0
         ? [
             `المجموع الفرعي: ${subtotalSar.toLocaleString('ar-SA')} ريال سعودي`,
-            `خصم العملات الذهبية / الكوبون: -${discountSar.toLocaleString('ar-SA')} ريال سعودي`,
+            appliedPromo
+              ? `خصم كود الترويج (${appliedPromo.code}): -${discountSar.toLocaleString('ar-SA')} ريال سعودي`
+              : `خصم العملات الذهبية / الكوبون: -${discountSar.toLocaleString('ar-SA')} ريال سعودي`,
           ]
         : []),
       `الإجمالي النهائي: ${totalSar.toLocaleString('ar-SA')} ريال سعودي`,
@@ -311,8 +320,12 @@ export function CartDrawer({
 
   const handleConfirmPaypal = async (e: React.FormEvent) => {
     e.preventDefault();
-    const txId = `PP-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
-    await submitOrder('paypal', { paypalTxId: txId });
+    const cleanedRef = paypalAccount.trim();
+    if (!cleanedRef) {
+      setError('يرجى إدخال بريد حساب PayPal أو رقم مرجع التحويل بعد إتمام الدفع.');
+      return;
+    }
+    await submitOrder('paypal', { paypalTxId: cleanedRef });
   };
 
   const handleConfirmBankTransfer = async (e: React.FormEvent) => {
@@ -347,7 +360,7 @@ export function CartDrawer({
       onClick={resetAndClose}
     >
       <aside
-        className="w-full max-w-md h-full bg-[#0E0E12] border-r border-[#D4AF37]/30 text-[#F5F2EB] flex flex-col shadow-2xl"
+        className="w-full max-w-md h-full bg-[#0E0E12] border-s border-[#D4AF37]/30 text-[#F5F2EB] flex flex-col shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Drawer Header */}
@@ -657,7 +670,11 @@ export function CartDrawer({
                 </div>
                 {discountSar > 0 && (
                   <div className="flex justify-between text-emerald-300">
-                    <span>خصم العملات الذهبية / الكوبون:</span>
+                    <span>
+                      {appliedPromo
+                        ? `خصم كود الترويج (${appliedPromo.code}):`
+                        : 'خصم العملات الذهبية / الكوبون:'}
+                    </span>
                     <span className="font-bold tabular-nums">
                       -{discountSar.toLocaleString('ar-SA')} ر.س
                     </span>
@@ -690,7 +707,7 @@ export function CartDrawer({
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="05XXXXXXXX"
-                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-[#F5F2EB] text-right focus:outline-none focus:border-[#D4AF37]"
+                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-[#F5F2EB] text-left focus:outline-none focus:border-[#D4AF37]"
                   />
                 </div>
                 <div>
@@ -803,7 +820,7 @@ export function CartDrawer({
                   value={paypalAccount}
                   onChange={(e) => setPaypalAccount(e.target.value)}
                   placeholder="buyer@example.com أو رقم العملية"
-                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-[#F5F2EB] text-right focus:outline-none focus:border-[#0070BA]"
+                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-[#F5F2EB] text-left focus:outline-none focus:border-[#0070BA]"
                 />
               </div>
 
@@ -960,7 +977,10 @@ export function CartDrawer({
                 )}
                 {confirmedOrder.discountSar && confirmedOrder.discountSar > 0 && (
                   <div className="text-xs text-emerald-300 tabular-nums">
-                    خصم العملات الذهبية / الكوبون: -{confirmedOrder.discountSar.toLocaleString('ar-SA')} ر.س
+                    {confirmedOrder.couponCodeUsed && confirmedOrder.couponCodeUsed.length === 4
+                      ? `خصم كود الترويج (${confirmedOrder.couponCodeUsed})`
+                      : 'خصم العملات الذهبية / الكوبون'}
+                    : -{confirmedOrder.discountSar.toLocaleString('ar-SA')} ر.س
                   </div>
                 )}
                 <div className="text-sm font-bold text-[#F5F2EB] pt-1 tabular-nums">

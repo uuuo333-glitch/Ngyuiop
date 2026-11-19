@@ -339,6 +339,9 @@ export async function recordDriveBackupInFirestore(
     sizeBytes?: number;
   }
 ): Promise<string> {
+  if (!user.uid || !user.emailVerified) {
+    throw new Error('يرجى تسجيل الدخول بحساب Google الموثق لحفظ سجل النسخ الاحتياطي.');
+  }
   const uid = sanitizeDocId(user.uid);
   await ensureFirestoreUserProfile(user);
   const backupId = sanitizeDocId(`drv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`);
@@ -372,6 +375,10 @@ export function subscribeDriveBackups(
   onRecords: (records: DriveBackupFirestoreRecord[]) => void,
   onErr?: (err: Error) => void
 ): Unsubscribe {
+  if (!user.uid || !user.emailVerified) {
+    onRecords([]);
+    return () => {};
+  }
   const uid = sanitizeDocId(user.uid);
   const path = `users/${uid}/driveBackups`;
   const q = query(collection(db, 'users', uid, 'driveBackups'), where('ownerUid', '==', uid));
@@ -406,6 +413,7 @@ export function subscribeDriveBackups(
 }
 
 export async function archiveDriveBackupInFirestore(user: User, backupId: string): Promise<void> {
+  if (!user.uid || !user.emailVerified) return;
   const uid = sanitizeDocId(user.uid);
   const safeId = sanitizeDocId(backupId);
   const path = `users/${uid}/driveBackups/${safeId}`;

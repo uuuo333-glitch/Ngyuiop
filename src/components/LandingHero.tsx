@@ -20,13 +20,18 @@ export function LandingHero({
       : [settings.heroImageUrl].filter(Boolean);
 
   const [slideIdx, setSlideIdx] = useState(0);
+  const [videoError, setVideoError] = useState(false);
 
   const mode = settings.heroBackdropMode || 'auto';
+  const hasHeroVideo = Boolean(settings.heroVideoUrl?.trim()) && !videoError;
   const showVideo =
-    Boolean(settings.heroVideoUrl?.trim()) &&
-    (mode === 'video' || mode === 'auto');
+    hasHeroVideo && (mode === 'video' || mode === 'auto');
   const showSlideshow =
     !showVideo && (mode === 'slideshow' || (mode === 'auto' && slides.length > 1));
+
+  useEffect(() => {
+    setVideoError(false);
+  }, [settings.heroVideoUrl]);
 
   useEffect(() => {
     if (!showSlideshow || slides.length <= 1) return;
@@ -66,12 +71,13 @@ export function LandingHero({
             loop
             muted
             playsInline
+            onError={() => setVideoError(true)}
             style={
               settings.heroBackdropFilter
                 ? { filter: settings.heroBackdropFilter }
                 : undefined
             }
-            className="w-full h-full object-cover opacity-50"
+            className="w-full h-full object-cover opacity-40"
           />
         ) : (
           <ResilientImage
@@ -113,7 +119,7 @@ export function LandingHero({
             onClick={() => {
               if (editMode && onEditSection) onEditSection('hero');
             }}
-            className={`lg:col-span-7 space-y-6 ${
+            className={`lg:col-span-6 space-y-6 ${
               editMode
                 ? 'p-4 -m-4 rounded-2xl border border-dashed border-[#D4AF37]/60 hover:bg-[#14120E]/50 cursor-pointer transition-colors'
                 : ''
@@ -151,8 +157,12 @@ export function LandingHero({
             </div>
           </div>
 
-          <div className="lg:col-span-5 space-y-3">
-            <div className="rounded-2xl overflow-hidden border border-[#D4AF37]/30 bg-[#111115] shadow-2xl aspect-[4/3]">
+          <div className="lg:col-span-6 space-y-3">
+            <div
+              className={`rounded-2xl overflow-hidden border border-[#D4AF37]/30 bg-[#09090B] shadow-2xl w-full ${
+                showVideo && settings.heroVideoUrl ? 'aspect-video' : 'aspect-[4/3]'
+              }`}
+            >
               {showVideo && settings.heroVideoUrl ? (
                 <video
                   key={settings.heroVideoUrl}
@@ -161,12 +171,13 @@ export function LandingHero({
                   loop
                   muted
                   playsInline
+                  onError={() => setVideoError(true)}
                   style={
                     settings.heroBackdropFilter
                       ? { filter: settings.heroBackdropFilter }
                       : undefined
                   }
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain bg-[#09090B]"
                 />
               ) : (
                 <ResilientImage

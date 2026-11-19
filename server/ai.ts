@@ -17,6 +17,7 @@ import {
   getOwnerAlertsAndDigest,
   getPublishedProducts,
   notifyOwnerWebhookIfConfigured,
+  saveUploadedMedia,
   stripPrivateProductFields,
   updateProduct,
   updateSettings,
@@ -25,7 +26,7 @@ import {
 function getAiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY is not configured in the server environment.');
+    throw new Error('GEMINI_API_KEY غير مضبوط في متغيرات البيئة على الخادم.');
   }
   return new GoogleGenAI({
     apiKey,
@@ -37,14 +38,87 @@ function getAiClient(): GoogleGenAI {
   });
 }
 
+function safeParseAiJson<T>(rawText: string | undefined, fallback: T): T {
+  const trimmed = (rawText ?? '').trim();
+  if (!trimmed) return fallback;
+  const cleaned = trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    const objMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      try {
+        return JSON.parse(objMatch[0]) as T;
+      } catch {
+        // ignore
+      }
+    }
+    const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (arrMatch) {
+      try {
+        return JSON.parse(arrMatch[0]) as T;
+      } catch {
+        // ignore
+      }
+    }
+    return fallback;
+  }
+}
+
+export async function generateProductSquareImageWithGemini(input: {
+  name: string;
+  category?: string;
+  description?: string;
+}): Promise<string> {
+  const ai = getAiClient();
+  const prompt = [
+    `Create a high-end commercial studio product photograph in exact 1:1 square composition for e-commerce (1000x1000 aesthetic).`,
+    `Product: ${input.name}`,
+    input.category ? `Category: ${input.category}` : '',
+    input.description ? `Details: ${input.description.slice(0, 320)}` : '',
+    `Style requirements: Precision stainless-steel 304 automotive catalytic converter / exhaust DPF / platinum ceramic honeycombs or luxury automotive hardware centered in frame on a sleek matte dark obsidian studio pedestal (#09090B) with subtle warm brushed-gold rim lighting, ultra-sharp metallic reflections, crisp studio depth of field, NO text, NO watermark, NO logos, NO price tags.`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3.1-flash-lite-image',
+    contents: prompt,
+    config: {
+      imageConfig: {
+        aspectRatio: '1:1',
+      },
+    },
+  });
+
+  const parts = response.candidates?.[0]?.content?.parts || [];
+  for (const part of parts) {
+    if (part.inlineData?.data) {
+      const mimeType = part.inlineData.mimeType || 'image/png';
+      const ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png';
+      const safeName = `ai-product-${Date.now().toString(36)}.${ext}`;
+      return saveUploadedMedia(safeName, mimeType, part.inlineData.data);
+    }
+  }
+
+  throw new Error('لم يُرجِع نموذج Gemini صورة صالحة للمنتج.');
+}
+
 interface ScrapedProductResult {
   name: string;
+  nameEn?: string;
   category: string;
   priceSar: number;
   originalExtractedPrice: string;
   description: string;
+  descriptionEn?: string;
   images: string[];
   specs: ProductSpec[];
+  seoKeywords?: string[];
+  aiGeneratedImage?: boolean;
 }
 
 function extractHtmlSignals(html: string, baseUrl: string) {
@@ -112,47 +186,67 @@ function extractHtmlSignals(html: string, baseUrl: string) {
   };
 }
 
-export async function scrapeProductFromUrl(url: string): Promise<ScrapedProductResult> {
+export async function scrapeProductFromUrlOrName(input: {
+  url?: string;
+  productName?: string;
+  category?: string;
+}): Promise<ScrapedProductResult> {
   const ai = getAiClient();
-  let fetchedSignals: ReturnType<typeof extractHtmlSignals> | null = null;
+  const cleanUrl = (input.url || '').trim();
+  const cleanName = (input.productName || '').trim();
+  const defaultCategory = input.category?.trim() || 'دبات تلوث البنزين';
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 9000);
-    const resp = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-    });
-    clearTimeout(timeout);
-    if (resp.ok) {
-      const html = await resp.text();
-      if (html && html.length > 250) {
-        fetchedSignals = extractHtmlSignals(html, url);
+  let fetchedSignals: ReturnType<typeof extractHtmlSignals> | null = null;
+  if (cleanUrl && /^https?:\/\//i.test(cleanUrl)) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 9000);
+      const resp = await fetch(cleanUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+      clearTimeout(timeout);
+      if (resp.ok) {
+        const html = await resp.text();
+        if (html && html.length > 250) {
+          fetchedSignals = extractHtmlSignals(html, cleanUrl);
+        }
       }
+    } catch {
+      // Fallback below
     }
-  } catch {
-    // Fallback to Gemini urlContext + googleSearch below
   }
 
-  if (fetchedSignals && (fetchedSignals.textSnippet.length > 150 || fetchedSignals.jsonLd.length > 50)) {
-    const prompt = `أنت خبير تجارة إلكترونية فاخرة. قم بتحليل بيانات المنتج المستخرجة من الرابط التالي وتحويلها إلى بيانات عربية احترافية وفاخرة بالريال السعودي (SAR):
-الرابط: ${url}
+  let baseResult: ScrapedProductResult | null = null;
+
+  if (
+    fetchedSignals &&
+    (fetchedSignals.textSnippet.length > 150 || fetchedSignals.jsonLd.length > 50)
+  ) {
+    const prompt = `أنت خبير تجارة إلكترونية فاخرة ومترجم تقني محترف. قم بتحليل بيانات المنتج المستخرجة من الرابط التالي وتحويلها إلى بيانات عربية تسويقية احترافية بالريال السعودي (SAR):
+الرابط: ${cleanUrl}
+${cleanName ? `اسم مقترح من المالك: ${cleanName}` : ''}
 العنوان المستخرج: ${fetchedSignals.title}
 الوصف: ${fetchedSignals.metaDescription}
 بيانات JSON-LD: ${fetchedSignals.jsonLd}
 الصور المستخرجة: ${JSON.stringify(fetchedSignals.foundImages)}
 مقتطف النص: ${fetchedSignals.textSnippet}
 
-المطلوب:
-- استخرج الاسم الكامل للمنتج باللغة العربية الفاخرة.
-- اقترح سعراً مناسباً بالريال السعودي (رقم صحيح) مع حفظ نص السعر الأصلي المكتشف.
-- اكتب وصفاً تسويقياً عربياً متكاملاً.
-- استخرج المواصفات الفنية في مصفوفة label و value باللغة العربية.
-- حافظ على روابط الصور عالية الجودة المستخرجة من الصفحة إن وجدت.`;
+المطلوب بصيغة JSON:
+- name: الاسم الكامل للمنتج باللغة العربية الفاخرة والمقنعة.
+- nameEn: اسم المنتج التجاري بالإنجليزية.
+- category: تصنيف عربي مناسب مثل "${defaultCategory}".
+- priceSar: سعر بيع مناسب بالريال السعودي (رقم صحيح موجب).
+- originalExtractedPrice: نص السعر الأصلي المكتشف.
+- description: وصف تسويقي عربي كامل وجذاب يوضح المزايا الفنية، التوافق، وجودة التصنيع والضمان.
+- descriptionEn: وصف إنجليزي موجز واحترافي.
+- images: روابط الصور الحقيقية للمنتج المستخرجة من الصفحة فقط (إن وجدت).
+- seoKeywords: 6 كلمات مفتاحية عربية للسيو.
+- specs: المواصفات الفنية {label, value} بالعربية.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-4-hydrogen',
@@ -163,11 +257,14 @@ export async function scrapeProductFromUrl(url: string): Promise<ScrapedProductR
           type: Type.OBJECT,
           properties: {
             name: { type: Type.STRING },
+            nameEn: { type: Type.STRING },
             category: { type: Type.STRING },
             priceSar: { type: Type.NUMBER },
             originalExtractedPrice: { type: Type.STRING },
             description: { type: Type.STRING },
+            descriptionEn: { type: Type.STRING },
             images: { type: Type.ARRAY, items: { type: Type.STRING } },
+            seoKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
             specs: {
               type: Type.ARRAY,
               items: {
@@ -182,85 +279,182 @@ export async function scrapeProductFromUrl(url: string): Promise<ScrapedProductR
           },
           required: [
             'name',
+            'nameEn',
             'category',
             'priceSar',
             'originalExtractedPrice',
             'description',
+            'descriptionEn',
             'images',
+            'seoKeywords',
             'specs',
           ],
         },
       },
     });
 
-    const parsed = JSON.parse((response.text ?? '{}').trim()) as Partial<ScrapedProductResult>;
+    const parsed = safeParseAiJson<Partial<ScrapedProductResult>>(response.text, {});
     const mergedImages = Array.from(
       new Set([...(parsed.images ?? []), ...(fetchedSignals.foundImages ?? [])])
-    ).filter((img) => typeof img === 'string' && img.startsWith('http'));
+    ).filter((img) => typeof img === 'string' && /^https?:\/\//i.test(img));
 
-    return {
-      name: parsed.name || fetchedSignals.title || 'منتج مسحوب جديد',
-      category: parsed.category || 'مقتنيات مختارة',
-      priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 450,
-      originalExtractedPrice: parsed.originalExtractedPrice || 'غير محدد',
-      description: parsed.description || fetchedSignals.metaDescription || 'وصف المنتج قيد المراجعة.',
+    baseResult = {
+      name: parsed.name?.trim() || cleanName || fetchedSignals.title || 'منتج مسحوب جديد',
+      nameEn: parsed.nameEn?.trim() || undefined,
+      category: parsed.category?.trim() || defaultCategory,
+      priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 750,
+      originalExtractedPrice: parsed.originalExtractedPrice || 'من الرابط الخارجي',
+      description:
+        parsed.description?.trim() ||
+        fetchedSignals.metaDescription ||
+        'وصف احترافي جاهز في المتجر.',
+      descriptionEn: parsed.descriptionEn?.trim() || undefined,
       images: mergedImages,
+      seoKeywords: Array.isArray(parsed.seoKeywords) ? parsed.seoKeywords : [],
       specs: Array.isArray(parsed.specs) ? parsed.specs : [],
+    };
+  } else if (cleanUrl && /^https?:\/\//i.test(cleanUrl)) {
+    const response = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: `اقرأ رابط المنتج التالي واستخرج بياناته التسويقية الكاملة باللغة العربية بالريال السعودي بصيغة JSON فقط:
+الرابط: ${cleanUrl}
+${cleanName ? `اسم مرجعي: ${cleanName}` : ''}
+
+أعد كائن JSON يحتوي على:
+{
+  "name": "اسم المنتج الكامل بالعربية",
+  "nameEn": "English product name",
+  "category": "${defaultCategory}",
+  "priceSar": 850,
+  "originalExtractedPrice": "السعر المصدر",
+  "description": "وصف تسويقي عربي كامل يبرز المزايا والجودة والتوافق",
+  "descriptionEn": "Professional English summary",
+  "images": ["روابط الصور الحقيقية إن توفرت وإلا مصفوفة فارغة"],
+  "seoKeywords": ["كلمات مفتاحية عربية"],
+  "specs": [{"label": "المواصفة", "value": "القيمة"}]
+}`,
+      config: {
+        tools: [{ urlContext: {} }, { googleSearch: {} }],
+      },
+    });
+
+    const parsed = safeParseAiJson<Partial<ScrapedProductResult>>(response.text, {});
+    const cleanImgs = Array.isArray(parsed.images)
+      ? parsed.images.filter((i) => typeof i === 'string' && /^https?:\/\//i.test(i.trim()))
+      : [];
+
+    baseResult = {
+      name: parsed.name?.trim() || cleanName || 'منتج مسحوب بالذكاء الاصطناعي',
+      nameEn: parsed.nameEn?.trim() || undefined,
+      category: parsed.category?.trim() || defaultCategory,
+      priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 790,
+      originalExtractedPrice: parsed.originalExtractedPrice || 'تقدير بالذكاء الاصطناعي',
+      description:
+        parsed.description?.trim() ||
+        'منتج عالي الجودة مجهز بصياغة تسويقية عربية شاملة وفق أعلى معايير الكفاءة والأداء.',
+      descriptionEn: parsed.descriptionEn?.trim() || undefined,
+      images: cleanImgs,
+      seoKeywords: Array.isArray(parsed.seoKeywords) ? parsed.seoKeywords : [],
+      specs: Array.isArray(parsed.specs) ? parsed.specs : [],
+    };
+  } else {
+    const targetName = cleanName || 'دبة تلوث عالية الكفاءة Euro-6';
+    const response = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: `أنت مدير منتجات وخبير تسويق رقمي لمتجر سعودي فاخر متخصص في قطع غيار السيارات ودبات التلوث وفلاتر البيئة.
+طلب المالك إنشاء منتج جديد متكامل انطلاقاً من الاسم التالي فقط:
+"${targetName}"
+القسم المستهدف: "${defaultCategory}"
+
+اكتب بيانات تسويقية وفنية كاملة ومقنعة بصيغة JSON:
+- name: اسم تسويقي عربي احترافي واضح للمنتج.
+- nameEn: اسم إنجليزي احترافي مطابق.
+- category: "${defaultCategory}" أو القسم الأنسب بالعربية.
+- priceSar: سعر بيع عادل وواقعي بالريال السعودي في السوق السعودي (رقم صحيح موجب).
+- originalExtractedPrice: "تسعير مقترح تلقائياً عبر Gemini AI".
+- description: وصف تسويقي عربي كامل واحترافي يشمل الفوائد، الأداء، التوافق، اجتياز الفحص الدوري، الخامات، والضمان.
+- descriptionEn: وصف إنجليزي احترافي متكامل.
+- seoKeywords: 6 كلمات مفتاحية عربية قوية.
+- specs: 4 مواصفات فنية دقيقة {label, value} باللغة العربية.`,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            nameEn: { type: Type.STRING },
+            category: { type: Type.STRING },
+            priceSar: { type: Type.NUMBER },
+            originalExtractedPrice: { type: Type.STRING },
+            description: { type: Type.STRING },
+            descriptionEn: { type: Type.STRING },
+            seoKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+            specs: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  label: { type: Type.STRING },
+                  value: { type: Type.STRING },
+                },
+                required: ['label', 'value'],
+              },
+            },
+          },
+          required: [
+            'name',
+            'nameEn',
+            'category',
+            'priceSar',
+            'originalExtractedPrice',
+            'description',
+            'descriptionEn',
+            'seoKeywords',
+            'specs',
+          ],
+        },
+      },
+    });
+
+    const parsed = safeParseAiJson<Partial<ScrapedProductResult>>(response.text, {});
+    baseResult = {
+      name: parsed.name?.trim() || targetName,
+      nameEn: parsed.nameEn?.trim() || undefined,
+      category: parsed.category?.trim() || defaultCategory,
+      priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 950,
+      originalExtractedPrice: parsed.originalExtractedPrice || 'تسعير تلقائي AI',
+      description:
+        parsed.description?.trim() ||
+        `${targetName} مصنعة بخامات عالية التحمل وكفاءة ترشيح متقدمة تضمن ثبات الأداء واجتياز الفحص الدوري.`,
+      descriptionEn: parsed.descriptionEn?.trim() || undefined,
+      images: [],
+      seoKeywords: Array.isArray(parsed.seoKeywords) ? parsed.seoKeywords : [],
+      specs:
+        Array.isArray(parsed.specs) && parsed.specs.length > 0
+          ? parsed.specs
+          : [{ label: 'المعيار', value: 'Euro-6 / مطابق للفحص الدوري' }],
     };
   }
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-4-hydrogen',
-    contents: `اقرأ محتوى رابط المنتج التالي واستخرج بياناته الكاملة باللغة العربية بصيغة JSON فقط:
-الرابط: ${url}
-
-أعد كائن JSON يحتوي فقط على المفاتيح التالية:
-{
-  "name": "اسم المنتج الكامل بالعربية",
-  "category": "التصنيف بالعربية",
-  "priceSar": 750,
-  "originalExtractedPrice": "السعر الأصلي كما ورد في الصفحة",
-  "description": "وصف تسويقي مفصل بالعربية",
-  "images": ["روابط الصور عالية الجودة إن وجدت"],
-  "specs": [{"label": "اسم المواصفة", "value": "القيمة"}]
-}`,
-    config: {
-      tools: [{ urlContext: {} }, { googleSearch: {} }],
-    },
-  });
-
-  const rawText = (response.text ?? '').trim();
-  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]) as Partial<ScrapedProductResult>;
-      return {
-        name: parsed.name || 'منتج مسحوب للمراجعة',
-        category: parsed.category || 'مقتنيات مختارة',
-        priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 590,
-        originalExtractedPrice: parsed.originalExtractedPrice || 'غير محدد',
-        description: parsed.description || 'تم استخراج المنتج وحفظه كمسودة سرية للمراجعة.',
-        images: Array.isArray(parsed.images)
-          ? parsed.images.filter((i) => typeof i === 'string' && i.startsWith('http'))
-          : [],
-        specs: Array.isArray(parsed.specs) ? parsed.specs : [],
-      };
-    } catch {
-      // fall through
-    }
+  let aiGeneratedImage = false;
+  if (!baseResult.images || baseResult.images.length === 0) {
+    const generatedImgUrl = await generateProductSquareImageWithGemini({
+      name: baseResult.name,
+      category: baseResult.category,
+      description: baseResult.description,
+    });
+    baseResult.images = [generatedImgUrl];
+    aiGeneratedImage = true;
   }
 
   return {
-    name: 'منتج مسحوب للمراجعة اليدوية',
-    category: 'مقتنيات مختارة',
-    priceSar: 550,
-    originalExtractedPrice: 'غير متاح تلقائياً',
-    description:
-      rawText.slice(0, 500) ||
-      'تم حفظ الرابط في قاعدة البيانات السرية للمالك. يرجى استكمال البيانات والصور قبل النشر.',
-    images: [],
-    specs: [{ label: 'المصدر', value: 'بانتظار مراجعة المالك' }],
+    ...baseResult,
+    aiGeneratedImage,
   };
+}
+
+export async function scrapeProductFromUrl(url: string): Promise<ScrapedProductResult> {
+  return scrapeProductFromUrlOrName({ url });
 }
 
 export interface SimilarScrapedDraftInput {
@@ -430,14 +624,8 @@ JSON-LD: ${signals.jsonLd}
         },
       },
     });
-    try {
-      const parsed = JSON.parse((response.text ?? '{}').trim()) as {
-        items?: typeof rawItems;
-      };
-      if (Array.isArray(parsed.items)) rawItems = parsed.items;
-    } catch {
-      rawItems = [];
-    }
+    const parsed = safeParseAiJson<{ items?: typeof rawItems }>(response.text, {});
+    rawItems = Array.isArray(parsed.items) ? parsed.items : [];
   } else {
     const response = await ai.models.generateContent({
       model: 'gemini-4-hydrogen',
@@ -464,16 +652,8 @@ JSON-LD: ${signals.jsonLd}
       },
     });
 
-    const rawText = (response.text ?? '').trim();
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]) as { items?: typeof rawItems };
-        if (Array.isArray(parsed.items)) rawItems = parsed.items;
-      } catch {
-        // fallback below
-      }
-    }
+    const parsed = safeParseAiJson<{ items?: typeof rawItems }>(response.text, {});
+    if (Array.isArray(parsed.items)) rawItems = parsed.items;
   }
 
   if (rawItems.length === 0) {
@@ -584,13 +764,15 @@ export async function enhanceProductCopyWithAi(input: {
     },
   });
 
-  const parsed = JSON.parse((response.text ?? '{}').trim()) as Partial<{
-    name: string;
-    description: string;
-    badgeText: string;
-    seoKeywords: string[];
-    specs: ProductSpec[];
-  }>;
+  const parsed = safeParseAiJson<
+    Partial<{
+      name: string;
+      description: string;
+      badgeText: string;
+      seoKeywords: string[];
+      specs: ProductSpec[];
+    }>
+  >(response.text, {});
 
   return {
     name: parsed.name || input.name,
@@ -655,7 +837,14 @@ export async function enhanceStoreIdentityWithAi(input: {
     },
   });
 
-  return JSON.parse((response.text ?? '{}').trim());
+  return safeParseAiJson(response.text, {
+    storeName: input.storeName,
+    storeTagline: input.storeTagline,
+    heroTitle: input.heroTitle,
+    heroSubtitle: 'جودة هندسية فائقة ومطابقة لمعايير الفحص الدوري.',
+    suggestedCategoryName: 'دبات التلوث الرياضية',
+    suggestedCategoryDesc: 'محولات حفازة عالية التدفق للسيارات الحديثة.',
+  });
 }
 
 export async function generateProductSeoData(
@@ -694,11 +883,11 @@ export async function generateProductSeoData(
     },
   });
 
-  const parsed = JSON.parse((response.text ?? '{}').trim()) as {
+  const parsed = safeParseAiJson<{
     seoTitle?: string;
     seoDescription?: string;
     seoKeywords?: string[];
-  };
+  }>(response.text, {});
 
   const seoTitle = parsed.seoTitle || `${product.name} | ${storeName}`;
   const seoDescription = parsed.seoDescription || product.description.slice(0, 155);
@@ -710,7 +899,7 @@ export async function generateProductSeoData(
     name: product.name,
     description: seoDescription,
     category: product.category,
-    image: product.images,
+    image: (product.images || []).filter((u) => typeof u === 'string' && !u.startsWith('data:')),
     brand: {
       '@type': 'Brand',
       name: storeName,
@@ -774,7 +963,18 @@ ${contextText}
     },
   });
 
-  return JSON.parse((response.text ?? '{}').trim()) as GeneratedAdsCampaign;
+  return safeParseAiJson<GeneratedAdsCampaign>(response.text, {
+    googleAdsHeadlines: ['دبات تلوث معتمدة Euro-6', 'شحن سريع لجميع مناطق المملكة'],
+    googleAdsDescriptions: ['اطلب الآن دبات التلوث للديزل والبنزين بالريال السعودي وبضمان الجودة.'],
+    googleAdsKeywords: ['دبات تلوث', 'فلتر DPF', 'قطع غيار السعودية'],
+    banner: {
+      title: `عروض ${input.storeName}`,
+      subtitle: 'تشكيلة دبات التلوث للديزل والبنزين بمعايير Euro-6',
+      ctaText: 'تسوق الآن',
+      discountLabel: 'عرض خاص',
+      accentColor: '#D4AF37',
+    },
+  });
 }
 
 // ===================================================
@@ -1141,12 +1341,12 @@ export async function optimizeBackgroundWithAi(params: {
       },
     });
 
-    const parsed = JSON.parse((response.text ?? '{}').trim()) as {
+    const parsed = safeParseAiJson<{
       recommendedOpacity?: number;
       recommendedMotion?: string;
       cssFilter?: string;
       explanationAr?: string;
-    };
+    }>(response.text, {});
 
     const allowedMotions = new Set(['none', 'kenburns', 'float', 'pulse']);
     const motion =
@@ -1217,10 +1417,10 @@ Return JSON with:
     },
   });
 
-  const parsed = JSON.parse((response.text ?? '{}').trim()) as {
+  const parsed = safeParseAiJson<{
     nameEn?: string;
     descriptionEn?: string;
-  };
+  }>(response.text, {});
   return {
     nameEn: parsed.nameEn?.trim() || input.name,
     descriptionEn: parsed.descriptionEn?.trim() || input.description || '',
@@ -1360,7 +1560,7 @@ ${cleanRawText.slice(0, 18000)}
       },
     });
 
-    const parsed = JSON.parse((response.text ?? '{}').trim()) as Partial<ImportedProductFromUrlResult>;
+    const parsed = safeParseAiJson<Partial<ImportedProductFromUrlResult>>(response.text, {});
     const mergedImages = Array.from(
       new Set([...(parsed.images ?? []), ...textImages])
     )
@@ -1494,7 +1694,7 @@ ${cleanRawText.slice(0, 18000)}
       },
     });
 
-    const parsed = JSON.parse((response.text ?? '{}').trim()) as Partial<ImportedProductFromUrlResult>;
+    const parsed = safeParseAiJson<Partial<ImportedProductFromUrlResult>>(response.text, {});
     const mergedImages = Array.from(
       new Set([...(parsed.images ?? []), ...(signals.foundImages ?? [])])
     )

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Volume2, VolumeX } from 'lucide-react';
 import type { PublicSettings, SidebarVideoItem } from '../types';
 
@@ -36,12 +36,19 @@ function getYoutubeEmbedUrl(rawUrl: string): string | null {
 
 export function VideoSidebarRail({ settings, className = '' }: VideoSidebarRailProps) {
   const [unmutedId, setUnmutedId] = useState<string | null>(null);
+  const [videoErrors, setVideoErrors] = useState<Record<string, boolean>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   const enabled = settings.sidebarVideosEnabled !== false;
   const count = settings.sidebarVideoCount === 3 ? 3 : 4;
-  const allVideos = settings.sidebarVideos || [];
-  const visibleVideos: SidebarVideoItem[] = allVideos.slice(0, count);
+  const visibleVideos: SidebarVideoItem[] = useMemo(
+    () => (settings.sidebarVideos || []).slice(0, count),
+    [settings.sidebarVideos, count]
+  );
+
+  useEffect(() => {
+    setVideoErrors({});
+  }, [visibleVideos]);
 
   useEffect(() => {
     Object.entries(videoRefs.current).forEach(([id, el]) => {
@@ -127,7 +134,7 @@ export function VideoSidebarRail({ settings, className = '' }: VideoSidebarRailP
                 allowFullScreen
                 className="w-full h-full border-0"
               />
-            ) : trimmedUrl ? (
+            ) : trimmedUrl && !videoErrors[item.id || String(idx)] ? (
               <>
                 <video
                   ref={(el) => {
@@ -139,12 +146,18 @@ export function VideoSidebarRail({ settings, className = '' }: VideoSidebarRailP
                   muted={!isUnmuted}
                   playsInline
                   preload="metadata"
+                  onError={() =>
+                    setVideoErrors((prev) => ({
+                      ...prev,
+                      [item.id || String(idx)]: true,
+                    }))
+                  }
                   className="w-full h-full object-cover"
                 />
 
                 {/* Sound Toggle Indicator */}
                 <span
-                  className={`absolute top-2 left-2 z-10 h-6 px-2 rounded-md border flex items-center gap-1 text-[10px] font-bold transition-colors ${
+                  className={`absolute top-2 end-2 z-10 h-6 px-2 rounded-md border flex items-center gap-1 text-[10px] font-bold transition-colors ${
                     isUnmuted
                       ? 'bg-[#D4AF37] text-[#09090B] border-[#F5E1A4]'
                       : 'bg-black/70 text-[#F5F2EB] border-[#D4AF37]/45 group-hover:border-[#D4AF37]'
@@ -173,7 +186,9 @@ export function VideoSidebarRail({ settings, className = '' }: VideoSidebarRailP
               </>
             ) : (
               <div className="w-full h-full flex items-center justify-center text-[11px] text-[#9E988C] px-3 text-center bg-[#121216]">
-                فيديو {idx + 1} · بانتظار رفع الفيديو أو الرابط
+                {videoErrors[item.id || String(idx)]
+                  ? `فيديو ${idx + 1} · تعذر تحميل المقطع`
+                  : `فيديو ${idx + 1} · بانتظار رفع الفيديو أو الرابط`}
               </div>
             )}
           </div>

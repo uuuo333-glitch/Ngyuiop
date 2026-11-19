@@ -1419,7 +1419,11 @@ export function claimDailyCoins(customerId: string): {
   if (current.lastDailyClaimDate === today) {
     return { error: 'تم استلام مكافأة الدخول اليومي لهذا اليوم مسبقاً. عد غداً!' };
   }
-  const award = Math.max(1, Math.floor(Number(db.settings.dailyCheckinCoins) || 25));
+  const rawDaily = Number(db.settings.dailyCheckinCoins);
+  const award =
+    db.settings.dailyCheckinCoins !== undefined && Number.isFinite(rawDaily)
+      ? Math.max(0, Math.floor(rawDaily))
+      : 25;
   current.goldenCoins = (current.goldenCoins || 0) + award;
   current.lastDailyClaimDate = today;
   db.customers[idx] = current;
@@ -1450,7 +1454,11 @@ export function convertCoinsToCoupon(
   if (balance < cleanCoins) {
     return { error: 'رصيدك من العملات الذهبية غير كافٍ.' };
   }
-  const coinValue = Number(db.settings.coinValueSar) || 0.1;
+  const rawCoinVal = Number(db.settings.coinValueSar);
+  const coinValue =
+    db.settings.coinValueSar !== undefined && Number.isFinite(rawCoinVal) && rawCoinVal > 0
+      ? rawCoinVal
+      : 0.1;
   const discountSar = Number((cleanCoins * coinValue).toFixed(2));
   const coupon: LoyaltyCoupon = {
     code: `TAJ-${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
@@ -1564,7 +1572,11 @@ export function applyLoyaltyAndAwardOnOrder(params: {
   }
 
   const current = db.customers[idx];
-  const coinValue = Number(db.settings.coinValueSar) || 0.1;
+  const rawOrderCoinVal = Number(db.settings.coinValueSar);
+  const coinValue =
+    db.settings.coinValueSar !== undefined && Number.isFinite(rawOrderCoinVal) && rawOrderCoinVal > 0
+      ? rawOrderCoinVal
+      : 0.1;
 
   if (!couponCodeUsed && cleanInputCode) {
     const coupons = current.coupons || [];
@@ -1599,7 +1611,11 @@ export function applyLoyaltyAndAwardOnOrder(params: {
   }
 
   const finalPaidSar = Math.max(0, params.subtotalSar - discountSar);
-  const ratePer100 = Math.max(0, Number(db.settings.coinsPer100SarPurchase) || 50);
+  const rawRate = Number(db.settings.coinsPer100SarPurchase);
+  const ratePer100 =
+    db.settings.coinsPer100SarPurchase !== undefined && Number.isFinite(rawRate)
+      ? Math.max(0, rawRate)
+      : 50;
   const coinsEarned = Math.floor((finalPaidSar / 100) * ratePer100);
   current.goldenCoins = (current.goldenCoins || 0) + coinsEarned;
 

@@ -12,13 +12,13 @@ interface FooterProps {
 }
 
 function toWaInternational(raw: string): string {
-  const digits = raw.replace(/\D/g, '');
+  const digits = (raw || '').replace(/\D/g, '').replace(/^00/, '');
   if (digits.startsWith('05') && digits.length === 10) return `966${digits.slice(1)}`;
   return digits;
 }
 
 function toDisplayLocalPhone(raw: string): string {
-  const digits = raw.replace(/\D/g, '');
+  const digits = (raw || '').replace(/\D/g, '').replace(/^00/, '');
   if (digits.startsWith('9665') && digits.length === 12) return `0${digits.slice(3)}`;
   return digits;
 }
@@ -71,20 +71,22 @@ export function Footer({
         </div>
 
         {/* Contact Us (WhatsApp & Email) + Social Media */}
-        <div className="md:col-span-6 space-y-4 md:text-left">
+        <div className="md:col-span-6 space-y-4 md:text-end">
           <div className="text-sm font-bold text-[#E5C158]">
             {lang === 'en' ? 'Contact & Follow Us' : 'اتصل بنا وتابعنا'}
           </div>
 
           <div className="flex flex-wrap md:justify-end gap-3 text-xs">
-            <a
-              href={`tel:${displayPhone}`}
-              dir="ltr"
-              className="h-10 px-4 rounded-xl border border-white/15 bg-[#141418] hover:border-[#D4AF37]/50 text-[#F5F2EB] flex items-center gap-2 transition-colors tabular-nums"
-            >
-              <Phone className="w-4 h-4 text-[#E5C158]" />
-              <span>{displayPhone}</span>
-            </a>
+            {displayPhone && (
+              <a
+                href={`tel:${displayPhone}`}
+                dir="ltr"
+                className="h-10 px-4 rounded-xl border border-white/15 bg-[#141418] hover:border-[#D4AF37]/50 text-[#F5F2EB] flex items-center gap-2 transition-colors tabular-nums"
+              >
+                <Phone className="w-4 h-4 text-[#E5C158]" />
+                <span>{displayPhone}</span>
+              </a>
+            )}
 
             {settings.contactEmail && (
               <a

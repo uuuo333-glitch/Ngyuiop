@@ -36,6 +36,7 @@ import {
   Send,
   Sparkles,
   Star,
+  Tags,
   Ticket,
   Trash2,
   Truck,
@@ -67,6 +68,7 @@ import { GoogleDriveWorkspace } from './GoogleDriveWorkspace';
 import { GoogleSignInButton } from './GoogleSignInButton';
 import { ProductImageStudioModal } from './ProductImageStudioModal';
 import { ResilientImage } from './ResilientImage';
+import { SquareImageCropModal } from './SquareImageCropModal';
 
 interface AdminDashboardProps {
   open: boolean;
@@ -85,6 +87,97 @@ type AdminTab =
   | 'settings';
 
 const DEFAULT_OWNER_PASSWORD = '604608';
+
+function parseSeoKeywordsText(raw: string): string[] {
+  const parts = String(raw || '').split(/[،,]+/);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of parts) {
+    const cleaned = part.trim();
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(cleaned);
+    if (out.length >= 15) break;
+  }
+  return out;
+}
+
+function createFallbackAdminSettings(): StoreSettings {
+  return {
+    storeName: 'مصنع التاج الذهبي',
+    storeTagline: 'دبات التلوث للديزل والبنزين بالمعايير الأوروبية Euro-6',
+    categories: [
+      { id: 'cat-1', name: 'دبات تلوث البنزين', description: '', isActive: true },
+      { id: 'cat-2', name: 'دبات تلوث الديزل DPF', description: '', isActive: true },
+      { id: 'cat-3', name: 'القلوب السيراميكية والرياضية', description: '', isActive: true },
+    ],
+    marqueeEnabled: true,
+    marqueeText: 'تصنيع وتوريد دبات التلوث المعتمدة بجميع مقاسات السيارات',
+    marqueeBgColor: '#12100B',
+    marqueeTextColor: '#E5C158',
+    marqueeSpeed: 28,
+    marquee2Enabled: true,
+    marquee2Text: 'ضمان حقيقي · اجتياز الفحص الدوري · شحن لجميع مناطق المملكة',
+    marquee2BgColor: '#0D0D10',
+    marquee2TextColor: '#F5F2EB',
+    marquee2Speed: 24,
+    heroEnabled: true,
+    heroTitle: 'مصنع التاج الذهبي لدبات التلوث',
+    heroSubtitle: 'تصنيع دبات تلوث للديزل والبنزين بخلايا بلاتين وسيراميك عالية الكفاءة.',
+    heroCtaText: 'تصفح المنتجات الآن',
+    heroBackdropMode: 'auto',
+    heroVideoUrl: '',
+    heroImageUrl: '',
+    heroSlideshowImages: [],
+    heroAnimatedMotion: 'kenburns',
+    heroFeatures: [],
+    sidebarVideosEnabled: true,
+    sidebarVideoCount: 4,
+    sidebarVideos: [],
+    siteBackgroundType: 'none',
+    siteBackgroundUrl: '',
+    siteBackgroundOpacity: 0.2,
+    siteBackgroundAnimatedMotion: 'kenburns',
+    storeOpen: true,
+    allowLanguageSwitch: true,
+    defaultLanguage: 'ar',
+    multiCurrencyEnabled: true,
+    currencyRates: { ...DEFAULT_CURRENCY_RATES },
+    priceDisplayMode: 'retail',
+    installmentsEnabled: true,
+    primaryGoldColor: '#D4AF37',
+    backgroundColor: '#09090B',
+    surfaceColor: '#131317',
+    whatsappNumber: '966500000000',
+    contactEmail: '',
+    paypalBusinessEmail: '',
+    paypalMeUrl: '',
+    bankTransferEnabled: true,
+    bankName: '',
+    bankAccountHolder: '',
+    bankIban: '',
+    bankAccountNumber: '',
+    sarToUsdRate: 0.266,
+    instagramUrl: '',
+    tiktokUrl: '',
+    aboutUsText: 'مصنع التاج الذهبي لدبات التلوث وقطع العادم المعتمدة بالريال السعودي.',
+    showShippingLogos: true,
+    shippingCarriers: ['زاجل (Zajil)', 'أرامكس (Aramex)', 'سمسا إكسبرس (SMSA)'],
+    loyaltyEnabled: true,
+    coinValueSar: 0.1,
+    dailyCheckinCoins: 25,
+    coinsPer100SarPurchase: 50,
+    charityPopupEnabled: true,
+    seoAutoUpdateEnabled: true,
+    seoKeywords: [],
+    ownerPersonalWhatsapp: '',
+    ownerWhatsappWebhookUrl: '',
+    autoWhatsappAlertsEnabled: false,
+    ownerRecoveryEmail: '',
+  };
+}
 
 function getStoredOwnerPassword(): string {
   try {
@@ -115,6 +208,8 @@ export function AdminDashboard({
     typeof window !== 'undefined' ? sessionStorage.getItem('taj_admin_token') : null
   );
   const [passwordInput, setPasswordInput] = useState('');
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
   const [ownerResetView, setOwnerResetView] = useState(false);
@@ -150,6 +245,8 @@ export function AdminDashboard({
   // Products filter & editor
   const [productFilter, setProductFilter] = useState<'all' | 'published' | 'drafts'>('all');
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
+  const [productSeoKeywordsInput, setProductSeoKeywordsInput] = useState('');
+  const [pendingCropFiles, setPendingCropFiles] = useState<File[]>([]);
   const [savingProduct, setSavingProduct] = useState(false);
   const [translatingProduct, setTranslatingProduct] = useState(false);
   const [uploadingProductImages, setUploadingProductImages] = useState(false);
@@ -165,8 +262,11 @@ export function AdminDashboard({
   const [connectingFirebase, setConnectingFirebase] = useState(false);
 
   // Secret AI Scraper
-  const [scraperMode, setScraperMode] = useState<'similar' | 'single'>('similar');
+  const [scraperMode, setScraperMode] = useState<'similar' | 'single'>('single');
   const [scrapeUrl, setScrapeUrl] = useState('');
+  const [scrapeProductName, setScrapeProductName] = useState('');
+  const [scrapeCategory, setScrapeCategory] = useState('دبات تلوث البنزين');
+  const [scrapeAiGeneratedImg, setScrapeAiGeneratedImg] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [lastScraped, setLastScraped] = useState<Product | null>(null);
   const [similarStoreUrl, setSimilarStoreUrl] = useState('');
@@ -175,6 +275,7 @@ export function AdminDashboard({
   const [profitMarginPercent, setProfitMarginPercent] = useState(30);
   const [extraProfitSar, setExtraProfitSar] = useState(100);
   const [similarBatch, setSimilarBatch] = useState<Product[]>([]);
+  const [storeSeoKeywordsInput, setStoreSeoKeywordsInput] = useState('');
 
   // Store Categories + AI Copy/Identity Enhancement + Studio Image Editor
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -226,25 +327,50 @@ export function AdminDashboard({
     setTimeout(() => setToast(''), 3500);
   };
 
+  const openProductEditor = (productData: Partial<Product>) => {
+    setModalImportUrl('');
+    setModalManualText('');
+    setShowManualPasteBox(false);
+    setImportUrlStatus('');
+    setImportUrlWarning('');
+    setImportUrlError('');
+    setProductSeoKeywordsInput((productData.seoKeywords || []).slice(0, 15).join('، '));
+    setEditingProduct({ ...productData });
+  };
+
   const fetchDashboard = useCallback(
     async (tokenOverride?: string) => {
       const tk = tokenOverride || adminToken;
       if (!tk) {
-        // Hydrate cached admin snapshot if available locally
         try {
           const cachedRaw = localStorage.getItem('taj_admin_dashboard_cache');
           if (cachedRaw) {
             const cached = JSON.parse(cachedRaw);
-            if (cached.settings) setSettings(cached.settings);
+            if (cached.settings) {
+              setSettings(cached.settings);
+              setStoreSeoKeywordsInput((cached.settings.seoKeywords || []).slice(0, 15).join('، '));
+            }
             if (cached.products) setProducts(cached.products);
             if (cached.banners) setBanners(cached.banners);
             if (cached.customers) setCustomers(cached.customers);
             if (cached.orders) setOrders(cached.orders);
             if (cached.reviews) setReviews(cached.reviews);
             if (cached.analytics) setAnalytics(cached.analytics);
+          } else {
+            const sfRes = await fetch('/api/storefront');
+            if (sfRes.ok) {
+              const sfData = await sfRes.json();
+              const baseSettings = { ...createFallbackAdminSettings(), ...(sfData.settings || {}) };
+              setSettings(baseSettings);
+              setStoreSeoKeywordsInput((baseSettings.seoKeywords || []).slice(0, 15).join('، '));
+              setProducts(sfData.products || []);
+              setBanners(sfData.banners || []);
+            } else {
+              setSettings((prev) => prev || createFallbackAdminSettings());
+            }
           }
         } catch {
-          // ignore
+          setSettings((prev) => prev || createFallbackAdminSettings());
         }
         return;
       }
@@ -255,11 +381,24 @@ export function AdminDashboard({
         });
         if (res.status === 401) {
           sessionStorage.removeItem('taj_admin_token');
+          try {
+            localStorage.removeItem('owner_authenticated');
+          } catch {
+            // ignore
+          }
           setAdminToken(null);
+          setIsOwnerAuthenticated(false);
+          return;
+        }
+        if (!res.ok) {
+          setSettings((prev) => prev || createFallbackAdminSettings());
+          showToast('تعذر جلب أحدث بيانات لوحة التحكم من الخادم.');
           return;
         }
         const data = await res.json();
-        setSettings(data.settings);
+        const loadedSettings = data.settings || createFallbackAdminSettings();
+        setSettings(loadedSettings);
+        setStoreSeoKeywordsInput((loadedSettings.seoKeywords || []).slice(0, 15).join('، '));
         setProducts(data.products || []);
         setBanners(data.banners || []);
         setCustomers(data.customers || []);
@@ -273,7 +412,7 @@ export function AdminDashboard({
           localStorage.setItem(
             'taj_admin_dashboard_cache',
             JSON.stringify({
-              settings: data.settings,
+              settings: loadedSettings,
               products: data.products || [],
               banners: data.banners || [],
               customers: data.customers || [],
@@ -286,7 +425,7 @@ export function AdminDashboard({
           // ignore cache overflow
         }
       } catch {
-        // fallback cleanly without blocking owner UI
+        setSettings((prev) => prev || createFallbackAdminSettings());
       } finally {
         setLoadingData(false);
       }
@@ -307,14 +446,20 @@ export function AdminDashboard({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: storedPw }),
     })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok ? r.json() : { invalid: true }))
       .then((data) => {
         if (data?.token) {
           sessionStorage.setItem('taj_admin_token', data.token);
           setAdminToken(data.token);
           fetchDashboard(data.token);
         } else {
-          fetchDashboard();
+          try {
+            localStorage.removeItem('owner_authenticated');
+          } catch {
+            // ignore
+          }
+          setIsOwnerAuthenticated(false);
+          if (data?.requiresTwoFactor) setRequiresTwoFactor(true);
         }
       })
       .catch(() => {
@@ -334,41 +479,62 @@ export function AdminDashboard({
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-    const expectedSecret = getStoredOwnerPassword();
-    if (passwordInput !== expectedSecret) {
-      setLoginError('كلمة المرور غير صحيحة');
+    const entered = passwordInput;
+    if (!entered) {
+      setLoginError('يرجى إدخال كلمة مرور المالك');
       return;
     }
 
     setLoggingIn(true);
     try {
-      localStorage.setItem('owner_authenticated', 'true');
-    } catch {
-      // ignore
-    }
-    setIsOwnerAuthenticated(true);
-    const entered = passwordInput;
-    setPasswordInput('');
-
-    // Silently obtain backend session token in background
-    try {
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: entered }),
+        body: JSON.stringify({
+          password: entered,
+          ...(requiresTwoFactor && twoFactorCode.trim() ? { twoFactorCode: twoFactorCode.trim() } : {}),
+        }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.token) {
-          sessionStorage.setItem('taj_admin_token', data.token);
-          setAdminToken(data.token);
-          await fetchDashboard(data.token);
-        }
-      } else {
-        await fetchDashboard();
+      const data = await res.json();
+
+      if (data?.requiresTwoFactor) {
+        setRequiresTwoFactor(true);
+        setLoginError(data.message || 'يرجى إدخال رمز التحقق الثنائي (2FA) لإتمام الدخول.');
+        return;
       }
+
+      if (!res.ok || !data?.token) {
+        setLoginError(data?.error || 'كلمة المرور غير صحيحة');
+        return;
+      }
+
+      try {
+        localStorage.setItem('owner_authenticated', 'true');
+        localStorage.setItem('taj_owner_secret', entered);
+        sessionStorage.setItem('taj_admin_token', data.token);
+      } catch {
+        // ignore
+      }
+      setRequiresTwoFactor(false);
+      setTwoFactorCode('');
+      setPasswordInput('');
+      setIsOwnerAuthenticated(true);
+      setAdminToken(data.token);
+      await fetchDashboard(data.token);
     } catch {
-      await fetchDashboard();
+      const expectedSecret = getStoredOwnerPassword();
+      if (entered === expectedSecret) {
+        try {
+          localStorage.setItem('owner_authenticated', 'true');
+        } catch {
+          // ignore
+        }
+        setIsOwnerAuthenticated(true);
+        setPasswordInput('');
+        await fetchDashboard();
+      } else {
+        setLoginError('تعذر التحقق من كلمة المرور.');
+      }
     } finally {
       setLoggingIn(false);
     }
@@ -382,6 +548,8 @@ export function AdminDashboard({
       // ignore
     }
     setIsOwnerAuthenticated(false);
+    setRequiresTwoFactor(false);
+    setTwoFactorCode('');
     setAdminToken(null);
     setNotifOpen(false);
     onClose();
@@ -391,6 +559,7 @@ export function AdminDashboard({
     file: File,
     target:
       | 'heroImage'
+      | 'heroVideo'
       | 'heroSlideshow'
       | 'siteBg'
       | 'siteBgVideo'
@@ -401,46 +570,68 @@ export function AdminDashboard({
       | 'sidebarVideo-2'
       | 'sidebarVideo-3'
   ) => {
-    if (!adminToken && target !== 'guidePdf' && target !== 'guideImage') {
-      showToast('جاري مزامنة الجلسة مع الخادم...');
+    const tk = await ensureAdminSessionToken();
+    if (!tk && target !== 'guidePdf' && target !== 'guideImage') {
+      showToast('تعذر التحقق من جلسة المالك لرفع الملف.');
       return;
     }
-    const isVideoTarget = target.startsWith('sidebarVideo-') || target === 'siteBgVideo';
-    const maxBytes = isVideoTarget ? 45 * 1024 * 1024 : 20 * 1024 * 1024;
+    const isVideoTarget =
+      target.startsWith('sidebarVideo-') || target === 'siteBgVideo' || target === 'heroVideo';
+    const maxBytes = isVideoTarget ? 100 * 1024 * 1024 : 20 * 1024 * 1024;
     if (file.size > maxBytes) {
       showToast(
         isVideoTarget
-          ? 'الحد الأقصى لحجم ملف الفيديو المرفوع 45 ميجابايت.'
+          ? 'الحد الأقصى لحجم ملف الفيديو المرفوع 100 ميجابايت.'
           : 'الحد الأقصى لحجم الملف المرفوع 20 ميجابايت.'
       );
       return;
     }
     setUploadingTarget(target);
     try {
-      const dataBase64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(new Error('فشل قراءة الملف'));
-        reader.readAsDataURL(file);
-      });
-
-      let resolvedUrl = dataBase64;
-      if (adminToken) {
-        const res = await fetch('/api/admin/upload', {
+      let resolvedUrl = '';
+      if (tk && isVideoTarget) {
+        const res = await fetch('/api/admin/upload-binary', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${adminToken}`,
+            Authorization: `Bearer ${tk}`,
+            'Content-Type': file.type || 'video/mp4',
+            'X-Filename': encodeURIComponent(file.name),
+            'X-Mime-Type': file.type || 'video/mp4',
           },
-          body: JSON.stringify({
-            filename: file.name,
-            mimeType: file.type || 'application/octet-stream',
-            dataBase64,
-          }),
+          body: file,
         });
         if (res.ok) {
           const data = await res.json();
           if (data?.url) resolvedUrl = data.url as string;
+        }
+      }
+
+      if (!resolvedUrl) {
+        const dataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('فشل قراءة الملف'));
+          reader.readAsDataURL(file);
+        });
+
+        resolvedUrl = dataBase64;
+        if (tk) {
+          const res = await fetch('/api/admin/upload', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${tk}`,
+            },
+            body: JSON.stringify({
+              filename: file.name,
+              mimeType: file.type || 'application/octet-stream',
+              dataBase64,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.url) resolvedUrl = data.url as string;
+          }
         }
       }
 
@@ -461,31 +652,37 @@ export function AdminDashboard({
         return;
       }
 
-      if (!settings) return;
+      const activeSettings = settings || createFallbackAdminSettings();
       if (target === 'heroImage') {
-        setSettings({ ...settings, heroImageUrl: resolvedUrl });
+        setSettings({ ...activeSettings, heroImageUrl: resolvedUrl });
+      } else if (target === 'heroVideo') {
+        setSettings({
+          ...activeSettings,
+          heroVideoUrl: resolvedUrl,
+          heroBackdropMode: 'video',
+        });
       } else if (target === 'heroSlideshow') {
         setSettings({
-          ...settings,
-          heroSlideshowImages: [...(settings.heroSlideshowImages || []), resolvedUrl],
+          ...activeSettings,
+          heroSlideshowImages: [...(activeSettings.heroSlideshowImages || []), resolvedUrl],
           heroBackdropMode: 'slideshow',
         });
       } else if (target === 'siteBg') {
-        const isAnimated = file.type.includes('gif') || settings.siteBackgroundType === 'animated_image';
+        const isAnimated = file.type.includes('gif') || activeSettings.siteBackgroundType === 'animated_image';
         setSettings({
-          ...settings,
+          ...activeSettings,
           siteBackgroundUrl: resolvedUrl,
           siteBackgroundType: isAnimated ? 'animated_image' : 'image',
         });
       } else if (target === 'siteBgVideo') {
         setSettings({
-          ...settings,
+          ...activeSettings,
           siteBackgroundUrl: resolvedUrl,
           siteBackgroundType: 'video',
         });
       } else if (target.startsWith('sidebarVideo-')) {
         const slotIdx = Number(target.split('-')[1]);
-        const currentList = [...(settings.sidebarVideos || [])];
+        const currentList = [...(activeSettings.sidebarVideos || [])];
         while (currentList.length <= slotIdx) {
           currentList.push({
             id: `vid-${currentList.length + 1}`,
@@ -494,9 +691,9 @@ export function AdminDashboard({
           });
         }
         currentList[slotIdx] = { ...currentList[slotIdx], url: resolvedUrl };
-        setSettings({ ...settings, sidebarVideos: currentList });
+        setSettings({ ...activeSettings, sidebarVideos: currentList });
       }
-      showToast('تم رفع الملف بنجاح! اضغط "حفظ الإعدادات" لتثبيته في المتجر.');
+      showToast('تم رفع الملف بنجاح! اضغط "حفظ وتطبيق" لتثبيته في المتجر فوراً.');
     } catch {
       showToast('تعذر رفع الملف.');
     } finally {
@@ -504,49 +701,73 @@ export function AdminDashboard({
     }
   };
 
-  // Multi-image upload directly to Base64 Data URL + saved to localStorage
-  const handleProductMultiImageUpload = async (files: FileList | null) => {
+  // Trigger interactive 1:1 (1000x1000 px) cropper modal on selected product images
+  const handleProductMultiImageUpload = (files: FileList | null) => {
     if (!files || files.length === 0 || !editingProduct) return;
+    const validFiles: File[] = [];
+    for (const file of Array.from(files)) {
+      if (file.size > 20 * 1024 * 1024) {
+        showToast(`الصورة "${file.name}" أكبر من 20 ميجابايت.`);
+        continue;
+      }
+      validFiles.push(file);
+    }
+    if (validFiles.length > 0) {
+      setPendingCropFiles(validFiles);
+    }
+  };
+
+  const handleCropModalComplete = async (
+    croppedFiles: { dataUrl: string; fileName: string }[]
+  ) => {
+    setPendingCropFiles([]);
+    if (!editingProduct || croppedFiles.length === 0) return;
     setUploadingProductImages(true);
     try {
-      const dataUrls: string[] = [];
-      for (const file of Array.from(files)) {
-        if (file.size > 15 * 1024 * 1024) {
-          showToast(`الصورة "${file.name}" أكبر من 15 ميجابايت.`);
-          continue;
+      const tk = await ensureAdminSessionToken();
+      const uploadedUrls: string[] = [];
+
+      for (const item of croppedFiles) {
+        let finalUrl = item.dataUrl;
+        if (tk) {
+          try {
+            const res = await fetch('/api/admin/upload', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${tk}`,
+              },
+              body: JSON.stringify({
+                filename: item.fileName,
+                mimeType: 'image/jpeg',
+                dataBase64: item.dataUrl,
+              }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.url) finalUrl = data.url as string;
+            }
+          } catch {
+            // Keep dataUrl fallback when server upload fails
+          }
         }
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ''));
-          reader.onerror = () => reject(new Error('read failed'));
-          reader.readAsDataURL(file);
-        });
-        if (dataUrl) dataUrls.push(dataUrl);
+        uploadedUrls.push(finalUrl);
       }
 
-      if (dataUrls.length === 0) return;
-
-      const existingImages = (editingProduct.images || []).filter((s) => s.trim().length > 0);
-      const mergedImages = [...existingImages, ...dataUrls];
-      setEditingProduct({
-        ...editingProduct,
-        images: mergedImages,
+      setEditingProduct((prev) => {
+        if (!prev) return prev;
+        const existingImages = (prev.images || []).filter((s) => s.trim().length > 0);
+        return {
+          ...prev,
+          images: [...existingImages, ...uploadedUrls],
+        };
       });
 
-      // Persist uploaded Base64 images in localStorage
-      try {
-        const productKey = editingProduct.id || 'draft_new_product';
-        const savedMapRaw = localStorage.getItem('taj_product_uploaded_images');
-        const savedMap = savedMapRaw ? JSON.parse(savedMapRaw) : {};
-        savedMap[productKey] = mergedImages;
-        localStorage.setItem('taj_product_uploaded_images', JSON.stringify(savedMap));
-      } catch {
-        // ignore quota errors
-      }
-
-      showToast(`تم رفع وإضافة ${dataUrls.length} صورة بصيغة Base64 وحفظها محلياً.`);
+      showToast(
+        `تم قص وضبط مقاس ${uploadedUrls.length} صورة تلقائياً (1000 × 1000 بكسل) وإضافتها بنجاح.`
+      );
     } catch {
-      showToast('تعذر قراءة الصور المحددة.');
+      showToast('تعذر رفع الصور المقصوصة.');
     } finally {
       setUploadingProductImages(false);
     }
@@ -895,6 +1116,8 @@ export function AdminDashboard({
       setReviews((prev) => prev.map((r) => (r.id === reviewId ? data.review : r)));
       onStorefrontUpdated();
       showToast(approved ? 'تم اعتماد ونشر التقييم في المتجر.' : 'تم إخفاء التقييم عن المتجر.');
+    } else {
+      showToast('تعذر تحديث حالة التقييم.');
     }
   };
 
@@ -908,6 +1131,8 @@ export function AdminDashboard({
       setReviews((prev) => prev.filter((r) => r.id !== reviewId));
       onStorefrontUpdated();
       showToast('تم حذف التقييم.');
+    } else {
+      showToast('تعذر حذف التقييم.');
     }
   };
 
@@ -1062,6 +1287,8 @@ export function AdminDashboard({
       const data = await res.json();
       setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
       showToast('تم حفظ تحديث الطلب وإشعار الشحن.');
+    } else {
+      showToast('تعذر حفظ تحديث الطلب.');
     }
   };
 
@@ -1113,6 +1340,8 @@ export function AdminDashboard({
       setProducts((prev) => prev.map((p) => (p.id === product.id ? data.product : p)));
       onStorefrontUpdated();
       showToast(nextPublished ? 'تم نشر المنتج في واجهة المتجر.' : 'تم إخفاء المنتج كمسودة سرية.');
+    } else {
+      showToast('تعذر تحديث حالة نشر المنتج.');
     }
   };
 
@@ -1126,6 +1355,8 @@ export function AdminDashboard({
       setProducts((prev) => prev.filter((p) => p.id !== id));
       onStorefrontUpdated();
       showToast('تم حذف المنتج.');
+    } else {
+      showToast('تعذر حذف المنتج.');
     }
   };
 
@@ -1139,6 +1370,11 @@ export function AdminDashboard({
         showToast('تعذر التحقق من جلسة المالك لحفظ المنتج.');
         return;
       }
+      const parsedSeoKeywords = parseSeoKeywordsText(productSeoKeywordsInput);
+      const payloadToSave: Partial<Product> = {
+        ...editingProduct,
+        seoKeywords: parsedSeoKeywords,
+      };
       const isNew = !editingProduct.id;
       const endpoint = isNew
         ? '/api/admin/products'
@@ -1149,7 +1385,7 @@ export function AdminDashboard({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${tk}`,
         },
-        body: JSON.stringify(editingProduct),
+        body: JSON.stringify(payloadToSave),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1176,6 +1412,7 @@ export function AdminDashboard({
       }
 
       setEditingProduct(null);
+      setProductSeoKeywordsInput('');
       setModalImportUrl('');
       setModalManualText('');
       setShowManualPasteBox(false);
@@ -1186,8 +1423,10 @@ export function AdminDashboard({
       showToast(
         syncedToFirebase
           ? 'تم حفظ المنتج في المتجر وقاعدة بيانات Firebase بنجاح!'
-          : 'تم حفظ بيانات المنتج في المتجر بنجاح.'
+          : 'تم حفظ بيانات المنتج وعرضها في المتجر بنجاح.'
       );
+    } catch {
+      showToast('حدث خطأ في الاتصال بالخادم أثناء حفظ المنتج.');
     } finally {
       setSavingProduct(false);
     }
@@ -1195,29 +1434,52 @@ export function AdminDashboard({
 
   const handleScrapeProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminToken || !scrapeUrl.trim()) return;
+    const cleanUrl = scrapeUrl.trim();
+    const cleanName = scrapeProductName.trim();
+    if (!cleanUrl && !cleanName) {
+      showToast('يرجى إدخال رابط المنتج أو كتابة اسم المنتج لتوليده وحفظه تلقائياً.');
+      return;
+    }
     setScraping(true);
     setLastScraped(null);
+    setScrapeAiGeneratedImg(false);
     try {
+      const tk = await ensureAdminSessionToken();
+      if (!tk) {
+        showToast('تعذر التحقق من جلسة المالك.');
+        return;
+      }
       const res = await fetch('/api/admin/scrape-product', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
+          Authorization: `Bearer ${tk}`,
         },
-        body: JSON.stringify({ url: scrapeUrl.trim() }),
+        body: JSON.stringify({
+          url: cleanUrl || undefined,
+          productName: cleanName || undefined,
+          category: scrapeCategory,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
-        showToast(data.error || 'تعذر سحب المنتج.');
+        showToast(data.error || 'تعذر سحب أو توليد المنتج.');
         return;
       }
-      setProducts((prev) => [data.product, ...prev]);
-      setLastScraped(data.product);
+      const saved = data.product as Product;
+      setProducts((prev) => [saved, ...prev]);
+      setLastScraped(saved);
+      setScrapeAiGeneratedImg(Boolean(data.aiGeneratedImage));
       setScrapeUrl('');
-      showToast('تم استخراج المنتج وحفظه كمسودة سرية مخفية عن العملاء.');
+      setScrapeProductName('');
+      onStorefrontUpdated();
+      showToast(
+        data.aiGeneratedImage
+          ? 'تم إنشاء المنتج وتوليد صورة احترافية (1000×1000) ونشره في المتجر وقسم المنتجات فوراً!'
+          : 'تم سحب المنتج وصياغة وصفه العربي ونشره في المتجر وقسم المنتجات فوراً!'
+      );
     } catch {
-      showToast('حدث خطأ أثناء تحليل الرابط.');
+      showToast('حدث خطأ أثناء السحب أو التوليد بالذكاء الاصطناعي.');
     } finally {
       setScraping(false);
     }
@@ -1262,23 +1524,33 @@ export function AdminDashboard({
   };
 
   const persistSettingsObject = async (nextSettings: StoreSettings, message: string) => {
-    if (!adminToken) return;
+    const tk = await ensureAdminSessionToken();
+    if (!tk) {
+      showToast('تعذر التحقق من جلسة المالك لحفظ الإعدادات.');
+      return;
+    }
     setSavingSettings(true);
     try {
       const res = await fetch('/api/admin/settings', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
+          Authorization: `Bearer ${tk}`,
         },
         body: JSON.stringify(nextSettings),
       });
       if (res.ok) {
         const data = await res.json();
         setSettings(data.settings);
+        setStoreSeoKeywordsInput((data.settings?.seoKeywords || []).slice(0, 15).join('، '));
         onStorefrontUpdated();
         showToast(message);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data?.error || 'تعذر حفظ الإعدادات على الخادم.');
       }
+    } catch {
+      showToast('حدث خطأ أثناء الاتصال بالخادم لحفظ الإعدادات.');
     } finally {
       setSavingSettings(false);
     }
@@ -1400,14 +1672,18 @@ export function AdminDashboard({
       });
       const data = await res.json();
       if (res.ok && data.result) {
+        const nextKw =
+          Array.isArray(data.result.seoKeywords) && data.result.seoKeywords.length > 0
+            ? data.result.seoKeywords.slice(0, 15)
+            : editingProduct.seoKeywords;
+        if (nextKw) {
+          setProductSeoKeywordsInput(nextKw.join('، '));
+        }
         setEditingProduct({
           ...editingProduct,
           name: data.result.name || editingProduct.name,
           description: data.result.description || editingProduct.description,
-          seoKeywords:
-            Array.isArray(data.result.seoKeywords) && data.result.seoKeywords.length > 0
-              ? data.result.seoKeywords
-              : editingProduct.seoKeywords,
+          seoKeywords: nextKw,
           specs:
             Array.isArray(data.result.specs) && data.result.specs.length > 0
               ? data.result.specs
@@ -1516,92 +1792,119 @@ export function AdminDashboard({
 
   const handlePublishGeneratedBanner = async () => {
     if (!adminToken || !generatedCampaign) return;
-    const res = await fetch('/api/admin/banners', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`,
-      },
-      body: JSON.stringify({
-        ...generatedCampaign.banner,
-        googleAdsHeadlines: generatedCampaign.googleAdsHeadlines,
-        googleAdsDescriptions: generatedCampaign.googleAdsDescriptions,
-        googleAdsKeywords: generatedCampaign.googleAdsKeywords,
-        isActive: true,
-      }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setBanners((prev) => [data.banner, ...prev]);
-      onStorefrontUpdated();
-      showToast('تم نشر البنر الترويجي في واجهة المتجر بنجاح.');
+    try {
+      const res = await fetch('/api/admin/banners', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify({
+          ...generatedCampaign.banner,
+          googleAdsHeadlines: generatedCampaign.googleAdsHeadlines,
+          googleAdsDescriptions: generatedCampaign.googleAdsDescriptions,
+          googleAdsKeywords: generatedCampaign.googleAdsKeywords,
+          isActive: true,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.banner) {
+        setBanners((prev) => [data.banner, ...prev]);
+        onStorefrontUpdated();
+        showToast('تم نشر البنر الترويجي في واجهة المتجر بنجاح.');
+      } else {
+        showToast(data?.error || 'تعذر نشر البنر الترويجي.');
+      }
+    } catch {
+      showToast('حدث خطأ في الاتصال بالخادم أثناء نشر البنر.');
     }
   };
 
   const handleToggleBanner = async (banner: PromoBanner) => {
     if (!adminToken) return;
-    const res = await fetch(`/api/admin/banners/${banner.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`,
-      },
-      body: JSON.stringify({ isActive: !banner.isActive }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setBanners((prev) => prev.map((b) => (b.id === banner.id ? data.banner : b)));
-      onStorefrontUpdated();
-    }
-  };
-
-  const handleDeleteBanner = async (id: string) => {
-    if (!adminToken) return;
-    const res = await fetch(`/api/admin/banners/${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${adminToken}` },
-    });
-    if (res.ok) {
-      setBanners((prev) => prev.filter((b) => b.id !== id));
-      onStorefrontUpdated();
-    }
-  };
-
-  const handleSaveSettings = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adminToken || !settings) return;
-    setSavingSettings(true);
     try {
-      const res = await fetch('/api/admin/settings', {
+      const res = await fetch(`/api/admin/banners/${banner.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${adminToken}`,
         },
-        body: JSON.stringify(settings),
+        body: JSON.stringify({ isActive: !banner.isActive }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.banner) {
+        setBanners((prev) => prev.map((b) => (b.id === banner.id ? data.banner : b)));
+        onStorefrontUpdated();
+        showToast(data.banner.isActive ? 'تم إظهار البنر في المتجر.' : 'تم إخفاء البنر.');
+      } else {
+        showToast(data?.error || 'تعذر تحديث حالة البنر.');
+      }
+    } catch {
+      showToast('تعذر الاتصال بالخادم لتحديث حالة البنر.');
+    }
+  };
+
+  const handleDeleteBanner = async (id: string) => {
+    if (!adminToken) return;
+    try {
+      const res = await fetch(`/api/admin/banners/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
       });
       if (res.ok) {
-        const data = await res.json();
-        setSettings(data.settings);
+        setBanners((prev) => prev.filter((b) => b.id !== id));
         onStorefrontUpdated();
-        showToast('تم حفظ إعدادات المتجر والثيم بنجاح.');
+        showToast('تم حذف البنر الترويجي.');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data?.error || 'تعذر حذف البنر الترويجي.');
       }
-    } finally {
-      setSavingSettings(false);
+    } catch {
+      showToast('حدث خطأ أثناء الاتصال بالخادم لحذف البنر.');
     }
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!settings) return;
+    const syncedSettings: StoreSettings = {
+      ...settings,
+      seoKeywords: parseSeoKeywordsText(storeSeoKeywordsInput),
+    };
+    await persistSettingsObject(syncedSettings, 'تم حفظ وتطبيق إعدادات المتجر والثيم بنجاح.');
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPwNotice('');
-    const currentStored = getStoredOwnerPassword();
-    if (currentPw && currentPw !== currentStored) {
-      showToast('كلمة المرور الحالية غير صحيحة.');
-      return;
-    }
     if (newPw.trim().length < 6) {
       showToast('يجب أن تكون كلمة المرور الجديدة 6 أحرف على الأقل.');
       return;
+    }
+
+    const tk = await ensureAdminSessionToken();
+    if (tk) {
+      try {
+        const res = await fetch('/api/admin/change-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${tk}`,
+          },
+          body: JSON.stringify({
+            currentPassword: currentPw || getStoredOwnerPassword(),
+            newPassword: newPw.trim(),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showToast(data?.error || 'كلمة المرور الحالية غير صحيحة.');
+          return;
+        }
+      } catch {
+        showToast('تعذر الاتصال بالخادم لتحديث كلمة المرور.');
+        return;
+      }
     }
 
     try {
@@ -1610,25 +1913,10 @@ export function AdminDashboard({
       // ignore
     }
 
-    if (adminToken) {
-      try {
-        await fetch('/api/admin/change-password', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${adminToken}`,
-          },
-          body: JSON.stringify({ currentPassword: currentPw || currentStored, newPassword: newPw.trim() }),
-        });
-      } catch {
-        // localStorage already updated
-      }
-    }
-
     setCurrentPw('');
     setNewPw('');
-    setPwNotice('تم حفظ كلمة المرور الجديدة في المتصفح (localStorage) بنجاح.');
-    showToast('تم تحديث كلمة مرور المالك وحفظها للدخول القادم.');
+    setPwNotice('تم حفظ كلمة المرور الجديدة بنجاح.');
+    showToast('تم تحديث كلمة مرور المالك بنجاح.');
   };
 
   const copyText = (key: string, value: string) => {
@@ -1787,6 +2075,23 @@ export function AdminDashboard({
                     className="w-full h-11 px-3.5 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
                   />
                 </div>
+
+                {requiresTwoFactor && (
+                  <div>
+                    <label className="block text-xs text-[#E5C158] mb-1.5">
+                      رمز التحقق الثنائي (2FA / Backup Code)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      dir="ltr"
+                      value={twoFactorCode}
+                      onChange={(e) => setTwoFactorCode(e.target.value)}
+                      placeholder="123456"
+                      className="w-full h-11 px-3.5 rounded-xl bg-[#16161B] border border-[#D4AF37]/45 text-sm text-center tracking-widest focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+                )}
 
                 <button
                   type="submit"
@@ -2022,14 +2327,14 @@ export function AdminDashboard({
       </header>
 
       {toast && (
-        <div className="fixed bottom-5 left-5 z-50 px-4 py-3 rounded-xl border border-[#D4AF37]/50 bg-[#171510] text-sm text-[#E5C158] shadow-2xl">
+        <div className="fixed bottom-5 end-5 z-50 px-4 py-3 rounded-xl border border-[#D4AF37]/50 bg-[#171510] text-sm text-[#E5C158] shadow-2xl">
           {toast}
         </div>
       )}
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Sidebar Navigation */}
-        <aside className="lg:w-64 border-b lg:border-b-0 lg:border-l border-white/10 bg-[#0D0D10] p-3 flex lg:flex-col gap-1.5 overflow-x-auto shrink-0">
+        <aside className="lg:w-64 border-b lg:border-b-0 lg:border-e border-white/10 bg-[#0D0D10] p-3 flex lg:flex-col gap-1.5 overflow-x-auto shrink-0">
           {[
             { id: 'overview', label: 'الطلبات والعملاء', icon: LayoutDashboard },
             {
@@ -2847,9 +3152,47 @@ export function AdminDashboard({
               )}
 
               {/* TAB 3: PRODUCTS, SECTIONS & SECRET DRAFTS MANAGER */}
-              {activeTab === 'products' && settings && (
+              {activeTab === 'products' && (() => {
+                const activeCategories =
+                  settings?.categories && settings.categories.length > 0
+                    ? settings.categories
+                    : createFallbackAdminSettings().categories;
+                return (
                 <div className="space-y-6">
+                  {/* Top Action Bar: Always visible Add Product button + Filter */}
+                  <div className="p-4 sm:p-5 rounded-2xl border border-[#D4AF37]/40 bg-[#14120E] flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-display text-base sm:text-lg font-bold text-[#E5C158]">
+                        إدارة المنتجات والمسودات ({products.length})
+                      </h3>
+                      <p className="text-xs text-[#C5BFB2]">
+                        أضف منتجاتك بالريال السعودي مع قص الصورة تلقائياً (1000 × 1000 بكسل) وكلمات البحث SEO
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openProductEditor({
+                          name: '',
+                          category: activeCategories[0]?.name || 'دبات تلوث البنزين',
+                          priceSar: 1200,
+                          description: '',
+                          images: [],
+                          seoKeywords: [],
+                          specs: [{ label: 'نوع الوقود', value: 'بنزين / ديزل' }],
+                          inStock: true,
+                          isPublished: true,
+                        })
+                      }
+                      className="btn-gold-wave h-11 px-5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer shrink-0 shadow-lg"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>إضافة منتج جديد</span>
+                    </button>
+                  </div>
+
                   {/* Quick Section / Category Creator & Save */}
+                  {settings && (
                   <div className="p-4 sm:p-5 rounded-2xl border border-[#D4AF37]/30 bg-[#121216] space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h3 className="font-bold text-sm text-[#E5C158]">
@@ -2868,7 +3211,7 @@ export function AdminDashboard({
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      {(settings.categories || []).map((cat) => (
+                      {activeCategories.map((cat) => (
                         <div
                           key={cat.id}
                           className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs ${
@@ -2927,6 +3270,7 @@ export function AdminDashboard({
                       </button>
                     </div>
                   </div>
+                  )}
 
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-1 p-1 rounded-xl bg-[#121216] border border-white/10">
@@ -2949,44 +3293,42 @@ export function AdminDashboard({
                         </button>
                       ))}
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setModalImportUrl('');
-                        setModalManualText('');
-                        setShowManualPasteBox(false);
-                        setImportUrlStatus('');
-                        setImportUrlWarning('');
-                        setImportUrlError('');
-                        setEditingProduct({
-                          name: '',
-                          category:
-                            settings.categories?.[0]?.name || 'دبات تلوث البنزين',
-                          priceSar: 1200,
-                          description: '',
-                          images: [],
-                          specs: [{ label: 'نوع الوقود', value: 'بنزين / ديزل' }],
-                          inStock: true,
-                          isPublished: true,
-                        });
-                      }}
-                      className="btn-gold-wave h-10 px-4 rounded-xl text-xs sm:text-sm flex items-center gap-2 cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>إضافة منتج جديد</span>
-                    </button>
                   </div>
 
+                  {filteredProducts.length === 0 ? (
+                    <div className="p-8 rounded-2xl border border-white/10 bg-[#121216] text-center space-y-3">
+                      <p className="text-sm text-[#C5BFB2]">لا توجد منتجات مطابقة للتصفية الحالية.</p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openProductEditor({
+                            name: '',
+                            category: activeCategories[0]?.name || 'دبات تلوث البنزين',
+                            priceSar: 1200,
+                            description: '',
+                            images: [],
+                            seoKeywords: [],
+                            specs: [{ label: 'نوع الوقود', value: 'بنزين / ديزل' }],
+                            inStock: true,
+                            isPublished: true,
+                          })
+                        }
+                        className="btn-gold-wave h-10 px-5 rounded-xl text-xs font-bold inline-flex items-center gap-2 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>إضافة أول منتج الآن</span>
+                      </button>
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {filteredProducts.map((product) => (
                       <div
                         key={product.id}
                         className="p-4 rounded-2xl border border-white/10 bg-[#121216] flex gap-4"
                       >
-                        <div className="w-24 h-24 rounded-xl overflow-hidden border border-white/10 shrink-0">
+                        <div className="w-24 h-24 rounded-xl overflow-hidden border border-white/10 shrink-0 bg-[#09090B]">
                           <ResilientImage
-                            src={product.images[0]}
+                            src={(product.images || [])[0] || ''}
                             alt={product.name}
                             className="w-full h-full object-cover"
                           />
@@ -3008,14 +3350,23 @@ export function AdminDashboard({
                             {product.name}
                           </h4>
                           <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-[#E5C158] tabular-nums">
-                            <span>{product.priceSar.toLocaleString('ar-SA')} ر.س</span>
+                            <span>{Number(product.priceSar || 0).toLocaleString('ar-SA')} ر.س</span>
                             {product.costPriceSar ? (
                               <span className="text-[11px] font-normal text-emerald-300">
                                 (التكلفة: {product.costPriceSar} | ربح:{' '}
-                                {Math.max(0, product.priceSar - product.costPriceSar)} ر.س)
+                                {Math.max(0, Number(product.priceSar || 0) - product.costPriceSar)} ر.س)
                               </span>
                             ) : null}
                           </div>
+
+                          {product.seoKeywords && product.seoKeywords.length > 0 && (
+                            <div className="text-[11px] text-[#B8B0A0] truncate">
+                              SEO: {product.seoKeywords.slice(0, 4).join('، ')}
+                              {product.seoKeywords.length > 4
+                                ? ` (+${product.seoKeywords.length - 4})`
+                                : ''}
+                            </div>
+                          )}
 
                           {product.sourceUrl && (
                             <a
@@ -3032,7 +3383,7 @@ export function AdminDashboard({
                           <div className="flex flex-wrap items-center gap-2 pt-1">
                             <button
                               type="button"
-                              onClick={() => setEditingProduct({ ...product })}
+                              onClick={() => openProductEditor(product)}
                               className="px-3 py-1.5 rounded-lg border border-white/15 bg-[#16161B] hover:border-[#D4AF37] text-xs cursor-pointer"
                             >
                               تعديل
@@ -3043,7 +3394,7 @@ export function AdminDashboard({
                                 setStudioTarget({
                                   productId: product.id,
                                   fromEditorModal: false,
-                                  imageUrl: product.images[0] || '',
+                                  imageUrl: (product.images || [])[0] || '',
                                   name: product.name,
                                   category: product.category,
                                   priceSar: product.priceSar,
@@ -3088,8 +3439,10 @@ export function AdminDashboard({
                       </div>
                     ))}
                   </div>
+                  )}
                 </div>
-              )}
+                );
+              })()}
 
               {/* TAB 4: SECRET AI PRODUCT SCRAPER (SIMILAR PRODUCTS + PROFIT OR SINGLE URL) */}
               {activeTab === 'scraper' && (
@@ -3242,7 +3595,7 @@ export function AdminDashboard({
                                 <div className="flex gap-3">
                                   <div className="w-24 h-24 rounded-xl overflow-hidden border border-white/10 shrink-0">
                                     <ResilientImage
-                                      src={item.images[0]}
+                                      src={(item.images || [])[0] || ''}
                                       alt={item.name}
                                       className="w-full h-full object-cover"
                                     />
@@ -3252,12 +3605,17 @@ export function AdminDashboard({
                                       {item.name}
                                     </div>
                                     <div className="text-xs font-bold text-[#E5C158] tabular-nums">
-                                      سعر البيع بالربح: {item.priceSar.toLocaleString('ar-SA')} ر.س
+                                      سعر البيع بالربح:{' '}
+                                      {Number(item.priceSar || 0).toLocaleString('ar-SA')} ر.س
                                     </div>
                                     {item.costPriceSar ? (
                                       <div className="text-[11px] text-emerald-300 tabular-nums">
                                         التكلفة التقديرية: {item.costPriceSar} ر.س | صافي الزيادة: +
-                                        {Math.max(0, item.priceSar - item.costPriceSar)} ر.س
+                                        {Math.max(
+                                          0,
+                                          Number(item.priceSar || 0) - item.costPriceSar
+                                        )}{' '}
+                                        ر.س
                                       </div>
                                     ) : null}
                                   </div>
@@ -3272,7 +3630,7 @@ export function AdminDashboard({
                                       setStudioTarget({
                                         productId: item.id,
                                         fromEditorModal: false,
-                                        imageUrl: item.images[0] || '',
+                                        imageUrl: (item.images || [])[0] || '',
                                         name: item.name,
                                         category: item.category,
                                         priceSar: item.priceSar,
@@ -3284,7 +3642,7 @@ export function AdminDashboard({
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => setEditingProduct({ ...item })}
+                                    onClick={() => openProductEditor(item)}
                                     className="px-3 py-1.5 rounded-lg border border-white/15 bg-[#16161B] text-xs cursor-pointer"
                                   >
                                     تعديل البيانات
@@ -3309,49 +3667,90 @@ export function AdminDashboard({
                         <div className="flex items-center gap-2.5 text-[#E5C158]">
                           <Wand2 className="w-5 h-5" />
                           <h3 className="font-display text-lg font-bold">
-                            سحب منتج محدد بالذكاء الاصطناعي (مسودة سرية)
+                            سحب أو توليد منتج احترافي بالذكاء الاصطناعي (Gemini AI · 1000×1000)
                           </h3>
                         </div>
                         <p className="text-xs sm:text-sm text-[#C5BFB2] leading-relaxed">
-                          ضع رابط أي منتج خارجي ليقوم الذكاء الاصطناعي باستخراج اسمه الكامل، الصور
-                          عالية الجودة، الوصف، المواصفات، والسعر المقترح، وحفظها مع رابط المصدر
-                          الأصلي في قاعدة بياناتك كـ{' '}
-                          <strong className="text-amber-300">مسودة سرية مخفية</strong> لا يراها
-                          العملاء إلا بعد المراجعة وتفعيل النشر يدوياً.
+                          أدخل <strong className="text-[#E5C158]">رابط المنتج</strong> أو اكتب{' '}
+                          <strong className="text-[#E5C158]">اسم المنتج مباشرة</strong> ليقوم
+                          Gemini AI تلقائياً بتوليد صورة منتج احترافية بمقاس{' '}
+                          <span dir="ltr">1000×1000</span> بكسل إذا لم تتوفر صورة من الرابط، وكتابة
+                          وصف تسويقي عربي متكامل والمواصفات، ثم{' '}
+                          <strong className="text-emerald-300">حفظه ونشره مباشرة</strong> ليظهر في
+                          قسم (المنتجات والمسودات) وفي واجهة المتجر فوراً.
                         </p>
 
-                        <form
-                          onSubmit={handleScrapeProduct}
-                          className="flex flex-col sm:flex-row gap-3"
-                        >
-                          <input
-                            type="url"
-                            required
-                            dir="ltr"
-                            value={scrapeUrl}
-                            onChange={(e) => setScrapeUrl(e.target.value)}
-                            placeholder="https://example.com/product-page"
-                            className="flex-1 h-11 px-4 rounded-xl bg-[#16161B] border border-white/15 text-sm text-left focus:outline-none focus:border-[#D4AF37]"
-                          />
-                          <button
-                            type="submit"
-                            disabled={scraping}
-                            className="btn-gold-wave h-11 px-6 rounded-xl text-sm flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer disabled:opacity-50"
-                          >
-                            <Sparkles className="w-4 h-4" />
-                            <span>
-                              {scraping ? 'جاري السحب والتحليل...' : 'سحب وحفظ كمسودة سرية'}
-                            </span>
-                          </button>
+                        <form onSubmit={handleScrapeProduct} className="space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs text-[#C5BFB2] mb-1">
+                                اسم المنتج (للتوليد المباشر عبر Gemini AI)
+                              </label>
+                              <input
+                                type="text"
+                                value={scrapeProductName}
+                                onChange={(e) => setScrapeProductName(e.target.value)}
+                                placeholder="مثال: دبة تلوث تويوتا كامري 2022 بنزين أصلية Euro-6"
+                                className="w-full h-11 px-4 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-[#C5BFB2] mb-1">القسم</label>
+                              <select
+                                value={scrapeCategory}
+                                onChange={(e) => setScrapeCategory(e.target.value)}
+                                className="w-full h-11 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
+                              >
+                                {(settings?.categories && settings.categories.length > 0
+                                  ? settings.categories
+                                  : createFallbackAdminSettings().categories
+                                ).map((c) => (
+                                  <option key={c.id} value={c.name}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row gap-3">
+                            <input
+                              type="url"
+                              dir="ltr"
+                              value={scrapeUrl}
+                              onChange={(e) => setScrapeUrl(e.target.value)}
+                              placeholder="https://example.com/product-page (اختياري عند كتابة اسم المنتج)"
+                              className="flex-1 h-11 px-4 rounded-xl bg-[#16161B] border border-white/15 text-sm text-left focus:outline-none focus:border-[#D4AF37]"
+                            />
+                            <button
+                              type="submit"
+                              disabled={scraping}
+                              className="btn-gold-wave h-11 px-6 rounded-xl text-sm flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer disabled:opacity-50"
+                            >
+                              <Sparkles className="w-4 h-4" />
+                              <span>
+                                {scraping
+                                  ? 'جاري التوليد والسحب عبر Gemini...'
+                                  : 'سحب / توليد ونشر المنتج فوراً'}
+                              </span>
+                            </button>
+                          </div>
                         </form>
                       </div>
 
                       {lastScraped && (
-                        <div className="p-6 rounded-2xl border border-amber-500/40 bg-[#14120E] space-y-4">
+                        <div className="p-6 rounded-2xl border border-emerald-500/40 bg-[#101813] space-y-4">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="text-xs font-bold text-amber-300">
-                              تم الحفظ في المسودات السرية (مخفي عن العملاء)
-                            </span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-bold text-emerald-300">
+                                ✓ تم الحفظ والنشر في قسم (المنتجات والمسودات) وفي واجهة المتجر مباشرة
+                              </span>
+                              {scrapeAiGeneratedImg && (
+                                <span className="px-2 py-0.5 rounded-md bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[11px] text-[#E5C158] font-bold">
+                                  صورة مولدة بـ Gemini 1000×1000
+                                </span>
+                              )}
+                            </div>
                             <div className="flex gap-2">
                               <button
                                 type="button"
@@ -3359,7 +3758,7 @@ export function AdminDashboard({
                                   setStudioTarget({
                                     productId: lastScraped.id,
                                     fromEditorModal: false,
-                                    imageUrl: lastScraped.images[0] || '',
+                                    imageUrl: (lastScraped.images || [])[0] || '',
                                     name: lastScraped.name,
                                     category: lastScraped.category,
                                     priceSar: lastScraped.priceSar,
@@ -3371,17 +3770,17 @@ export function AdminDashboard({
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setEditingProduct({ ...lastScraped })}
+                                onClick={() => openProductEditor(lastScraped)}
                                 className="btn-gold-wave px-4 py-2 rounded-lg text-xs cursor-pointer"
                               >
-                                تعديل البيانات والسعر والنشر
+                                تعديل البيانات والسعر
                               </button>
                             </div>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div className="aspect-[4/3] rounded-xl overflow-hidden border border-white/10">
+                            <div className="aspect-square rounded-xl overflow-hidden border border-white/10 bg-[#09090B]">
                               <ResilientImage
-                                src={lastScraped.images[0]}
+                                src={(lastScraped.images || [])[0] || ''}
                                 alt={lastScraped.name}
                                 className="w-full h-full object-cover"
                               />
@@ -3391,15 +3790,20 @@ export function AdminDashboard({
                                 {lastScraped.name}
                               </div>
                               <div className="text-[#E5C158] font-bold tabular-nums">
-                                السعر المقترح: {lastScraped.priceSar.toLocaleString('ar-SA')} ر.س
-                                (الأصل: {lastScraped.originalExtractedPrice})
+                                السعر المعتمد: {Number(lastScraped.priceSar || 0).toLocaleString('ar-SA')}{' '}
+                                ر.س
+                                {lastScraped.originalExtractedPrice
+                                  ? ` (الأصل: ${lastScraped.originalExtractedPrice})`
+                                  : ''}
                               </div>
                               <p className="text-[#C5BFB2] leading-relaxed">
                                 {lastScraped.description}
                               </p>
-                              <div className="text-sky-400 break-all">
-                                المصدر المحفوظ سرياً: {lastScraped.sourceUrl}
-                              </div>
+                              {lastScraped.sourceUrl && (
+                                <div className="text-sky-400 break-all">
+                                  المصدر المحفوظ سرياً: {lastScraped.sourceUrl}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -3412,6 +3816,69 @@ export function AdminDashboard({
               {/* TAB 5: AI SEO & GOOGLE ADS GENERATOR */}
               {activeTab === 'ai-seo' && (
                 <div className="space-y-6">
+                  {/* Global Store SEO Keywords (up to 15) */}
+                  <section className="p-6 rounded-2xl border border-[#D4AF37]/40 bg-[#14120E] space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 text-[#E5C158]">
+                        <Tags className="w-5 h-5" />
+                        <div>
+                          <h3 className="font-display text-lg font-bold">
+                            الكلمات المفتاحية للبحث - SEO Keywords (للمتجر بالكامل)
+                          </h3>
+                          <p className="text-xs text-[#C5BFB2] mt-0.5">
+                            أدخل حتى 15 كلمة أو عبارة مفصولة بفاصلة (، أو ,) ليتم حقنها تلقائياً في
+                            أكواد الميتا Meta Tags والبيانات المنظمة لجوجل.
+                          </p>
+                        </div>
+                      </div>
+                      <span className="px-3 py-1 rounded-lg bg-[#1B1810] border border-[#D4AF37]/40 text-xs font-bold text-[#E5C158] tabular-nums">
+                        {parseSeoKeywordsText(storeSeoKeywordsInput).length} / 15
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <input
+                        type="text"
+                        value={storeSeoKeywordsInput}
+                        onChange={(e) => setStoreSeoKeywordsInput(e.target.value)}
+                        placeholder="دبات التلوث، دبة تلوث ديزل، دبة تلوث بنزين، فلتر البيئة DPF، مصنع التاج الذهبي..."
+                        className="flex-1 h-11 px-4 rounded-xl bg-[#16161B] border border-white/15 text-xs sm:text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                      <button
+                        type="button"
+                        disabled={savingSettings}
+                        onClick={() => {
+                          const keywords = parseSeoKeywordsText(storeSeoKeywordsInput);
+                          const base = settings || createFallbackAdminSettings();
+                          const nextSettings = { ...base, seoKeywords: keywords };
+                          setSettings(nextSettings);
+                          setStoreSeoKeywordsInput(keywords.join('، '));
+                          void persistSettingsObject(
+                            nextSettings,
+                            `تم حفظ وتطبيق ${keywords.length} كلمة مفتاحية للبحث (SEO) في المتجر.`
+                          );
+                        }}
+                        className="btn-gold-wave h-11 px-5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shrink-0 cursor-pointer disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>{savingSettings ? 'جاري الحفظ...' : 'حفظ وتطبيق الكلمات المفتاحية'}</span>
+                      </button>
+                    </div>
+
+                    {parseSeoKeywordsText(storeSeoKeywordsInput).length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {parseSeoKeywordsText(storeSeoKeywordsInput).map((kw, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2.5 py-1 rounded-lg border border-[#D4AF37]/30 bg-[#171510] text-[11px] text-[#E5C158]"
+                          >
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
                   <section className="p-6 rounded-2xl border border-white/10 bg-[#121216] space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-4">
                       <div>
@@ -4289,7 +4756,8 @@ export function AdminDashboard({
                             }
                             className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
                           >
-                            <option value="auto">تلقائي (شرائح صور متعددة أو صورة)</option>
+                            <option value="auto">تلقائي (فيديو أو شرائح صور أو صورة)</option>
+                            <option value="video">مقطع فيديو إعلاني عريض (1920 × 1080 / MP4)</option>
                             <option value="slideshow">عرض شرائح صور متعددة</option>
                             <option value="image">صورة رئيسية ثابتة</option>
                           </select>
@@ -4324,6 +4792,108 @@ export function AdminDashboard({
                             </label>
                           </div>
                         </div>
+                      </div>
+
+                      {/* Main Storefront Hero Promotional Video (MP4 / 1920x1080) */}
+                      <div className="p-4 rounded-xl border border-[#D4AF37]/35 bg-[#0D0D10] space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-[#E5C158]">
+                            <Film className="w-4 h-4" />
+                            <span>فيديو الواجهة الإعلانية الرئيسية (MP4 · 1920 × 1080)</span>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={savingSettings}
+                            onClick={() => {
+                              const nextSettings: StoreSettings = {
+                                ...settings,
+                                heroBackdropMode: settings.heroVideoUrl?.trim()
+                                  ? 'video'
+                                  : settings.heroBackdropMode,
+                              };
+                              setSettings(nextSettings);
+                              void persistSettingsObject(
+                                nextSettings,
+                                'تم حفظ وتطبيق الفيديو الإعلاني في واجهة المتجر الرئيسية فوراً.'
+                              );
+                            }}
+                            className="btn-gold-wave h-9 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{savingSettings ? 'جاري التطبيق...' : 'حفظ وتطبيق'}</span>
+                          </button>
+                        </div>
+
+                        <p className="text-[11px] text-[#9E988C] leading-relaxed">
+                          ارفع ملف فيديو MP4 من جهازك أو ضع رابطاً مباشراً. يتم ضبط المقاس تلقائياً
+                          للشاشات العريضة <span dir="ltr">1920 × 1080</span> على الكمبيوتر ويتجاوب مع
+                          شاشات الجوال دون قص أو تشويه، مع تشغيل تلقائي متكرر بدون صوت.
+                        </p>
+
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="text"
+                            dir="ltr"
+                            value={settings.heroVideoUrl || ''}
+                            onChange={(e) =>
+                              setSettings({
+                                ...settings,
+                                heroVideoUrl: e.target.value,
+                                heroBackdropMode: e.target.value.trim()
+                                  ? 'video'
+                                  : settings.heroBackdropMode,
+                              })
+                            }
+                            placeholder="https://example.com/promo.mp4 أو ارفع ملف MP4"
+                            className="flex-1 h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs"
+                          />
+                          <label className="h-10 px-4 rounded-xl border border-[#D4AF37]/45 bg-[#171510] text-xs font-bold text-[#E5C158] flex items-center justify-center gap-1.5 cursor-pointer shrink-0">
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>
+                              {uploadingTarget === 'heroVideo'
+                                ? 'جاري رفع الفيديو...'
+                                : 'رفع فيديو MP4'}
+                            </span>
+                            <input
+                              type="file"
+                              accept="video/mp4,video/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleUploadFile(f, 'heroVideo');
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                          {settings.heroVideoUrl && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSettings({
+                                  ...settings,
+                                  heroVideoUrl: '',
+                                  heroBackdropMode: 'auto',
+                                })
+                              }
+                              className="h-10 px-3 rounded-xl border border-red-500/35 text-xs text-red-400 hover:bg-red-950/30 cursor-pointer shrink-0"
+                            >
+                              إزالة الفيديو
+                            </button>
+                          )}
+                        </div>
+
+                        {settings.heroVideoUrl && (
+                          <div className="aspect-video w-full rounded-xl overflow-hidden border border-[#D4AF37]/30 bg-[#09090B]">
+                            <video
+                              src={settings.heroVideoUrl}
+                              autoPlay
+                              loop
+                              muted
+                              playsInline
+                              className="w-full h-full object-contain bg-[#09090B]"
+                            />
+                          </div>
+                        )}
                       </div>
 
                       {/* Slideshow Images */}
@@ -4917,7 +5487,7 @@ export function AdminDashboard({
                               type="number"
                               min={0.01}
                               step={0.05}
-                              value={settings.coinValueSar ?? 0.5}
+                              value={settings.coinValueSar ?? 0.1}
                               onChange={(e) =>
                                 setSettings({
                                   ...settings,
@@ -4935,7 +5505,7 @@ export function AdminDashboard({
                               type="number"
                               min={0}
                               step={1}
-                              value={settings.dailyCheckinCoins ?? 5}
+                              value={settings.dailyCheckinCoins ?? 25}
                               onChange={(e) =>
                                 setSettings({
                                   ...settings,
@@ -4953,7 +5523,7 @@ export function AdminDashboard({
                               type="number"
                               min={0}
                               step={1}
-                              value={settings.coinsPer100SarPurchase ?? 10}
+                              value={settings.coinsPer100SarPurchase ?? 50}
                               onChange={(e) =>
                                 setSettings({
                                   ...settings,
@@ -5393,24 +5963,37 @@ export function AdminDashboard({
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={async () => {
+                          const tk = await ensureAdminSessionToken();
+                          if (tk) {
+                            try {
+                              const res = await fetch('/api/admin/change-password', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  Authorization: `Bearer ${tk}`,
+                                },
+                                body: JSON.stringify({
+                                  currentPassword: currentPw || getStoredOwnerPassword(),
+                                  newPassword: DEFAULT_OWNER_PASSWORD,
+                                }),
+                              });
+                              if (!res.ok) {
+                                const data = await res.json().catch(() => ({}));
+                                showToast(
+                                  data?.error || 'تعذر إعادة التعيين عبر الخادم. تحقق من كلمة المرور الحالية.'
+                                );
+                                return;
+                              }
+                            } catch {
+                              showToast('تعذر الاتصال بالخادم لتحديث كلمة المرور.');
+                              return;
+                            }
+                          }
                           try {
                             localStorage.setItem('taj_owner_secret', DEFAULT_OWNER_PASSWORD);
                           } catch {
                             // ignore
-                          }
-                          if (adminToken) {
-                            void fetch('/api/admin/change-password', {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                Authorization: `Bearer ${adminToken}`,
-                              },
-                              body: JSON.stringify({
-                                currentPassword: currentPw || getStoredOwnerPassword(),
-                                newPassword: DEFAULT_OWNER_PASSWORD,
-                              }),
-                            }).catch(() => {});
                           }
                           setPwNotice(
                             `تمت إعادة تعيين كلمة المرور إلى الافتراضية (${DEFAULT_OWNER_PASSWORD}).`
@@ -5844,19 +6427,24 @@ export function AdminDashboard({
                 </div>
               </div>
 
-              {/* Product Images: Multi-File Device Upload (Base64 + localStorage) + Thumbnails w/ X Delete + Text URL Box */}
+              {/* Product Images: Multi-File Device Upload (Auto-Cropped 1000x1000) + Thumbnails w/ X Delete + Text URL Box */}
               <div className="sm:col-span-2 p-4 rounded-xl border border-[#D4AF37]/30 bg-[#0D0D10] space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-xs font-bold text-[#E5C158]">صور المنتج وروابط الصور</div>
+                    <div className="text-xs font-bold text-[#E5C158]">
+                      صور المنتج وروابط الصور (قص تلقائي 1000 × 1000 بكسل)
+                    </div>
                     <div className="text-[11px] text-[#9E988C]">
-                      يمكنك رفع صورة أو عدة صور من جهازك مباشرة (JPG, PNG, WEBP) أو لصق روابط خارجية بالأسفل.
+                      يمكنك رفع صورة من جهازك مع أداة قص وضبط مقاس الصورة تلقائياً إلى مربع (1000 ×
+                      1000 بكسل) أو وضع رابط الصورة مباشرة بالأسفل.
                     </div>
                   </div>
                   <label className="btn-gold-wave h-9 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0">
                     <Upload className="w-4 h-4" />
                     <span>
-                      {uploadingProductImages ? 'جاري التحميل...' : 'رفع صور من الجهاز'}
+                      {uploadingProductImages
+                        ? 'جاري الرفع والضبط...'
+                        : 'رفع صور من الجهاز (قص تلقائي 1000×1000)'}
                     </span>
                     <input
                       type="file"
@@ -6045,6 +6633,37 @@ export function AdminDashboard({
                   ))}
                 </div>
               </div>
+              {/* Product SEO Keywords (up to 15) */}
+              <div className="sm:col-span-2 p-4 rounded-xl border border-[#D4AF37]/30 bg-[#0D0D10] space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-[#E5C158]">
+                    <Tags className="w-4 h-4" />
+                    <span>الكلمات المفتاحية للبحث - SEO Keywords</span>
+                  </div>
+                  <span className="text-[11px] font-bold text-[#E5C158] tabular-nums">
+                    {parseSeoKeywordsText(productSeoKeywordsInput).length} / 15
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={productSeoKeywordsInput}
+                  onChange={(e) => setProductSeoKeywordsInput(e.target.value)}
+                  placeholder="أدخل حتى 15 كلمة أو عبارة مفصولة بفاصلة (مثال: دبة تلوث تويوتا، فلتر بيئة DPF، دبة عادم Euro 6)"
+                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs focus:outline-none focus:border-[#D4AF37]"
+                />
+                {parseSeoKeywordsText(productSeoKeywordsInput).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {parseSeoKeywordsText(productSeoKeywordsInput).map((kw, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2 py-0.5 rounded-md border border-[#D4AF37]/30 bg-[#171510] text-[10px] text-[#E5C158]"
+                      >
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-6 pt-2 border-t border-white/10">
@@ -6089,6 +6708,15 @@ export function AdminDashboard({
             </div>
           </form>
         </div>
+      )}
+
+      {/* Interactive 1000x1000 Square Image Cropper Modal */}
+      {pendingCropFiles.length > 0 && (
+        <SquareImageCropModal
+          files={pendingCropFiles}
+          onCancel={() => setPendingCropFiles([])}
+          onComplete={handleCropModalComplete}
+        />
       )}
 
       {/* Luxury Studio Image Editor Modal */}
