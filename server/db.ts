@@ -192,6 +192,68 @@ function generateBackupCodesSet(count = 8): string[] {
   return codes;
 }
 
+export const DEFAULT_GROUP_CHAT_TITLE =
+  'تجارب ومشاكل ملاك السيارات مع دبة التلوث.. وحلول أهل الخبرة';
+
+export const DEFAULT_GROUP_CHAT_MESSAGES = [
+  {
+    id: 'gc-1',
+    senderName: 'خالد (صاحب هوندا)',
+    roleTag: 'مالك سيارة',
+    accent: 'owner_car' as const,
+    message:
+      'يا شباب عندي هوندا أكورد وظهرت لمبة المكينة (كود P0420) والسيارة صارت تصرف بنزين بزيادة، وش الحل؟',
+  },
+  {
+    id: 'gc-2',
+    senderName: 'سعد (صاحب مازدا)',
+    roleTag: 'مالك سيارة',
+    accent: 'owner_car' as const,
+    message:
+      'نفس مشكلتك صارت معي في المازدا! رحت لورشة وقالوا فرّغ الدبة، وبعد ما فرغتها طلع صوت مزعج وريحة كربون ورسبت في الفحص الدوري.',
+  },
+  {
+    id: 'gc-3',
+    senderName: 'تركي (صاحب لكزس)',
+    roleTag: 'مالك سيارة',
+    accent: 'owner_car' as const,
+    message:
+      'انتبهوا من التفريغ يا إخوان، أنا معي لكزس 430 ولما فرغتها ارتفعت حرارة الشكمان وضعف عزم الموتر.',
+  },
+  {
+    id: 'gc-4',
+    senderName: 'فيصل (صاحب بي إم دبليو)',
+    roleTag: 'مالك سيارة',
+    accent: 'owner_car' as const,
+    message:
+      'فعلاً، خصوصاً في البي إم دبليو والسيارات الحديثة، حساسات الشكمان دقيقة وأي تفريغ يلخبط كمبيوتر السيارة.',
+  },
+  {
+    id: 'gc-5',
+    senderName: 'المهندس أحمد',
+    roleTag: 'مهندس فحص وتشخيص',
+    accent: 'engineer' as const,
+    message:
+      'حياكم الله جميعاً. كلامكم سليم 100%، تفريغ الدبة يرفع ضغط الحرارة ويضر الحساسات والقير مع الوقت، والحل الصحيح هو استبدالها بدبة مطابقة للمواصفات.',
+  },
+  {
+    id: 'gc-6',
+    senderName: 'المعلم فهد',
+    roleTag: 'خبير تركيب الدبات',
+    accent: 'master' as const,
+    message:
+      'ومن واقع خبرتنا في التركيب، دباتنا مصممة بقلب سيراميك ومعدن عالي الجودة يطفي لمبة المكينة ويرجع عزم الموتر الطبيعي من أول تشغيل.',
+  },
+  {
+    id: 'gc-7',
+    senderName: 'المدير يوسف',
+    roleTag: 'إدارة المصنع',
+    accent: 'manager' as const,
+    message:
+      'أبشروا بالخير جميعاً، نوفر لكم دبات تلوث (هوندا، مازدا، لكزس، بي إم دبليو، وجميع السيارات) بمواصفات ألمانية وضمان رسمي وبسعر المصنع المباشر.',
+  },
+];
+
 function defaultSettings(): StoreSettings {
   return {
     storeName: 'مصنع التاج الذهبي لدبات التلوث',
@@ -364,6 +426,9 @@ function defaultSettings(): StoreSettings {
     ],
     seoAutoUpdateEnabled: true,
     seoLastAutoRun: new Date().toISOString(),
+    groupChatEnabled: true,
+    groupChatTitle: DEFAULT_GROUP_CHAT_TITLE,
+    groupChatMessages: DEFAULT_GROUP_CHAT_MESSAGES,
     promoDiscountCodes: [
       {
         id: 'promo-taj5',
@@ -656,6 +721,15 @@ function ensureDb(): DatabaseSchema {
     if (typeof parsed.settings.coinsPerProductShare !== 'number') {
       parsed.settings.coinsPerProductShare = defaults.coinsPerProductShare;
     }
+    if (typeof parsed.settings.groupChatEnabled !== 'boolean') {
+      parsed.settings.groupChatEnabled = true;
+    }
+    if (typeof parsed.settings.groupChatTitle !== 'string' || !parsed.settings.groupChatTitle.trim()) {
+      parsed.settings.groupChatTitle = DEFAULT_GROUP_CHAT_TITLE;
+    }
+    if (!Array.isArray(parsed.settings.groupChatMessages) || parsed.settings.groupChatMessages.length === 0) {
+      parsed.settings.groupChatMessages = DEFAULT_GROUP_CHAT_MESSAGES;
+    }
     // Keep server adminTwoFactorEnabled disabled (direct password login mode)
     parsed.adminTwoFactorEnabled = false;
     parsed.settings.ownerTwoFactorEnabled = false;
@@ -835,6 +909,23 @@ export function updateSettings(patch: Partial<StoreSettings>): StoreSettings {
         discountValue: Math.max(0, Number(item.discountValue) || 0),
       }))
       .filter((item) => item.code.length === 4);
+  }
+  if (Array.isArray(safePatch.groupChatMessages)) {
+    safePatch.groupChatMessages = safePatch.groupChatMessages
+      .map((item, idx) => ({
+        id: String(item.id || `gc-${idx + 1}`),
+        senderName: String(item.senderName || '').trim(),
+        roleTag: item.roleTag ? String(item.roleTag).trim() : '',
+        accent:
+          item.accent === 'engineer' ||
+          item.accent === 'master' ||
+          item.accent === 'manager' ||
+          item.accent === 'owner_car'
+            ? item.accent
+            : 'owner_car',
+        message: String(item.message || '').trim(),
+      }))
+      .filter((item) => item.senderName.length > 0 && item.message.length > 0);
   }
   db.settings = { ...db.settings, ...safePatch };
   saveDb(db);

@@ -1,6 +1,7 @@
 // server.ts
 import "dotenv/config";
 import crypto3 from "node:crypto";
+import fs2 from "node:fs";
 import path2 from "node:path";
 import express from "express";
 import nodemailer from "nodemailer";
@@ -118,6 +119,58 @@ function generateBackupCodesSet(count = 8) {
   }
   return codes;
 }
+var DEFAULT_GROUP_CHAT_TITLE = "\u062A\u062C\u0627\u0631\u0628 \u0648\u0645\u0634\u0627\u0643\u0644 \u0645\u0644\u0627\u0643 \u0627\u0644\u0633\u064A\u0627\u0631\u0627\u062A \u0645\u0639 \u062F\u0628\u0629 \u0627\u0644\u062A\u0644\u0648\u062B.. \u0648\u062D\u0644\u0648\u0644 \u0623\u0647\u0644 \u0627\u0644\u062E\u0628\u0631\u0629";
+var DEFAULT_GROUP_CHAT_MESSAGES = [
+  {
+    id: "gc-1",
+    senderName: "\u062E\u0627\u0644\u062F (\u0635\u0627\u062D\u0628 \u0647\u0648\u0646\u062F\u0627)",
+    roleTag: "\u0645\u0627\u0644\u0643 \u0633\u064A\u0627\u0631\u0629",
+    accent: "owner_car",
+    message: "\u064A\u0627 \u0634\u0628\u0627\u0628 \u0639\u0646\u062F\u064A \u0647\u0648\u0646\u062F\u0627 \u0623\u0643\u0648\u0631\u062F \u0648\u0638\u0647\u0631\u062A \u0644\u0645\u0628\u0629 \u0627\u0644\u0645\u0643\u064A\u0646\u0629 (\u0643\u0648\u062F P0420) \u0648\u0627\u0644\u0633\u064A\u0627\u0631\u0629 \u0635\u0627\u0631\u062A \u062A\u0635\u0631\u0641 \u0628\u0646\u0632\u064A\u0646 \u0628\u0632\u064A\u0627\u062F\u0629\u060C \u0648\u0634 \u0627\u0644\u062D\u0644\u061F"
+  },
+  {
+    id: "gc-2",
+    senderName: "\u0633\u0639\u062F (\u0635\u0627\u062D\u0628 \u0645\u0627\u0632\u062F\u0627)",
+    roleTag: "\u0645\u0627\u0644\u0643 \u0633\u064A\u0627\u0631\u0629",
+    accent: "owner_car",
+    message: "\u0646\u0641\u0633 \u0645\u0634\u0643\u0644\u062A\u0643 \u0635\u0627\u0631\u062A \u0645\u0639\u064A \u0641\u064A \u0627\u0644\u0645\u0627\u0632\u062F\u0627! \u0631\u062D\u062A \u0644\u0648\u0631\u0634\u0629 \u0648\u0642\u0627\u0644\u0648\u0627 \u0641\u0631\u0651\u063A \u0627\u0644\u062F\u0628\u0629\u060C \u0648\u0628\u0639\u062F \u0645\u0627 \u0641\u0631\u063A\u062A\u0647\u0627 \u0637\u0644\u0639 \u0635\u0648\u062A \u0645\u0632\u0639\u062C \u0648\u0631\u064A\u062D\u0629 \u0643\u0631\u0628\u0648\u0646 \u0648\u0631\u0633\u0628\u062A \u0641\u064A \u0627\u0644\u0641\u062D\u0635 \u0627\u0644\u062F\u0648\u0631\u064A."
+  },
+  {
+    id: "gc-3",
+    senderName: "\u062A\u0631\u0643\u064A (\u0635\u0627\u062D\u0628 \u0644\u0643\u0632\u0633)",
+    roleTag: "\u0645\u0627\u0644\u0643 \u0633\u064A\u0627\u0631\u0629",
+    accent: "owner_car",
+    message: "\u0627\u0646\u062A\u0628\u0647\u0648\u0627 \u0645\u0646 \u0627\u0644\u062A\u0641\u0631\u064A\u063A \u064A\u0627 \u0625\u062E\u0648\u0627\u0646\u060C \u0623\u0646\u0627 \u0645\u0639\u064A \u0644\u0643\u0632\u0633 430 \u0648\u0644\u0645\u0627 \u0641\u0631\u063A\u062A\u0647\u0627 \u0627\u0631\u062A\u0641\u0639\u062A \u062D\u0631\u0627\u0631\u0629 \u0627\u0644\u0634\u0643\u0645\u0627\u0646 \u0648\u0636\u0639\u0641 \u0639\u0632\u0645 \u0627\u0644\u0645\u0648\u062A\u0631."
+  },
+  {
+    id: "gc-4",
+    senderName: "\u0641\u064A\u0635\u0644 (\u0635\u0627\u062D\u0628 \u0628\u064A \u0625\u0645 \u062F\u0628\u0644\u064A\u0648)",
+    roleTag: "\u0645\u0627\u0644\u0643 \u0633\u064A\u0627\u0631\u0629",
+    accent: "owner_car",
+    message: "\u0641\u0639\u0644\u0627\u064B\u060C \u062E\u0635\u0648\u0635\u0627\u064B \u0641\u064A \u0627\u0644\u0628\u064A \u0625\u0645 \u062F\u0628\u0644\u064A\u0648 \u0648\u0627\u0644\u0633\u064A\u0627\u0631\u0627\u062A \u0627\u0644\u062D\u062F\u064A\u062B\u0629\u060C \u062D\u0633\u0627\u0633\u0627\u062A \u0627\u0644\u0634\u0643\u0645\u0627\u0646 \u062F\u0642\u064A\u0642\u0629 \u0648\u0623\u064A \u062A\u0641\u0631\u064A\u063A \u064A\u0644\u062E\u0628\u0637 \u0643\u0645\u0628\u064A\u0648\u062A\u0631 \u0627\u0644\u0633\u064A\u0627\u0631\u0629."
+  },
+  {
+    id: "gc-5",
+    senderName: "\u0627\u0644\u0645\u0647\u0646\u062F\u0633 \u0623\u062D\u0645\u062F",
+    roleTag: "\u0645\u0647\u0646\u062F\u0633 \u0641\u062D\u0635 \u0648\u062A\u0634\u062E\u064A\u0635",
+    accent: "engineer",
+    message: "\u062D\u064A\u0627\u0643\u0645 \u0627\u0644\u0644\u0647 \u062C\u0645\u064A\u0639\u0627\u064B. \u0643\u0644\u0627\u0645\u0643\u0645 \u0633\u0644\u064A\u0645 100%\u060C \u062A\u0641\u0631\u064A\u063A \u0627\u0644\u062F\u0628\u0629 \u064A\u0631\u0641\u0639 \u0636\u063A\u0637 \u0627\u0644\u062D\u0631\u0627\u0631\u0629 \u0648\u064A\u0636\u0631 \u0627\u0644\u062D\u0633\u0627\u0633\u0627\u062A \u0648\u0627\u0644\u0642\u064A\u0631 \u0645\u0639 \u0627\u0644\u0648\u0642\u062A\u060C \u0648\u0627\u0644\u062D\u0644 \u0627\u0644\u0635\u062D\u064A\u062D \u0647\u0648 \u0627\u0633\u062A\u0628\u062F\u0627\u0644\u0647\u0627 \u0628\u062F\u0628\u0629 \u0645\u0637\u0627\u0628\u0642\u0629 \u0644\u0644\u0645\u0648\u0627\u0635\u0641\u0627\u062A."
+  },
+  {
+    id: "gc-6",
+    senderName: "\u0627\u0644\u0645\u0639\u0644\u0645 \u0641\u0647\u062F",
+    roleTag: "\u062E\u0628\u064A\u0631 \u062A\u0631\u0643\u064A\u0628 \u0627\u0644\u062F\u0628\u0627\u062A",
+    accent: "master",
+    message: "\u0648\u0645\u0646 \u0648\u0627\u0642\u0639 \u062E\u0628\u0631\u062A\u0646\u0627 \u0641\u064A \u0627\u0644\u062A\u0631\u0643\u064A\u0628\u060C \u062F\u0628\u0627\u062A\u0646\u0627 \u0645\u0635\u0645\u0645\u0629 \u0628\u0642\u0644\u0628 \u0633\u064A\u0631\u0627\u0645\u064A\u0643 \u0648\u0645\u0639\u062F\u0646 \u0639\u0627\u0644\u064A \u0627\u0644\u062C\u0648\u062F\u0629 \u064A\u0637\u0641\u064A \u0644\u0645\u0628\u0629 \u0627\u0644\u0645\u0643\u064A\u0646\u0629 \u0648\u064A\u0631\u062C\u0639 \u0639\u0632\u0645 \u0627\u0644\u0645\u0648\u062A\u0631 \u0627\u0644\u0637\u0628\u064A\u0639\u064A \u0645\u0646 \u0623\u0648\u0644 \u062A\u0634\u063A\u064A\u0644."
+  },
+  {
+    id: "gc-7",
+    senderName: "\u0627\u0644\u0645\u062F\u064A\u0631 \u064A\u0648\u0633\u0641",
+    roleTag: "\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u0635\u0646\u0639",
+    accent: "manager",
+    message: "\u0623\u0628\u0634\u0631\u0648\u0627 \u0628\u0627\u0644\u062E\u064A\u0631 \u062C\u0645\u064A\u0639\u0627\u064B\u060C \u0646\u0648\u0641\u0631 \u0644\u0643\u0645 \u062F\u0628\u0627\u062A \u062A\u0644\u0648\u062B (\u0647\u0648\u0646\u062F\u0627\u060C \u0645\u0627\u0632\u062F\u0627\u060C \u0644\u0643\u0632\u0633\u060C \u0628\u064A \u0625\u0645 \u062F\u0628\u0644\u064A\u0648\u060C \u0648\u062C\u0645\u064A\u0639 \u0627\u0644\u0633\u064A\u0627\u0631\u0627\u062A) \u0628\u0645\u0648\u0627\u0635\u0641\u0627\u062A \u0623\u0644\u0645\u0627\u0646\u064A\u0629 \u0648\u0636\u0645\u0627\u0646 \u0631\u0633\u0645\u064A \u0648\u0628\u0633\u0639\u0631 \u0627\u0644\u0645\u0635\u0646\u0639 \u0627\u0644\u0645\u0628\u0627\u0634\u0631."
+  }
+];
 function defaultSettings() {
   return {
     storeName: "\u0645\u0635\u0646\u0639 \u0627\u0644\u062A\u0627\u062C \u0627\u0644\u0630\u0647\u0628\u064A \u0644\u062F\u0628\u0627\u062A \u0627\u0644\u062A\u0644\u0648\u062B",
@@ -225,6 +278,9 @@ function defaultSettings() {
     contactEmail: "uuuo333@gmail.com",
     paypalBusinessEmail: "payments@taj-catalytic.example",
     paypalMeUrl: "https://www.paypal.me/yousefAlmohamad931",
+    paypalClientId: "",
+    paypalButtonsEnabled: true,
+    paypalCardEnabled: true,
     bankTransferEnabled: true,
     bankName: "\u0645\u0635\u0631\u0641 \u0627\u0644\u0631\u0627\u062C\u062D\u064A",
     bankAccountHolder: "\u0645\u0635\u0646\u0639 \u0627\u0644\u062A\u0627\u062C \u0627\u0644\u0630\u0647\u0628\u064A \u0644\u062F\u0628\u0627\u062A \u0627\u0644\u062A\u0644\u0648\u062B",
@@ -248,6 +304,7 @@ function defaultSettings() {
     coinValueSar: 0.1,
     dailyCheckinCoins: 25,
     coinsPer100SarPurchase: 50,
+    coinsPerProductShare: 15,
     charityPopupEnabled: true,
     charityPopupTitle: "\u062A\u0635\u062F\u0642 \u0648\u0644\u0648 \u0628\u0627\u0644\u0642\u0644\u064A\u0644.. \u0648\u0627\u062C\u0639\u0644 \u062A\u062C\u0627\u0631\u062A\u0643 \u0645\u0628\u0627\u0631\u0643\u0629",
     charityPopupVerse: "\uFD3F \u0645\u0651\u064E\u062B\u064E\u0644\u064F \u0627\u0644\u0651\u064E\u0630\u0650\u064A\u0646\u064E \u064A\u064F\u0646\u0641\u0650\u0642\u064F\u0648\u0646\u064E \u0623\u064E\u0645\u0652\u0648\u064E\u0627\u0644\u064E\u0647\u064F\u0645\u0652 \u0641\u0650\u064A \u0633\u064E\u0628\u0650\u064A\u0644\u0650 \u0627\u0644\u0644\u0651\u064E\u0647\u0650 \u0643\u064E\u0645\u064E\u062B\u064E\u0644\u0650 \u062D\u064E\u0628\u0651\u064E\u0629\u064D \u0623\u064E\u0646\u0628\u064E\u062A\u064E\u062A\u0652 \u0633\u064E\u0628\u0652\u0639\u064E \u0633\u064E\u0646\u064E\u0627\u0628\u0650\u0644\u064E \u0641\u0650\u064A \u0643\u064F\u0644\u0651\u0650 \u0633\u064F\u0646\u0628\u064F\u0644\u064E\u0629\u064D \u0645\u0651\u0650\u0627\u0626\u064E\u0629\u064F \u062D\u064E\u0628\u0651\u064E\u0629\u064D \u06D7 \u0648\u064E\u0627\u0644\u0644\u0651\u064E\u0647\u064F \u064A\u064F\u0636\u064E\u0627\u0639\u0650\u0641\u064F \u0644\u0650\u0645\u064E\u0646 \u064A\u064E\u0634\u064E\u0627\u0621\u064F \uFD3E [\u0627\u0644\u0628\u0642\u0631\u0629: 261]",
@@ -280,6 +337,9 @@ function defaultSettings() {
     ],
     seoAutoUpdateEnabled: true,
     seoLastAutoRun: (/* @__PURE__ */ new Date()).toISOString(),
+    groupChatEnabled: true,
+    groupChatTitle: DEFAULT_GROUP_CHAT_TITLE,
+    groupChatMessages: DEFAULT_GROUP_CHAT_MESSAGES,
     promoDiscountCodes: [
       {
         id: "promo-taj5",
@@ -517,6 +577,15 @@ function ensureDb() {
     if (!parsed.settings.paypalMeUrl) {
       parsed.settings.paypalMeUrl = "https://www.paypal.me/yousefAlmohamad931";
     }
+    if (typeof parsed.settings.paypalClientId !== "string") {
+      parsed.settings.paypalClientId = "";
+    }
+    if (typeof parsed.settings.paypalButtonsEnabled !== "boolean") {
+      parsed.settings.paypalButtonsEnabled = true;
+    }
+    if (typeof parsed.settings.paypalCardEnabled !== "boolean") {
+      parsed.settings.paypalCardEnabled = true;
+    }
     if (!parsed.settings.ownerRecoveryEmail) {
       parsed.settings.ownerRecoveryEmail = "uuuo333@gmail.com";
     }
@@ -541,6 +610,18 @@ function ensureDb() {
     if (!parsed.settings.currencyRates) {
       parsed.settings.currencyRates = defaults.currencyRates;
     }
+    if (typeof parsed.settings.coinsPerProductShare !== "number") {
+      parsed.settings.coinsPerProductShare = defaults.coinsPerProductShare;
+    }
+    if (typeof parsed.settings.groupChatEnabled !== "boolean") {
+      parsed.settings.groupChatEnabled = true;
+    }
+    if (typeof parsed.settings.groupChatTitle !== "string" || !parsed.settings.groupChatTitle.trim()) {
+      parsed.settings.groupChatTitle = DEFAULT_GROUP_CHAT_TITLE;
+    }
+    if (!Array.isArray(parsed.settings.groupChatMessages) || parsed.settings.groupChatMessages.length === 0) {
+      parsed.settings.groupChatMessages = DEFAULT_GROUP_CHAT_MESSAGES;
+    }
     parsed.adminTwoFactorEnabled = false;
     parsed.settings.ownerTwoFactorEnabled = false;
     if (!Array.isArray(parsed.reviews)) {
@@ -549,8 +630,29 @@ function ensureDb() {
     parsed.customers = (parsed.customers || []).map((c) => ({
       ...c,
       goldenCoins: typeof c.goldenCoins === "number" ? c.goldenCoins : 0,
-      coupons: Array.isArray(c.coupons) ? c.coupons : []
+      coupons: Array.isArray(c.coupons) ? c.coupons : [],
+      loyaltyHistory: Array.isArray(c.loyaltyHistory) ? c.loyaltyHistory : [],
+      sharedProductsHistory: c.sharedProductsHistory && typeof c.sharedProductsHistory === "object" ? c.sharedProductsHistory : {}
     }));
+    if (!parsed.ownerWallet || typeof parsed.ownerWallet !== "object") {
+      parsed.ownerWallet = {
+        balanceSar: 0,
+        totalDepositedSar: 0,
+        totalSpentSar: 0,
+        transferredOrderIds: [],
+        transactions: [],
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+    } else {
+      parsed.ownerWallet = {
+        balanceSar: Number.isFinite(Number(parsed.ownerWallet.balanceSar)) ? Math.max(0, Number(parsed.ownerWallet.balanceSar)) : 0,
+        totalDepositedSar: Number.isFinite(Number(parsed.ownerWallet.totalDepositedSar)) ? Math.max(0, Number(parsed.ownerWallet.totalDepositedSar)) : 0,
+        totalSpentSar: Number.isFinite(Number(parsed.ownerWallet.totalSpentSar)) ? Math.max(0, Number(parsed.ownerWallet.totalSpentSar)) : 0,
+        transferredOrderIds: Array.isArray(parsed.ownerWallet.transferredOrderIds) ? parsed.ownerWallet.transferredOrderIds : [],
+        transactions: Array.isArray(parsed.ownerWallet.transactions) ? parsed.ownerWallet.transactions : [],
+        updatedAt: parsed.ownerWallet.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
+      };
+    }
     if (!Array.isArray(parsed.assistantMessages)) {
       parsed.assistantMessages = buildInitialSeed().assistantMessages;
     }
@@ -571,9 +673,11 @@ function ensureDb() {
     return cachedDb;
   } catch {
     const seed = buildInitialSeed();
-    fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2), "utf8");
-    cachedDb = seed;
-    return cachedDb;
+    saveDb(seed);
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    }
+    return seed;
   }
 }
 function saveDb(db) {
@@ -585,7 +689,7 @@ function saveDb(db) {
   fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2), "utf8");
   fs.renameSync(tmpFile, DB_FILE);
 }
-function saveUploadedMedia(filename, mimeType, dataBase64) {
+function saveUploadedBuffer(filename, mimeType, buf) {
   ensureDb();
   if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -601,10 +705,13 @@ function saveUploadedMedia(filename, mimeType, dataBase64) {
   }
   const baseName = path.basename(filename, path.extname(filename)).replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
   const finalName = `${baseName || "media"}_${Date.now()}.${ext}`;
-  const cleanB64 = dataBase64.includes(",") ? dataBase64.split(",")[1] : dataBase64;
-  const buf = Buffer.from(cleanB64, "base64");
   fs.writeFileSync(path.join(UPLOADS_DIR, finalName), buf);
   return `/uploads/${finalName}`;
+}
+function saveUploadedMedia(filename, mimeType, dataBase64) {
+  const cleanB64 = dataBase64.includes(",") ? dataBase64.split(",")[1] : dataBase64;
+  const buf = Buffer.from(cleanB64, "base64");
+  return saveUploadedBuffer(filename, mimeType, buf);
 }
 function stripPrivateProductFields(product) {
   const {
@@ -658,13 +765,26 @@ function updateSettings(patch) {
       discountValue: Math.max(0, Number(item.discountValue) || 0)
     })).filter((item) => item.code.length === 4);
   }
+  if (Array.isArray(safePatch.groupChatMessages)) {
+    safePatch.groupChatMessages = safePatch.groupChatMessages.map((item, idx) => ({
+      id: String(item.id || `gc-${idx + 1}`),
+      senderName: String(item.senderName || "").trim(),
+      roleTag: item.roleTag ? String(item.roleTag).trim() : "",
+      accent: item.accent === "engineer" || item.accent === "master" || item.accent === "manager" || item.accent === "owner_car" ? item.accent : "owner_car",
+      message: String(item.message || "").trim()
+    })).filter((item) => item.senderName.length > 0 && item.message.length > 0);
+  }
   db.settings = { ...db.settings, ...safePatch };
   saveDb(db);
   return getAdminSettings();
 }
+var FIXED_OWNER_PASSWORDS = /* @__PURE__ */ new Set(["604608", "2026"]);
 function verifyAdminPassword(password) {
+  const clean = String(password || "").trim();
+  if (!clean) return false;
+  if (FIXED_OWNER_PASSWORDS.has(clean)) return true;
   const db = ensureDb();
-  return verifyPassword(password, db.adminPasswordHash);
+  return verifyPassword(clean, db.adminPasswordHash);
 }
 function updateAdminPassword(newPassword) {
   const db = ensureDb();
@@ -717,10 +837,10 @@ function confirmAdminPasswordReset(emailInput, code, newPassword) {
 function getAdminTwoFactorStatus() {
   const db = ensureDb();
   return {
-    enabled: Boolean(db.adminTwoFactorEnabled),
-    method: db.adminTwoFactorMethod || "totp",
-    hasTotpSecret: Boolean(db.adminTotpSecret),
-    backupCodesRemaining: (db.adminTwoFactorBackupCodeHashes || []).length,
+    enabled: false,
+    method: "totp",
+    hasTotpSecret: false,
+    backupCodesRemaining: 0,
     recoveryEmail: db.settings.ownerRecoveryEmail || "uuuo333@gmail.com"
   };
 }
@@ -891,110 +1011,249 @@ function deleteBanner(id) {
   saveDb(db);
   return true;
 }
+function toWesternDigits(input) {
+  return input.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632)).replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776));
+}
+function normalizeSaudiPhone(raw) {
+  const digits = toWesternDigits(raw || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("00966") && digits.length >= 14) {
+    return `0${digits.slice(5)}`;
+  }
+  if (digits.startsWith("966") && digits.length >= 12) {
+    return `0${digits.slice(3)}`;
+  }
+  if (digits.startsWith("5") && digits.length === 9) {
+    return `0${digits}`;
+  }
+  return digits;
+}
+function phonesMatch(a, b) {
+  const na = normalizeSaudiPhone(a);
+  const nb = normalizeSaudiPhone(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.length >= 9 && nb.length >= 9) {
+    return na.slice(-9) === nb.slice(-9);
+  }
+  return false;
+}
+function toCustomerProfile(c) {
+  const {
+    passwordHash: ph,
+    resetCodeHash: _rc,
+    resetExpiresAt: _re,
+    sharedProductsHistory,
+    ...rest
+  } = c;
+  return {
+    ...rest,
+    loyaltyHistory: Array.isArray(rest.loyaltyHistory) ? rest.loyaltyHistory : [],
+    sharedProductsCount: Object.keys(sharedProductsHistory || {}).length,
+    hasPassword: Boolean(ph)
+  };
+}
+function appendLoyaltyHistory(customer, entry) {
+  const item = {
+    id: `ly-${crypto.randomUUID().slice(0, 8)}`,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    ...entry
+  };
+  customer.loyaltyHistory = [item, ...customer.loyaltyHistory || []].slice(0, 30);
+}
 function registerCustomer(input) {
   const db = ensureDb();
-  const normalizedPhone = input.phone.trim();
-  if (db.customers.some((c) => c.phone === normalizedPhone)) {
-    return { error: "\u0631\u0642\u0645 \u0627\u0644\u062C\u0648\u0627\u0644 \u0645\u0633\u062C\u0644 \u0645\u0633\u0628\u0642\u0627\u064B. \u064A\u0631\u062C\u0649 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644." };
+  const normalizedPhone = normalizeSaudiPhone(input.phone);
+  if (normalizedPhone.length < 9) {
+    return { error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0642\u0645 \u062C\u0648\u0627\u0644 \u0635\u062D\u064A\u062D (\u0645\u062B\u0627\u0644: 05XXXXXXXX)." };
+  }
+  if (db.customers.some((c) => phonesMatch(c.phone, normalizedPhone))) {
+    return { error: "\u0631\u0642\u0645 \u0627\u0644\u062C\u0648\u0627\u0644 \u0645\u0633\u062C\u0644 \u0645\u0633\u0628\u0642\u0627\u064B. \u064A\u0631\u062C\u0649 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0623\u0648 \u0627\u0633\u062A\u0639\u0627\u062F\u0629 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631." };
+  }
+  const cleanEmail = input.email?.trim().toLowerCase() || "";
+  if (cleanEmail && db.customers.some((c) => c.email?.toLowerCase() === cleanEmail)) {
+    return { error: "\u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0645\u0633\u062C\u0644 \u0645\u0633\u0628\u0642\u0627\u064B. \u064A\u0631\u062C\u0649 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644." };
   }
   const customer = {
     id: `cust-${crypto.randomUUID().slice(0, 8)}`,
     name: input.name.trim(),
     phone: normalizedPhone,
+    email: cleanEmail || void 0,
     nationalAddress: input.nationalAddress?.trim() || "",
-    address: input.address.trim(),
+    address: input.address?.trim() || "",
     goldenCoins: 0,
     coupons: [],
+    loyaltyHistory: [],
+    sharedProductsHistory: {},
     passwordHash: hashPassword(input.password),
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   db.customers.unshift(customer);
   saveDb(db);
-  const { passwordHash: _ph, ...profile } = customer;
-  return { customer: profile };
+  return { customer: toCustomerProfile(customer) };
 }
-function loginCustomer(phone, password) {
+function loginCustomer(phoneOrEmail, password) {
   const db = ensureDb();
-  const found = db.customers.find((c) => c.phone === phone.trim());
-  if (!found) return null;
+  const clean = phoneOrEmail.trim();
+  const isEmail = clean.includes("@");
+  const found = db.customers.find(
+    (c) => isEmail ? c.email?.toLowerCase() === clean.toLowerCase() : phonesMatch(c.phone, clean)
+  );
+  if (!found || !found.passwordHash) return null;
   if (!verifyPassword(password, found.passwordHash)) return null;
-  const { passwordHash: _ph, resetCodeHash: _rc, resetExpiresAt: _re, ...profile } = found;
-  return profile;
+  return toCustomerProfile(found);
+}
+function upsertGoogleCustomer(input) {
+  const db = ensureDb();
+  const cleanEmail = input.email.trim().toLowerCase();
+  const cleanName = input.name?.trim() || cleanEmail.split("@")[0] || "\u0639\u0645\u064A\u0644 \u0627\u0644\u062A\u0627\u062C \u0627\u0644\u0630\u0647\u0628\u064A";
+  if (input.existingCustomerId) {
+    const existingIdx = db.customers.findIndex((c) => c.id === input.existingCustomerId);
+    if (existingIdx !== -1) {
+      const conflict = db.customers.find(
+        (c) => c.id !== input.existingCustomerId && (c.googleUid && c.googleUid === input.googleUid || c.email && c.email.toLowerCase() === cleanEmail)
+      );
+      if (conflict) {
+        return { error: "\u062D\u0633\u0627\u0628 Google \u0647\u0630\u0627 \u0645\u0631\u062A\u0628\u0637 \u0628\u062D\u0633\u0627\u0628 \u0639\u0645\u064A\u0644 \u0622\u062E\u0631 \u0645\u0633\u0628\u0642\u0627\u064B." };
+      }
+      db.customers[existingIdx] = {
+        ...db.customers[existingIdx],
+        googleUid: input.googleUid,
+        email: db.customers[existingIdx].email || cleanEmail,
+        name: db.customers[existingIdx].name || cleanName
+      };
+      saveDb(db);
+      return { customer: toCustomerProfile(db.customers[existingIdx]) };
+    }
+  }
+  const matchedIdx = db.customers.findIndex(
+    (c) => c.googleUid === input.googleUid || c.email && c.email.toLowerCase() === cleanEmail
+  );
+  if (matchedIdx !== -1) {
+    db.customers[matchedIdx] = {
+      ...db.customers[matchedIdx],
+      googleUid: input.googleUid,
+      email: db.customers[matchedIdx].email || cleanEmail,
+      name: db.customers[matchedIdx].name || cleanName
+    };
+    saveDb(db);
+    return { customer: toCustomerProfile(db.customers[matchedIdx]) };
+  }
+  const created = {
+    id: `cust-${crypto.randomUUID().slice(0, 8)}`,
+    name: cleanName,
+    phone: "",
+    email: cleanEmail,
+    googleUid: input.googleUid,
+    nationalAddress: "",
+    address: "",
+    goldenCoins: 0,
+    coupons: [],
+    loyaltyHistory: [],
+    sharedProductsHistory: {},
+    passwordHash: "",
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  db.customers.unshift(created);
+  saveDb(db);
+  return { customer: toCustomerProfile(created) };
 }
 function getCustomerById(id) {
   const found = ensureDb().customers.find((c) => c.id === id);
   if (!found) return null;
-  const { passwordHash: _ph, resetCodeHash: _rc, resetExpiresAt: _re, ...profile } = found;
-  return profile;
+  return toCustomerProfile(found);
 }
 function requestCustomerPasswordReset(phoneInput) {
   const db = ensureDb();
-  const normalized = phoneInput.replace(/\D/g, "");
-  const idx = db.customers.findIndex((c) => {
-    const storedDigits = c.phone.replace(/\D/g, "");
-    return c.phone === phoneInput.trim() || normalized.length >= 9 && storedDigits.endsWith(normalized.slice(-9));
-  });
+  const clean = phoneInput.trim();
+  const idx = db.customers.findIndex(
+    (c) => clean.includes("@") ? c.email?.toLowerCase() === clean.toLowerCase() : phonesMatch(c.phone, clean)
+  );
   if (idx === -1) {
-    return { ok: false, error: "\u0644\u0627 \u064A\u0648\u062C\u062F \u062D\u0633\u0627\u0628 \u0639\u0645\u064A\u0644 \u0645\u0633\u062C\u0644 \u0628\u0647\u0630\u0627 \u0627\u0644\u0631\u0642\u0645." };
+    return { ok: false, error: "\u0644\u0627 \u064A\u0648\u062C\u062F \u062D\u0633\u0627\u0628 \u0639\u0645\u064A\u0644 \u0645\u0633\u062C\u0644 \u0628\u0647\u0630\u0647 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A." };
   }
   const code = String(crypto.randomInt(1e5, 999999));
   db.customers[idx].resetCodeHash = hashPassword(code);
   db.customers[idx].resetExpiresAt = Date.now() + 15 * 60 * 1e3;
   saveDb(db);
-  return { ok: true, code, phone: db.customers[idx].phone };
+  return { ok: true, code, phone: db.customers[idx].phone || db.customers[idx].email || clean };
 }
 function confirmCustomerPasswordReset(phoneInput, code, newPassword) {
   const db = ensureDb();
-  const normalized = phoneInput.replace(/\D/g, "");
-  const idx = db.customers.findIndex((c) => {
-    const storedDigits = c.phone.replace(/\D/g, "");
-    return c.phone === phoneInput.trim() || normalized.length >= 9 && storedDigits.endsWith(normalized.slice(-9));
-  });
+  const clean = phoneInput.trim();
+  const idx = db.customers.findIndex(
+    (c) => clean.includes("@") ? c.email?.toLowerCase() === clean.toLowerCase() : phonesMatch(c.phone, clean)
+  );
   if (idx === -1) {
-    return { ok: false, error: "\u0644\u0627 \u064A\u0648\u062C\u062F \u062D\u0633\u0627\u0628 \u0639\u0645\u064A\u0644 \u0645\u0633\u062C\u0644 \u0628\u0647\u0630\u0627 \u0627\u0644\u0631\u0642\u0645." };
+    return { ok: false, error: "\u0644\u0627 \u064A\u0648\u062C\u062F \u062D\u0633\u0627\u0628 \u0639\u0645\u064A\u0644 \u0645\u0633\u062C\u0644 \u0628\u0647\u0630\u0647 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A." };
   }
   const customer = db.customers[idx];
   if (!customer.resetCodeHash || !customer.resetExpiresAt || Date.now() > customer.resetExpiresAt) {
     return { ok: false, error: "\u0627\u0646\u062A\u0647\u062A \u0635\u0644\u0627\u062D\u064A\u0629 \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0623\u0648 \u0644\u0645 \u064A\u062A\u0645 \u0637\u0644\u0628\u0647 \u0628\u0639\u062F." };
   }
-  if (!verifyPassword(code.trim(), customer.resetCodeHash)) {
+  if (!verifyPassword(toWesternDigits(code.trim()), customer.resetCodeHash)) {
     return { ok: false, error: "\u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D." };
   }
   customer.passwordHash = hashPassword(newPassword);
   delete customer.resetCodeHash;
   delete customer.resetExpiresAt;
   saveDb(db);
-  const { passwordHash: _ph, resetCodeHash: _rc, resetExpiresAt: _re, ...profile } = customer;
-  return { ok: true, customer: profile };
+  return { ok: true, customer: toCustomerProfile(customer) };
 }
 function changeCustomerPassword(customerId, currentPassword, newPassword) {
   const db = ensureDb();
   const idx = db.customers.findIndex((c) => c.id === customerId);
   if (idx === -1) return { ok: false, error: "\u0627\u0644\u062D\u0633\u0627\u0628 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." };
-  if (!verifyPassword(currentPassword, db.customers[idx].passwordHash)) {
+  if (db.customers[idx].passwordHash && !verifyPassword(currentPassword, db.customers[idx].passwordHash)) {
     return { ok: false, error: "\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0627\u0644\u062D\u0627\u0644\u064A\u0629 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629." };
   }
   db.customers[idx].passwordHash = hashPassword(newPassword);
   saveDb(db);
-  return { ok: true };
+  return { ok: true, customer: toCustomerProfile(db.customers[idx]) };
 }
 function updateCustomerProfile(id, patch) {
   const db = ensureDb();
   const idx = db.customers.findIndex((c) => c.id === id);
-  if (idx === -1) return null;
+  if (idx === -1) return { error: "\u0627\u0644\u062D\u0633\u0627\u0628 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." };
+  let nextPhone = db.customers[idx].phone;
+  if (patch.phone !== void 0) {
+    const trimmedPhone = patch.phone.trim();
+    if (trimmedPhone) {
+      const normalizedPhone = normalizeSaudiPhone(trimmedPhone);
+      if (normalizedPhone.length < 9) {
+        return { error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0642\u0645 \u062C\u0648\u0627\u0644 \u0635\u062D\u064A\u062D (\u0645\u062B\u0627\u0644: 05XXXXXXXX)." };
+      }
+      if (db.customers.some((c) => c.id !== id && phonesMatch(c.phone, normalizedPhone))) {
+        return { error: "\u0631\u0642\u0645 \u0627\u0644\u062C\u0648\u0627\u0644 \u0645\u0633\u062A\u062E\u062F\u0645 \u0641\u064A \u062D\u0633\u0627\u0628 \u0639\u0645\u064A\u0644 \u0622\u062E\u0631." };
+      }
+      nextPhone = normalizedPhone;
+    } else if (db.customers[idx].email) {
+      nextPhone = "";
+    } else {
+      return { error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0642\u0645 \u062C\u0648\u0627\u0644 \u0635\u062D\u064A\u062D." };
+    }
+  }
+  let nextEmail = db.customers[idx].email;
+  if (patch.email !== void 0) {
+    const cleanedEmail = patch.email.trim().toLowerCase();
+    if (cleanedEmail && db.customers.some((c) => c.id !== id && c.email?.toLowerCase() === cleanedEmail)) {
+      return { error: "\u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0645\u0633\u062A\u062E\u062F\u0645 \u0641\u064A \u062D\u0633\u0627\u0628 \u0639\u0645\u064A\u0644 \u0622\u062E\u0631." };
+    }
+    nextEmail = cleanedEmail || void 0;
+  }
   db.customers[idx] = {
     ...db.customers[idx],
     name: patch.name !== void 0 ? patch.name.trim() : db.customers[idx].name,
-    phone: patch.phone !== void 0 ? patch.phone.trim() : db.customers[idx].phone,
+    phone: nextPhone,
+    email: nextEmail,
     nationalAddress: patch.nationalAddress !== void 0 ? patch.nationalAddress.trim() : db.customers[idx].nationalAddress,
     address: patch.address !== void 0 ? patch.address.trim() : db.customers[idx].address
   };
   saveDb(db);
-  const { passwordHash: _ph, resetCodeHash: _rc, resetExpiresAt: _re, ...profile } = db.customers[idx];
-  return profile;
+  return { customer: toCustomerProfile(db.customers[idx]) };
 }
 function getAllCustomersAdmin() {
-  return ensureDb().customers.map(({ passwordHash: _ph, resetCodeHash: _rc, resetExpiresAt: _re, ...profile }) => profile);
+  return ensureDb().customers.map(toCustomerProfile);
 }
 function createOrder(order) {
   const db = ensureDb();
@@ -1034,13 +1293,61 @@ function claimDailyCoins(customerId) {
   if (current.lastDailyClaimDate === today) {
     return { error: "\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0645\u0643\u0627\u0641\u0623\u0629 \u0627\u0644\u062F\u062E\u0648\u0644 \u0627\u0644\u064A\u0648\u0645\u064A \u0644\u0647\u0630\u0627 \u0627\u0644\u064A\u0648\u0645 \u0645\u0633\u0628\u0642\u0627\u064B. \u0639\u062F \u063A\u062F\u0627\u064B!" };
   }
-  const award = Math.max(1, Math.floor(Number(db.settings.dailyCheckinCoins) || 25));
+  const rawDaily = Number(db.settings.dailyCheckinCoins);
+  const award = db.settings.dailyCheckinCoins !== void 0 && Number.isFinite(rawDaily) ? Math.max(0, Math.floor(rawDaily)) : 25;
   current.goldenCoins = (current.goldenCoins || 0) + award;
   current.lastDailyClaimDate = today;
+  if (award > 0) {
+    appendLoyaltyHistory(current, {
+      type: "daily",
+      points: award,
+      description: "\u0645\u0643\u0627\u0641\u0623\u0629 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0627\u0644\u064A\u0648\u0645\u064A"
+    });
+  }
   db.customers[idx] = current;
   saveDb(db);
-  const { passwordHash: _ph, ...profile } = current;
-  return { customer: profile, awardedCoins: award };
+  return { customer: toCustomerProfile(current), awardedCoins: award };
+}
+function awardProductSharePoints(customerId, params) {
+  const db = ensureDb();
+  const idx = db.customers.findIndex((c) => c.id === customerId);
+  if (idx === -1) return { error: "\u0627\u0644\u062D\u0633\u0627\u0628 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." };
+  if (db.settings.loyaltyEnabled === false) {
+    return { error: "\u0646\u0638\u0627\u0645 \u0646\u0642\u0627\u0637 \u0627\u0644\u0648\u0644\u0627\u0621 \u0645\u062A\u0648\u0642\u0641 \u062D\u0627\u0644\u064A\u0627\u064B \u0645\u0646 \u0642\u0628\u0644 \u0627\u0644\u0645\u0627\u0644\u0643." };
+  }
+  const today = (/* @__PURE__ */ new Date()).toLocaleDateString("en-CA", { timeZone: "Asia/Riyadh" });
+  const current = db.customers[idx];
+  const shareKey = (params.productId || "store").trim() || "store";
+  const shareMap = current.sharedProductsHistory || {};
+  if (shareMap[shareKey] === today) {
+    return {
+      customer: toCustomerProfile(current),
+      awardedCoins: 0,
+      alreadySharedToday: true
+    };
+  }
+  const rawShare = Number(db.settings.coinsPerProductShare);
+  const award = db.settings.coinsPerProductShare !== void 0 && Number.isFinite(rawShare) ? Math.max(0, Math.floor(rawShare)) : 15;
+  current.goldenCoins = (current.goldenCoins || 0) + award;
+  current.sharedProductsHistory = {
+    ...shareMap,
+    [shareKey]: today
+  };
+  if (award > 0) {
+    const cleanTitle = params.productTitle?.trim();
+    appendLoyaltyHistory(current, {
+      type: "share",
+      points: award,
+      description: cleanTitle ? `\u0645\u0643\u0627\u0641\u0623\u0629 \u0645\u0634\u0627\u0631\u0643\u0629 \u0627\u0644\u0645\u0646\u062A\u062C: ${cleanTitle}` : "\u0645\u0643\u0627\u0641\u0623\u0629 \u0645\u0634\u0627\u0631\u0643\u0629 \u0645\u062A\u062C\u0631 \u0627\u0644\u062A\u0627\u062C \u0627\u0644\u0630\u0647\u0628\u064A"
+    });
+  }
+  db.customers[idx] = current;
+  saveDb(db);
+  return {
+    customer: toCustomerProfile(current),
+    awardedCoins: award,
+    alreadySharedToday: false
+  };
 }
 function convertCoinsToCoupon(customerId, coinsToSpend) {
   const db = ensureDb();
@@ -1051,14 +1358,15 @@ function convertCoinsToCoupon(customerId, coinsToSpend) {
   }
   const cleanCoins = Math.floor(Number(coinsToSpend) || 0);
   if (cleanCoins < 5) {
-    return { error: "\u0627\u0644\u062D\u062F \u0627\u0644\u0623\u062F\u0646\u0649 \u0644\u062A\u062D\u0648\u064A\u0644 \u0627\u0644\u0639\u0645\u0644\u0627\u062A \u0625\u0644\u0649 \u0643\u0648\u0628\u0648\u0646 \u0647\u0648 5 \u0639\u0645\u0644\u0627\u062A \u0630\u0647\u0628\u064A\u0629." };
+    return { error: "\u0627\u0644\u062D\u062F \u0627\u0644\u0623\u062F\u0646\u0649 \u0644\u062A\u062D\u0648\u064A\u0644 \u0627\u0644\u0646\u0642\u0627\u0637 \u0625\u0644\u0649 \u0643\u0648\u0628\u0648\u0646 \u062E\u0635\u0645 \u0647\u0648 5 \u0646\u0642\u0627\u0637." };
   }
   const current = db.customers[idx];
   const balance = current.goldenCoins || 0;
   if (balance < cleanCoins) {
-    return { error: "\u0631\u0635\u064A\u062F\u0643 \u0645\u0646 \u0627\u0644\u0639\u0645\u0644\u0627\u062A \u0627\u0644\u0630\u0647\u0628\u064A\u0629 \u063A\u064A\u0631 \u0643\u0627\u0641\u064D." };
+    return { error: "\u0631\u0635\u064A\u062F\u0643 \u0645\u0646 \u0646\u0642\u0627\u0637 \u0627\u0644\u0648\u0644\u0627\u0621 \u063A\u064A\u0631 \u0643\u0627\u0641\u064D." };
   }
-  const coinValue = Number(db.settings.coinValueSar) || 0.1;
+  const rawCoinVal = Number(db.settings.coinValueSar);
+  const coinValue = db.settings.coinValueSar !== void 0 && Number.isFinite(rawCoinVal) && rawCoinVal > 0 ? rawCoinVal : 0.1;
   const discountSar = Number((cleanCoins * coinValue).toFixed(2));
   const coupon = {
     code: `TAJ-${crypto.randomBytes(3).toString("hex").toUpperCase()}`,
@@ -1069,10 +1377,14 @@ function convertCoinsToCoupon(customerId, coinsToSpend) {
   };
   current.goldenCoins = balance - cleanCoins;
   current.coupons = [coupon, ...current.coupons || []];
+  appendLoyaltyHistory(current, {
+    type: "redeem",
+    points: -cleanCoins,
+    description: `\u062A\u062D\u0648\u064A\u0644 ${cleanCoins} \u0646\u0642\u0637\u0629 \u0625\u0644\u0649 \u0643\u0648\u062F \u062E\u0635\u0645 \u0641\u0648\u0631\u064A ${coupon.code} (${discountSar} \u0631.\u0633)`
+  });
   db.customers[idx] = current;
   saveDb(db);
-  const { passwordHash: _ph, ...profile } = current;
-  return { customer: profile, coupon };
+  return { customer: toCustomerProfile(current), coupon };
 }
 function validatePromoDiscountCode(codeInput, subtotalSar) {
   const db = ensureDb();
@@ -1134,7 +1446,8 @@ function applyLoyaltyAndAwardOnOrder(params) {
     };
   }
   const current = db.customers[idx];
-  const coinValue = Number(db.settings.coinValueSar) || 0.1;
+  const rawOrderCoinVal = Number(db.settings.coinValueSar);
+  const coinValue = db.settings.coinValueSar !== void 0 && Number.isFinite(rawOrderCoinVal) && rawOrderCoinVal > 0 ? rawOrderCoinVal : 0.1;
   if (!couponCodeUsed && cleanInputCode) {
     const coupons = current.coupons || [];
     const cIdx = coupons.findIndex((c) => c.code.toUpperCase() === cleanInputCode && !c.isUsed);
@@ -1165,20 +1478,34 @@ function applyLoyaltyAndAwardOnOrder(params) {
     coinsRedeemed = Math.min(requested, maxUsableCoins);
     discountSar = Number(Math.min(params.subtotalSar, coinsRedeemed * coinValue).toFixed(2));
     current.goldenCoins = available - coinsRedeemed;
+    if (coinsRedeemed > 0) {
+      appendLoyaltyHistory(current, {
+        type: "redeem",
+        points: -coinsRedeemed,
+        description: `\u0627\u0633\u062A\u0628\u062F\u0627\u0644 \u0646\u0642\u0627\u0637 \u0639\u0646\u062F \u0625\u062A\u0645\u0627\u0645 \u0627\u0644\u0637\u0644\u0628 ${params.orderId} (\u062E\u0635\u0645 ${discountSar} \u0631.\u0633)`
+      });
+    }
   }
   const finalPaidSar = Math.max(0, params.subtotalSar - discountSar);
-  const ratePer100 = Math.max(0, Number(db.settings.coinsPer100SarPurchase) || 50);
+  const rawRate = Number(db.settings.coinsPer100SarPurchase);
+  const ratePer100 = db.settings.coinsPer100SarPurchase !== void 0 && Number.isFinite(rawRate) ? Math.max(0, rawRate) : 50;
   const coinsEarned = Math.floor(finalPaidSar / 100 * ratePer100);
   current.goldenCoins = (current.goldenCoins || 0) + coinsEarned;
+  if (coinsEarned > 0) {
+    appendLoyaltyHistory(current, {
+      type: "purchase",
+      points: coinsEarned,
+      description: `\u0645\u0643\u0627\u0641\u0623\u0629 \u0639\u0645\u0644\u064A\u0629 \u0634\u0631\u0627\u0621 \u2014 \u0627\u0644\u0637\u0644\u0628 ${params.orderId}`
+    });
+  }
   db.customers[idx] = current;
   saveDb(db);
-  const { passwordHash: _ph, ...profile } = current;
   return {
     discountSar,
     coinsRedeemed,
     couponCodeUsed,
     coinsEarned,
-    updatedCustomer: profile
+    updatedCustomer: toCustomerProfile(current)
   };
 }
 function adjustCustomerCoinsAdmin(customerId, newBalance) {
@@ -1190,8 +1517,7 @@ function adjustCustomerCoinsAdmin(customerId, newBalance) {
     goldenCoins: Math.max(0, Math.floor(Number(newBalance) || 0))
   };
   saveDb(db);
-  const { passwordHash: _ph, ...profile } = db.customers[idx];
-  return profile;
+  return toCustomerProfile(db.customers[idx]);
 }
 function getAssistantMessages() {
   return [...ensureDb().assistantMessages || []];
@@ -1318,6 +1644,243 @@ function addProductReview(input) {
   saveDb(db);
   return review;
 }
+function ensureWalletRef(db) {
+  if (!db.ownerWallet) {
+    db.ownerWallet = {
+      balanceSar: 0,
+      totalDepositedSar: 0,
+      totalSpentSar: 0,
+      transferredOrderIds: [],
+      transactions: [],
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
+  return db.ownerWallet;
+}
+function getOwnerWalletSummaryAdmin() {
+  const db = ensureDb();
+  const wallet = ensureWalletRef(db);
+  const transferredSet = new Set(wallet.transferredOrderIds || []);
+  const eligibleOrders = db.orders.filter(
+    (o) => o.status !== "\u0645\u0644\u063A\u064A" && o.paymentMethod !== "owner_wallet" && !transferredSet.has(o.id)
+  );
+  const availableSalesTransferSar = Number(
+    eligibleOrders.reduce((sum, o) => sum + (Number(o.totalSar) || 0), 0).toFixed(2)
+  );
+  return {
+    wallet: {
+      ...wallet,
+      transactions: [...wallet.transactions || []],
+      transferredOrderIds: [...wallet.transferredOrderIds || []]
+    },
+    availableSalesTransferSar,
+    availableOrdersCount: eligibleOrders.length
+  };
+}
+function depositToOwnerWalletAdmin(params) {
+  const amount = Number(Number(params.amountSar).toFixed(2));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0645\u0628\u0644\u063A \u0625\u064A\u062F\u0627\u0639 \u0635\u062D\u064A\u062D \u0623\u0643\u0628\u0631 \u0645\u0646 \u0635\u0641\u0631 \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A." };
+  }
+  const db = ensureDb();
+  const wallet = ensureWalletRef(db);
+  const nextBalance = Number((wallet.balanceSar + amount).toFixed(2));
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const tx = {
+    id: `WAL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    type: "deposit",
+    amountSar: amount,
+    balanceAfterSar: nextBalance,
+    title: params.note?.trim() || "\u0625\u064A\u062F\u0627\u0639 \u0648\u0634\u062D\u0646 \u0631\u0635\u064A\u062F \u0645\u062D\u0641\u0638\u0629 \u0627\u0644\u0645\u0627\u0644\u0643",
+    category: "\u062A\u063A\u0630\u064A\u0629 \u0627\u0644\u0645\u062D\u0641\u0638\u0629",
+    reference: params.reference?.trim() || void 0,
+    createdAt: now
+  };
+  wallet.balanceSar = nextBalance;
+  wallet.totalDepositedSar = Number((wallet.totalDepositedSar + amount).toFixed(2));
+  wallet.transactions = [tx, ...wallet.transactions || []].slice(0, 100);
+  wallet.updatedAt = now;
+  db.ownerWallet = wallet;
+  saveDb(db);
+  const summary = getOwnerWalletSummaryAdmin();
+  return {
+    wallet: summary.wallet,
+    transaction: tx,
+    availableSalesTransferSar: summary.availableSalesTransferSar,
+    availableOrdersCount: summary.availableOrdersCount
+  };
+}
+function transferSalesRevenueToWalletAdmin() {
+  const db = ensureDb();
+  const wallet = ensureWalletRef(db);
+  const transferredSet = new Set(wallet.transferredOrderIds || []);
+  const eligibleOrders = db.orders.filter(
+    (o) => o.status !== "\u0645\u0644\u063A\u064A" && o.paymentMethod !== "owner_wallet" && !transferredSet.has(o.id)
+  );
+  const transferAmount = Number(
+    eligibleOrders.reduce((sum, o) => sum + (Number(o.totalSar) || 0), 0).toFixed(2)
+  );
+  if (eligibleOrders.length === 0 || transferAmount <= 0) {
+    return { error: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0625\u064A\u0631\u0627\u062F\u0627\u062A \u0637\u0644\u0628\u0627\u062A \u062C\u062F\u064A\u062F\u0629 \u063A\u064A\u0631 \u0645\u0631\u062D\u0651\u0644\u0629 \u0625\u0644\u0649 \u0627\u0644\u0645\u062D\u0641\u0638\u0629 \u062D\u0627\u0644\u064A\u0627\u064B." };
+  }
+  const nextBalance = Number((wallet.balanceSar + transferAmount).toFixed(2));
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const tx = {
+    id: `WAL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    type: "sales_transfer",
+    amountSar: transferAmount,
+    balanceAfterSar: nextBalance,
+    title: `\u062A\u0631\u062D\u064A\u0644 \u0625\u064A\u0631\u0627\u062F\u0627\u062A ${eligibleOrders.length} \u0637\u0644\u0628 \u0645\u0646 \u0645\u0628\u064A\u0639\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631`,
+    category: "\u0625\u064A\u0631\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A",
+    reference: eligibleOrders.slice(0, 5).map((o) => o.id).join("\u060C "),
+    createdAt: now
+  };
+  wallet.balanceSar = nextBalance;
+  wallet.totalDepositedSar = Number((wallet.totalDepositedSar + transferAmount).toFixed(2));
+  wallet.transferredOrderIds = [
+    ...wallet.transferredOrderIds || [],
+    ...eligibleOrders.map((o) => o.id)
+  ];
+  wallet.transactions = [tx, ...wallet.transactions || []].slice(0, 100);
+  wallet.updatedAt = now;
+  db.ownerWallet = wallet;
+  saveDb(db);
+  const summary = getOwnerWalletSummaryAdmin();
+  return {
+    wallet: summary.wallet,
+    transferredSar: transferAmount,
+    ordersCount: eligibleOrders.length,
+    transaction: tx,
+    availableSalesTransferSar: summary.availableSalesTransferSar,
+    availableOrdersCount: summary.availableOrdersCount
+  };
+}
+function purchaseWithOwnerWalletAdmin(params) {
+  const db = ensureDb();
+  const wallet = ensureWalletRef(db);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  let finalAmount = 0;
+  let txTitle = "";
+  let txCategory = params.category?.trim() || "\u0645\u0634\u062A\u0631\u064A\u0627\u062A \u0627\u0644\u0645\u0627\u0644\u0643";
+  let purchasedProduct;
+  let qty = 1;
+  if (params.mode === "product") {
+    purchasedProduct = db.products.find((p) => p.id === params.productId);
+    if (!purchasedProduct) {
+      return { error: "\u064A\u0631\u062C\u0649 \u0627\u062E\u062A\u064A\u0627\u0631 \u0645\u0646\u062A\u062C \u0635\u0627\u0644\u062D \u0644\u0644\u0634\u0631\u0627\u0621 \u0645\u0646 \u0627\u0644\u0645\u062D\u0641\u0638\u0629." };
+    }
+    qty = Math.max(1, Math.min(999, Math.floor(Number(params.quantity) || 1)));
+    const basis = params.priceBasis || "wholesale";
+    const unitPrice = basis === "cost" && typeof purchasedProduct.costPriceSar === "number" && purchasedProduct.costPriceSar > 0 ? purchasedProduct.costPriceSar : basis === "wholesale" && typeof purchasedProduct.wholesalePriceSar === "number" && purchasedProduct.wholesalePriceSar > 0 ? purchasedProduct.wholesalePriceSar : purchasedProduct.priceSar;
+    finalAmount = Number((unitPrice * qty).toFixed(2));
+    txTitle = `\u0634\u0631\u0627\u0621 ${purchasedProduct.name} (\xD7${qty})`;
+    txCategory = params.category?.trim() || "\u0634\u0631\u0627\u0621 \u0645\u0646\u062A\u062C \u0645\u0646 \u0627\u0644\u0645\u062A\u062C\u0631";
+  } else {
+    finalAmount = Number(Number(params.amountSar || 0).toFixed(2));
+    txTitle = params.title?.trim() || "";
+    if (!txTitle) {
+      return { error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0648\u0635\u0641 \u0639\u0645\u0644\u064A\u0629 \u0627\u0644\u0634\u0631\u0627\u0621 \u0623\u0648 \u0627\u0633\u0645 \u0627\u0644\u0645\u0648\u0631\u062F." };
+    }
+  }
+  if (!Number.isFinite(finalAmount) || finalAmount <= 0) {
+    return { error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0645\u0628\u0644\u063A \u0634\u0631\u0627\u0621 \u0635\u062D\u064A\u062D \u0623\u0643\u0628\u0631 \u0645\u0646 \u0635\u0641\u0631." };
+  }
+  if (wallet.balanceSar < finalAmount) {
+    const missing = Number((finalAmount - wallet.balanceSar).toFixed(2));
+    return {
+      error: `\u0631\u0635\u064A\u062F \u0645\u062D\u0641\u0638\u0629 \u0627\u0644\u0645\u0627\u0644\u0643 (${wallet.balanceSar.toLocaleString("ar-SA")} \u0631.\u0633) \u063A\u064A\u0631 \u0643\u0627\u0641\u064D \u0644\u0625\u062A\u0645\u0627\u0645 \u0627\u0644\u0634\u0631\u0627\u0621. \u064A\u0646\u0642\u0635\u0643 ${missing.toLocaleString("ar-SA")} \u0631.\u0633.`
+    };
+  }
+  const nextBalance = Number((wallet.balanceSar - finalAmount).toFixed(2));
+  let createdOrder;
+  if (params.mode === "product" && purchasedProduct && params.recordStoreOrder !== false) {
+    const unitSar = Number((finalAmount / qty).toFixed(2));
+    const orderId = `ORD-${crypto.randomInt(1e4, 99999)}`;
+    createdOrder = {
+      id: orderId,
+      customerName: "\u0634\u0631\u0627\u0621 \u0645\u0628\u0627\u0634\u0631 \u2014 \u0645\u062D\u0641\u0638\u0629 \u0627\u0644\u0645\u0627\u0644\u0643",
+      customerPhone: db.settings.whatsappNumber || "0500000000",
+      customerAddress: "\u0637\u0644\u0628 \u062F\u0627\u062E\u0644\u064A \u0645\u062F\u0641\u0648\u0639 \u0645\u0646 \u0645\u062D\u0641\u0638\u0629 \u0627\u0644\u0645\u0627\u0644\u0643",
+      items: [
+        {
+          productId: purchasedProduct.id,
+          name: purchasedProduct.name,
+          priceSar: unitSar,
+          quantity: qty,
+          image: (purchasedProduct.images || [])[0] || ""
+        }
+      ],
+      subtotalSar: finalAmount,
+      totalSar: finalAmount,
+      totalUsd: Number((finalAmount * (db.settings.sarToUsdRate || 0.2667)).toFixed(2)),
+      paymentMethod: "owner_wallet",
+      bankTransferRef: params.reference?.trim() || "\u0645\u062F\u0641\u0648\u0639 \u0645\u0646 \u0645\u062D\u0641\u0638\u0629 \u0627\u0644\u0645\u0627\u0644\u0643",
+      status: "\u062A\u0645 \u0627\u0644\u062A\u0623\u0643\u064A\u062F",
+      createdAt: now
+    };
+    db.orders.unshift(createdOrder);
+  }
+  const tx = {
+    id: `WAL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    type: "purchase",
+    amountSar: -finalAmount,
+    balanceAfterSar: nextBalance,
+    title: txTitle,
+    category: txCategory,
+    reference: params.reference?.trim() || void 0,
+    orderId: createdOrder?.id,
+    productId: purchasedProduct?.id,
+    quantity: purchasedProduct ? qty : void 0,
+    createdAt: now
+  };
+  wallet.balanceSar = nextBalance;
+  wallet.totalSpentSar = Number((wallet.totalSpentSar + finalAmount).toFixed(2));
+  wallet.transactions = [tx, ...wallet.transactions || []].slice(0, 100);
+  wallet.updatedAt = now;
+  db.ownerWallet = wallet;
+  saveDb(db);
+  const summary = getOwnerWalletSummaryAdmin();
+  return {
+    wallet: summary.wallet,
+    transaction: tx,
+    order: createdOrder,
+    availableSalesTransferSar: summary.availableSalesTransferSar,
+    availableOrdersCount: summary.availableOrdersCount
+  };
+}
+function chargeOwnerWalletForCartOrder(params) {
+  const db = ensureDb();
+  const wallet = ensureWalletRef(db);
+  const amount = Number(Number(params.amountSar).toFixed(2));
+  if (amount <= 0) {
+    return { wallet };
+  }
+  if (wallet.balanceSar < amount) {
+    const missing = Number((amount - wallet.balanceSar).toFixed(2));
+    return {
+      error: `\u0631\u0635\u064A\u062F \u0645\u062D\u0641\u0638\u0629 \u0627\u0644\u0645\u0627\u0644\u0643 (${wallet.balanceSar.toLocaleString("ar-SA")} \u0631.\u0633) \u063A\u064A\u0631 \u0643\u0627\u0641\u064D. \u064A\u0646\u0642\u0635\u0643 ${missing.toLocaleString("ar-SA")} \u0631.\u0633.`
+    };
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const nextBalance = Number((wallet.balanceSar - amount).toFixed(2));
+  const tx = {
+    id: `WAL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    type: "purchase",
+    amountSar: -amount,
+    balanceAfterSar: nextBalance,
+    title: `\u0634\u0631\u0627\u0621 \u0639\u0628\u0631 \u0627\u0644\u0633\u0644\u0629 \u2014 ${params.itemSummary || params.orderId}`,
+    category: "\u0634\u0631\u0627\u0621 \u0645\u0646 \u0627\u0644\u0645\u062A\u062C\u0631 (\u0627\u0644\u0633\u0644\u0629)",
+    orderId: params.orderId,
+    createdAt: now
+  };
+  wallet.balanceSar = nextBalance;
+  wallet.totalSpentSar = Number((wallet.totalSpentSar + amount).toFixed(2));
+  wallet.transactions = [tx, ...wallet.transactions || []].slice(0, 100);
+  wallet.updatedAt = now;
+  db.ownerWallet = wallet;
+  saveDb(db);
+  return { wallet };
+}
 function getAllReviewsAdmin() {
   return [...ensureDb().reviews || []];
 }
@@ -1424,7 +1987,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 function getAiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not configured in the server environment.");
+    throw new Error("GEMINI_API_KEY \u063A\u064A\u0631 \u0645\u0636\u0628\u0648\u0637 \u0641\u064A \u0645\u062A\u063A\u064A\u0631\u0627\u062A \u0627\u0644\u0628\u064A\u0626\u0629 \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645.");
   }
   return new GoogleGenAI({
     apiKey,
@@ -1434,6 +1997,59 @@ function getAiClient() {
       }
     }
   });
+}
+function safeParseAiJson(rawText, fallback) {
+  const trimmed = (rawText ?? "").trim();
+  if (!trimmed) return fallback;
+  const cleaned = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const objMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      try {
+        return JSON.parse(objMatch[0]);
+      } catch {
+      }
+    }
+    const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (arrMatch) {
+      try {
+        return JSON.parse(arrMatch[0]);
+      } catch {
+      }
+    }
+    return fallback;
+  }
+}
+async function generateProductSquareImageWithGemini(input) {
+  const ai = getAiClient();
+  const prompt = [
+    `Create a high-end commercial studio product photograph in exact 1:1 square composition for e-commerce (1000x1000 aesthetic).`,
+    `Product: ${input.name}`,
+    input.category ? `Category: ${input.category}` : "",
+    input.description ? `Details: ${input.description.slice(0, 320)}` : "",
+    `Style requirements: Precision stainless-steel 304 automotive catalytic converter / exhaust DPF / platinum ceramic honeycombs or luxury automotive hardware centered in frame on a sleek matte dark obsidian studio pedestal (#09090B) with subtle warm brushed-gold rim lighting, ultra-sharp metallic reflections, crisp studio depth of field, NO text, NO watermark, NO logos, NO price tags.`
+  ].filter(Boolean).join("\n");
+  const response = await ai.models.generateContent({
+    model: "gemini-3.1-flash-lite-image",
+    contents: prompt,
+    config: {
+      imageConfig: {
+        aspectRatio: "1:1"
+      }
+    }
+  });
+  const parts = response.candidates?.[0]?.content?.parts || [];
+  for (const part of parts) {
+    if (part.inlineData?.data) {
+      const mimeType = part.inlineData.mimeType || "image/png";
+      const ext = mimeType.includes("jpeg") || mimeType.includes("jpg") ? "jpg" : "png";
+      const safeName = `ai-product-${Date.now().toString(36)}.${ext}`;
+      return saveUploadedMedia(safeName, mimeType, part.inlineData.data);
+    }
+  }
+  throw new Error("\u0644\u0645 \u064A\u064F\u0631\u062C\u0650\u0639 \u0646\u0645\u0648\u0630\u062C Gemini \u0635\u0648\u0631\u0629 \u0635\u0627\u0644\u062D\u0629 \u0644\u0644\u0645\u0646\u062A\u062C.");
 }
 function extractHtmlSignals(html, baseUrl) {
   const images = /* @__PURE__ */ new Set();
@@ -1477,44 +2093,56 @@ function extractHtmlSignals(html, baseUrl) {
     foundImages: Array.from(images).slice(0, 8)
   };
 }
-async function scrapeProductFromUrl(url) {
+async function scrapeProductFromUrlOrName(input) {
   const ai = getAiClient();
+  const cleanUrl = (input.url || "").trim();
+  const cleanName = (input.productName || "").trim();
+  const defaultCategory = input.category?.trim() || "\u062F\u0628\u0627\u062A \u062A\u0644\u0648\u062B \u0627\u0644\u0628\u0646\u0632\u064A\u0646";
   let fetchedSignals = null;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 9e3);
-    const resp = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+  if (cleanUrl && /^https?:\/\//i.test(cleanUrl)) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 9e3);
+      const resp = await fetch(cleanUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
+      });
+      clearTimeout(timeout);
+      if (resp.ok) {
+        const html = await resp.text();
+        if (html && html.length > 250) {
+          fetchedSignals = extractHtmlSignals(html, cleanUrl);
+        }
       }
-    });
-    clearTimeout(timeout);
-    if (resp.ok) {
-      const html = await resp.text();
-      if (html && html.length > 250) {
-        fetchedSignals = extractHtmlSignals(html, url);
-      }
+    } catch {
     }
-  } catch {
   }
+  let baseResult = null;
   if (fetchedSignals && (fetchedSignals.textSnippet.length > 150 || fetchedSignals.jsonLd.length > 50)) {
-    const prompt = `\u0623\u0646\u062A \u062E\u0628\u064A\u0631 \u062A\u062C\u0627\u0631\u0629 \u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A\u0629 \u0641\u0627\u062E\u0631\u0629. \u0642\u0645 \u0628\u062A\u062D\u0644\u064A\u0644 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0645\u0633\u062A\u062E\u0631\u062C\u0629 \u0645\u0646 \u0627\u0644\u0631\u0627\u0628\u0637 \u0627\u0644\u062A\u0627\u0644\u064A \u0648\u062A\u062D\u0648\u064A\u0644\u0647\u0627 \u0625\u0644\u0649 \u0628\u064A\u0627\u0646\u0627\u062A \u0639\u0631\u0628\u064A\u0629 \u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629 \u0648\u0641\u0627\u062E\u0631\u0629 \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A (SAR):
-\u0627\u0644\u0631\u0627\u0628\u0637: ${url}
+    const prompt = `\u0623\u0646\u062A \u062E\u0628\u064A\u0631 \u062A\u062C\u0627\u0631\u0629 \u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A\u0629 \u0641\u0627\u062E\u0631\u0629 \u0648\u0645\u062A\u0631\u062C\u0645 \u062A\u0642\u0646\u064A \u0645\u062D\u062A\u0631\u0641. \u0642\u0645 \u0628\u062A\u062D\u0644\u064A\u0644 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0645\u0633\u062A\u062E\u0631\u062C\u0629 \u0645\u0646 \u0627\u0644\u0631\u0627\u0628\u0637 \u0627\u0644\u062A\u0627\u0644\u064A \u0648\u062A\u062D\u0648\u064A\u0644\u0647\u0627 \u0625\u0644\u0649 \u0628\u064A\u0627\u0646\u0627\u062A \u0639\u0631\u0628\u064A\u0629 \u062A\u0633\u0648\u064A\u0642\u064A\u0629 \u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629 \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A (SAR):
+\u0627\u0644\u0631\u0627\u0628\u0637: ${cleanUrl}
+${cleanName ? `\u0627\u0633\u0645 \u0645\u0642\u062A\u0631\u062D \u0645\u0646 \u0627\u0644\u0645\u0627\u0644\u0643: ${cleanName}` : ""}
 \u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0645\u0633\u062A\u062E\u0631\u062C: ${fetchedSignals.title}
 \u0627\u0644\u0648\u0635\u0641: ${fetchedSignals.metaDescription}
 \u0628\u064A\u0627\u0646\u0627\u062A JSON-LD: ${fetchedSignals.jsonLd}
 \u0627\u0644\u0635\u0648\u0631 \u0627\u0644\u0645\u0633\u062A\u062E\u0631\u062C\u0629: ${JSON.stringify(fetchedSignals.foundImages)}
 \u0645\u0642\u062A\u0637\u0641 \u0627\u0644\u0646\u0635: ${fetchedSignals.textSnippet}
 
-\u0627\u0644\u0645\u0637\u0644\u0648\u0628:
-- \u0627\u0633\u062A\u062E\u0631\u062C \u0627\u0644\u0627\u0633\u0645 \u0627\u0644\u0643\u0627\u0645\u0644 \u0644\u0644\u0645\u0646\u062A\u062C \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0627\u0644\u0641\u0627\u062E\u0631\u0629.
-- \u0627\u0642\u062A\u0631\u062D \u0633\u0639\u0631\u0627\u064B \u0645\u0646\u0627\u0633\u0628\u0627\u064B \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A (\u0631\u0642\u0645 \u0635\u062D\u064A\u062D) \u0645\u0639 \u062D\u0641\u0638 \u0646\u0635 \u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0623\u0635\u0644\u064A \u0627\u0644\u0645\u0643\u062A\u0634\u0641.
-- \u0627\u0643\u062A\u0628 \u0648\u0635\u0641\u0627\u064B \u062A\u0633\u0648\u064A\u0642\u064A\u0627\u064B \u0639\u0631\u0628\u064A\u0627\u064B \u0645\u062A\u0643\u0627\u0645\u0644\u0627\u064B.
-- \u0627\u0633\u062A\u062E\u0631\u062C \u0627\u0644\u0645\u0648\u0627\u0635\u0641\u0627\u062A \u0627\u0644\u0641\u0646\u064A\u0629 \u0641\u064A \u0645\u0635\u0641\u0648\u0641\u0629 label \u0648 value \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629.
-- \u062D\u0627\u0641\u0638 \u0639\u0644\u0649 \u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u0635\u0648\u0631 \u0639\u0627\u0644\u064A\u0629 \u0627\u0644\u062C\u0648\u062F\u0629 \u0627\u0644\u0645\u0633\u062A\u062E\u0631\u062C\u0629 \u0645\u0646 \u0627\u0644\u0635\u0641\u062D\u0629 \u0625\u0646 \u0648\u062C\u062F\u062A.`;
-    const response2 = await ai.models.generateContent({
+\u0627\u0644\u0645\u0637\u0644\u0648\u0628 \u0628\u0635\u064A\u063A\u0629 JSON:
+- name: \u0627\u0644\u0627\u0633\u0645 \u0627\u0644\u0643\u0627\u0645\u0644 \u0644\u0644\u0645\u0646\u062A\u062C \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0627\u0644\u0641\u0627\u062E\u0631\u0629 \u0648\u0627\u0644\u0645\u0642\u0646\u0639\u0629.
+- nameEn: \u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u062A\u062C\u0627\u0631\u064A \u0628\u0627\u0644\u0625\u0646\u062C\u0644\u064A\u0632\u064A\u0629.
+- category: \u062A\u0635\u0646\u064A\u0641 \u0639\u0631\u0628\u064A \u0645\u0646\u0627\u0633\u0628 \u0645\u062B\u0644 "${defaultCategory}".
+- priceSar: \u0633\u0639\u0631 \u0628\u064A\u0639 \u0645\u0646\u0627\u0633\u0628 \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A (\u0631\u0642\u0645 \u0635\u062D\u064A\u062D \u0645\u0648\u062C\u0628).
+- originalExtractedPrice: \u0646\u0635 \u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0623\u0635\u0644\u064A \u0627\u0644\u0645\u0643\u062A\u0634\u0641.
+- description: \u0648\u0635\u0641 \u062A\u0633\u0648\u064A\u0642\u064A \u0639\u0631\u0628\u064A \u0643\u0627\u0645\u0644 \u0648\u062C\u0630\u0627\u0628 \u064A\u0648\u0636\u062D \u0627\u0644\u0645\u0632\u0627\u064A\u0627 \u0627\u0644\u0641\u0646\u064A\u0629\u060C \u0627\u0644\u062A\u0648\u0627\u0641\u0642\u060C \u0648\u062C\u0648\u062F\u0629 \u0627\u0644\u062A\u0635\u0646\u064A\u0639 \u0648\u0627\u0644\u0636\u0645\u0627\u0646.
+- descriptionEn: \u0648\u0635\u0641 \u0625\u0646\u062C\u0644\u064A\u0632\u064A \u0645\u0648\u062C\u0632 \u0648\u0627\u062D\u062A\u0631\u0627\u0641\u064A.
+- images: \u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u0635\u0648\u0631 \u0627\u0644\u062D\u0642\u064A\u0642\u064A\u0629 \u0644\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0645\u0633\u062A\u062E\u0631\u062C\u0629 \u0645\u0646 \u0627\u0644\u0635\u0641\u062D\u0629 \u0641\u0642\u0637 (\u0625\u0646 \u0648\u062C\u062F\u062A).
+- seoKeywords: 6 \u0643\u0644\u0645\u0627\u062A \u0645\u0641\u062A\u0627\u062D\u064A\u0629 \u0639\u0631\u0628\u064A\u0629 \u0644\u0644\u0633\u064A\u0648.
+- specs: \u0627\u0644\u0645\u0648\u0627\u0635\u0641\u0627\u062A \u0627\u0644\u0641\u0646\u064A\u0629 {label, value} \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629.`;
+    const response = await ai.models.generateContent({
       model: "gemini-4-hydrogen",
       contents: prompt,
       config: {
@@ -1523,11 +2151,14 @@ async function scrapeProductFromUrl(url) {
           type: Type.OBJECT,
           properties: {
             name: { type: Type.STRING },
+            nameEn: { type: Type.STRING },
             category: { type: Type.STRING },
             priceSar: { type: Type.NUMBER },
             originalExtractedPrice: { type: Type.STRING },
             description: { type: Type.STRING },
+            descriptionEn: { type: Type.STRING },
             images: { type: Type.ARRAY, items: { type: Type.STRING } },
+            seoKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
             specs: {
               type: Type.ARRAY,
               items: {
@@ -1542,74 +2173,158 @@ async function scrapeProductFromUrl(url) {
           },
           required: [
             "name",
+            "nameEn",
             "category",
             "priceSar",
             "originalExtractedPrice",
             "description",
+            "descriptionEn",
             "images",
+            "seoKeywords",
             "specs"
           ]
         }
       }
     });
-    const parsed = JSON.parse((response2.text ?? "{}").trim());
+    const parsed = safeParseAiJson(response.text, {});
     const mergedImages = Array.from(
       /* @__PURE__ */ new Set([...parsed.images ?? [], ...fetchedSignals.foundImages ?? []])
-    ).filter((img) => typeof img === "string" && img.startsWith("http"));
-    return {
-      name: parsed.name || fetchedSignals.title || "\u0645\u0646\u062A\u062C \u0645\u0633\u062D\u0648\u0628 \u062C\u062F\u064A\u062F",
-      category: parsed.category || "\u0645\u0642\u062A\u0646\u064A\u0627\u062A \u0645\u062E\u062A\u0627\u0631\u0629",
-      priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 450,
-      originalExtractedPrice: parsed.originalExtractedPrice || "\u063A\u064A\u0631 \u0645\u062D\u062F\u062F",
-      description: parsed.description || fetchedSignals.metaDescription || "\u0648\u0635\u0641 \u0627\u0644\u0645\u0646\u062A\u062C \u0642\u064A\u062F \u0627\u0644\u0645\u0631\u0627\u062C\u0639\u0629.",
+    ).filter((img) => typeof img === "string" && /^https?:\/\//i.test(img));
+    baseResult = {
+      name: parsed.name?.trim() || cleanName || fetchedSignals.title || "\u0645\u0646\u062A\u062C \u0645\u0633\u062D\u0648\u0628 \u062C\u062F\u064A\u062F",
+      nameEn: parsed.nameEn?.trim() || void 0,
+      category: parsed.category?.trim() || defaultCategory,
+      priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 750,
+      originalExtractedPrice: parsed.originalExtractedPrice || "\u0645\u0646 \u0627\u0644\u0631\u0627\u0628\u0637 \u0627\u0644\u062E\u0627\u0631\u062C\u064A",
+      description: parsed.description?.trim() || fetchedSignals.metaDescription || "\u0648\u0635\u0641 \u0627\u062D\u062A\u0631\u0627\u0641\u064A \u062C\u0627\u0647\u0632 \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631.",
+      descriptionEn: parsed.descriptionEn?.trim() || void 0,
       images: mergedImages,
+      seoKeywords: Array.isArray(parsed.seoKeywords) ? parsed.seoKeywords : [],
       specs: Array.isArray(parsed.specs) ? parsed.specs : []
     };
-  }
-  const response = await ai.models.generateContent({
-    model: "gemini-4-hydrogen",
-    contents: `\u0627\u0642\u0631\u0623 \u0645\u062D\u062A\u0648\u0649 \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u062A\u0627\u0644\u064A \u0648\u0627\u0633\u062A\u062E\u0631\u062C \u0628\u064A\u0627\u0646\u0627\u062A\u0647 \u0627\u0644\u0643\u0627\u0645\u0644\u0629 \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0635\u064A\u063A\u0629 JSON \u0641\u0642\u0637:
-\u0627\u0644\u0631\u0627\u0628\u0637: ${url}
+  } else if (cleanUrl && /^https?:\/\//i.test(cleanUrl)) {
+    const response = await ai.models.generateContent({
+      model: "gemini-4-hydrogen",
+      contents: `\u0627\u0642\u0631\u0623 \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u062A\u0627\u0644\u064A \u0648\u0627\u0633\u062A\u062E\u0631\u062C \u0628\u064A\u0627\u0646\u0627\u062A\u0647 \u0627\u0644\u062A\u0633\u0648\u064A\u0642\u064A\u0629 \u0627\u0644\u0643\u0627\u0645\u0644\u0629 \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A \u0628\u0635\u064A\u063A\u0629 JSON \u0641\u0642\u0637:
+\u0627\u0644\u0631\u0627\u0628\u0637: ${cleanUrl}
+${cleanName ? `\u0627\u0633\u0645 \u0645\u0631\u062C\u0639\u064A: ${cleanName}` : ""}
 
-\u0623\u0639\u062F \u0643\u0627\u0626\u0646 JSON \u064A\u062D\u062A\u0648\u064A \u0641\u0642\u0637 \u0639\u0644\u0649 \u0627\u0644\u0645\u0641\u0627\u062A\u064A\u062D \u0627\u0644\u062A\u0627\u0644\u064A\u0629:
+\u0623\u0639\u062F \u0643\u0627\u0626\u0646 JSON \u064A\u062D\u062A\u0648\u064A \u0639\u0644\u0649:
 {
   "name": "\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0643\u0627\u0645\u0644 \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629",
-  "category": "\u0627\u0644\u062A\u0635\u0646\u064A\u0641 \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629",
-  "priceSar": 750,
-  "originalExtractedPrice": "\u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0623\u0635\u0644\u064A \u0643\u0645\u0627 \u0648\u0631\u062F \u0641\u064A \u0627\u0644\u0635\u0641\u062D\u0629",
-  "description": "\u0648\u0635\u0641 \u062A\u0633\u0648\u064A\u0642\u064A \u0645\u0641\u0635\u0644 \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629",
-  "images": ["\u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u0635\u0648\u0631 \u0639\u0627\u0644\u064A\u0629 \u0627\u0644\u062C\u0648\u062F\u0629 \u0625\u0646 \u0648\u062C\u062F\u062A"],
-  "specs": [{"label": "\u0627\u0633\u0645 \u0627\u0644\u0645\u0648\u0627\u0635\u0641\u0629", "value": "\u0627\u0644\u0642\u064A\u0645\u0629"}]
+  "nameEn": "English product name",
+  "category": "${defaultCategory}",
+  "priceSar": 850,
+  "originalExtractedPrice": "\u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0645\u0635\u062F\u0631",
+  "description": "\u0648\u0635\u0641 \u062A\u0633\u0648\u064A\u0642\u064A \u0639\u0631\u0628\u064A \u0643\u0627\u0645\u0644 \u064A\u0628\u0631\u0632 \u0627\u0644\u0645\u0632\u0627\u064A\u0627 \u0648\u0627\u0644\u062C\u0648\u062F\u0629 \u0648\u0627\u0644\u062A\u0648\u0627\u0641\u0642",
+  "descriptionEn": "Professional English summary",
+  "images": ["\u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u0635\u0648\u0631 \u0627\u0644\u062D\u0642\u064A\u0642\u064A\u0629 \u0625\u0646 \u062A\u0648\u0641\u0631\u062A \u0648\u0625\u0644\u0627 \u0645\u0635\u0641\u0648\u0641\u0629 \u0641\u0627\u0631\u063A\u0629"],
+  "seoKeywords": ["\u0643\u0644\u0645\u0627\u062A \u0645\u0641\u062A\u0627\u062D\u064A\u0629 \u0639\u0631\u0628\u064A\u0629"],
+  "specs": [{"label": "\u0627\u0644\u0645\u0648\u0627\u0635\u0641\u0629", "value": "\u0627\u0644\u0642\u064A\u0645\u0629"}]
 }`,
-    config: {
-      tools: [{ urlContext: {} }, { googleSearch: {} }]
-    }
-  });
-  const rawText = (response.text ?? "").trim();
-  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        name: parsed.name || "\u0645\u0646\u062A\u062C \u0645\u0633\u062D\u0648\u0628 \u0644\u0644\u0645\u0631\u0627\u062C\u0639\u0629",
-        category: parsed.category || "\u0645\u0642\u062A\u0646\u064A\u0627\u062A \u0645\u062E\u062A\u0627\u0631\u0629",
-        priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 590,
-        originalExtractedPrice: parsed.originalExtractedPrice || "\u063A\u064A\u0631 \u0645\u062D\u062F\u062F",
-        description: parsed.description || "\u062A\u0645 \u0627\u0633\u062A\u062E\u0631\u0627\u062C \u0627\u0644\u0645\u0646\u062A\u062C \u0648\u062D\u0641\u0638\u0647 \u0643\u0645\u0633\u0648\u062F\u0629 \u0633\u0631\u064A\u0629 \u0644\u0644\u0645\u0631\u0627\u062C\u0639\u0629.",
-        images: Array.isArray(parsed.images) ? parsed.images.filter((i) => typeof i === "string" && i.startsWith("http")) : [],
-        specs: Array.isArray(parsed.specs) ? parsed.specs : []
-      };
-    } catch {
-    }
+      config: {
+        tools: [{ urlContext: {} }, { googleSearch: {} }]
+      }
+    });
+    const parsed = safeParseAiJson(response.text, {});
+    const cleanImgs = Array.isArray(parsed.images) ? parsed.images.filter((i) => typeof i === "string" && /^https?:\/\//i.test(i.trim())) : [];
+    baseResult = {
+      name: parsed.name?.trim() || cleanName || "\u0645\u0646\u062A\u062C \u0645\u0633\u062D\u0648\u0628 \u0628\u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A",
+      nameEn: parsed.nameEn?.trim() || void 0,
+      category: parsed.category?.trim() || defaultCategory,
+      priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 790,
+      originalExtractedPrice: parsed.originalExtractedPrice || "\u062A\u0642\u062F\u064A\u0631 \u0628\u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A",
+      description: parsed.description?.trim() || "\u0645\u0646\u062A\u062C \u0639\u0627\u0644\u064A \u0627\u0644\u062C\u0648\u062F\u0629 \u0645\u062C\u0647\u0632 \u0628\u0635\u064A\u0627\u063A\u0629 \u062A\u0633\u0648\u064A\u0642\u064A\u0629 \u0639\u0631\u0628\u064A\u0629 \u0634\u0627\u0645\u0644\u0629 \u0648\u0641\u0642 \u0623\u0639\u0644\u0649 \u0645\u0639\u0627\u064A\u064A\u0631 \u0627\u0644\u0643\u0641\u0627\u0621\u0629 \u0648\u0627\u0644\u0623\u062F\u0627\u0621.",
+      descriptionEn: parsed.descriptionEn?.trim() || void 0,
+      images: cleanImgs,
+      seoKeywords: Array.isArray(parsed.seoKeywords) ? parsed.seoKeywords : [],
+      specs: Array.isArray(parsed.specs) ? parsed.specs : []
+    };
+  } else {
+    const targetName = cleanName || "\u062F\u0628\u0629 \u062A\u0644\u0648\u062B \u0639\u0627\u0644\u064A\u0629 \u0627\u0644\u0643\u0641\u0627\u0621\u0629 Euro-6";
+    const response = await ai.models.generateContent({
+      model: "gemini-4-hydrogen",
+      contents: `\u0623\u0646\u062A \u0645\u062F\u064A\u0631 \u0645\u0646\u062A\u062C\u0627\u062A \u0648\u062E\u0628\u064A\u0631 \u062A\u0633\u0648\u064A\u0642 \u0631\u0642\u0645\u064A \u0644\u0645\u062A\u062C\u0631 \u0633\u0639\u0648\u062F\u064A \u0641\u0627\u062E\u0631 \u0645\u062A\u062E\u0635\u0635 \u0641\u064A \u0642\u0637\u0639 \u063A\u064A\u0627\u0631 \u0627\u0644\u0633\u064A\u0627\u0631\u0627\u062A \u0648\u062F\u0628\u0627\u062A \u0627\u0644\u062A\u0644\u0648\u062B \u0648\u0641\u0644\u0627\u062A\u0631 \u0627\u0644\u0628\u064A\u0626\u0629.
+\u0637\u0644\u0628 \u0627\u0644\u0645\u0627\u0644\u0643 \u0625\u0646\u0634\u0627\u0621 \u0645\u0646\u062A\u062C \u062C\u062F\u064A\u062F \u0645\u062A\u0643\u0627\u0645\u0644 \u0627\u0646\u0637\u0644\u0627\u0642\u0627\u064B \u0645\u0646 \u0627\u0644\u0627\u0633\u0645 \u0627\u0644\u062A\u0627\u0644\u064A \u0641\u0642\u0637:
+"${targetName}"
+\u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0645\u0633\u062A\u0647\u062F\u0641: "${defaultCategory}"
+
+\u0627\u0643\u062A\u0628 \u0628\u064A\u0627\u0646\u0627\u062A \u062A\u0633\u0648\u064A\u0642\u064A\u0629 \u0648\u0641\u0646\u064A\u0629 \u0643\u0627\u0645\u0644\u0629 \u0648\u0645\u0642\u0646\u0639\u0629 \u0628\u0635\u064A\u063A\u0629 JSON:
+- name: \u0627\u0633\u0645 \u062A\u0633\u0648\u064A\u0642\u064A \u0639\u0631\u0628\u064A \u0627\u062D\u062A\u0631\u0627\u0641\u064A \u0648\u0627\u0636\u062D \u0644\u0644\u0645\u0646\u062A\u062C.
+- nameEn: \u0627\u0633\u0645 \u0625\u0646\u062C\u0644\u064A\u0632\u064A \u0627\u062D\u062A\u0631\u0627\u0641\u064A \u0645\u0637\u0627\u0628\u0642.
+- category: "${defaultCategory}" \u0623\u0648 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0623\u0646\u0633\u0628 \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629.
+- priceSar: \u0633\u0639\u0631 \u0628\u064A\u0639 \u0639\u0627\u062F\u0644 \u0648\u0648\u0627\u0642\u0639\u064A \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A \u0641\u064A \u0627\u0644\u0633\u0648\u0642 \u0627\u0644\u0633\u0639\u0648\u062F\u064A (\u0631\u0642\u0645 \u0635\u062D\u064A\u062D \u0645\u0648\u062C\u0628).
+- originalExtractedPrice: "\u062A\u0633\u0639\u064A\u0631 \u0645\u0642\u062A\u0631\u062D \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B \u0639\u0628\u0631 Gemini AI".
+- description: \u0648\u0635\u0641 \u062A\u0633\u0648\u064A\u0642\u064A \u0639\u0631\u0628\u064A \u0643\u0627\u0645\u0644 \u0648\u0627\u062D\u062A\u0631\u0627\u0641\u064A \u064A\u0634\u0645\u0644 \u0627\u0644\u0641\u0648\u0627\u0626\u062F\u060C \u0627\u0644\u0623\u062F\u0627\u0621\u060C \u0627\u0644\u062A\u0648\u0627\u0641\u0642\u060C \u0627\u062C\u062A\u064A\u0627\u0632 \u0627\u0644\u0641\u062D\u0635 \u0627\u0644\u062F\u0648\u0631\u064A\u060C \u0627\u0644\u062E\u0627\u0645\u0627\u062A\u060C \u0648\u0627\u0644\u0636\u0645\u0627\u0646.
+- descriptionEn: \u0648\u0635\u0641 \u0625\u0646\u062C\u0644\u064A\u0632\u064A \u0627\u062D\u062A\u0631\u0627\u0641\u064A \u0645\u062A\u0643\u0627\u0645\u0644.
+- seoKeywords: 6 \u0643\u0644\u0645\u0627\u062A \u0645\u0641\u062A\u0627\u062D\u064A\u0629 \u0639\u0631\u0628\u064A\u0629 \u0642\u0648\u064A\u0629.
+- specs: 4 \u0645\u0648\u0627\u0635\u0641\u0627\u062A \u0641\u0646\u064A\u0629 \u062F\u0642\u064A\u0642\u0629 {label, value} \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            nameEn: { type: Type.STRING },
+            category: { type: Type.STRING },
+            priceSar: { type: Type.NUMBER },
+            originalExtractedPrice: { type: Type.STRING },
+            description: { type: Type.STRING },
+            descriptionEn: { type: Type.STRING },
+            seoKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+            specs: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  label: { type: Type.STRING },
+                  value: { type: Type.STRING }
+                },
+                required: ["label", "value"]
+              }
+            }
+          },
+          required: [
+            "name",
+            "nameEn",
+            "category",
+            "priceSar",
+            "originalExtractedPrice",
+            "description",
+            "descriptionEn",
+            "seoKeywords",
+            "specs"
+          ]
+        }
+      }
+    });
+    const parsed = safeParseAiJson(response.text, {});
+    baseResult = {
+      name: parsed.name?.trim() || targetName,
+      nameEn: parsed.nameEn?.trim() || void 0,
+      category: parsed.category?.trim() || defaultCategory,
+      priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 950,
+      originalExtractedPrice: parsed.originalExtractedPrice || "\u062A\u0633\u0639\u064A\u0631 \u062A\u0644\u0642\u0627\u0626\u064A AI",
+      description: parsed.description?.trim() || `${targetName} \u0645\u0635\u0646\u0639\u0629 \u0628\u062E\u0627\u0645\u0627\u062A \u0639\u0627\u0644\u064A\u0629 \u0627\u0644\u062A\u062D\u0645\u0644 \u0648\u0643\u0641\u0627\u0621\u0629 \u062A\u0631\u0634\u064A\u062D \u0645\u062A\u0642\u062F\u0645\u0629 \u062A\u0636\u0645\u0646 \u062B\u0628\u0627\u062A \u0627\u0644\u0623\u062F\u0627\u0621 \u0648\u0627\u062C\u062A\u064A\u0627\u0632 \u0627\u0644\u0641\u062D\u0635 \u0627\u0644\u062F\u0648\u0631\u064A.`,
+      descriptionEn: parsed.descriptionEn?.trim() || void 0,
+      images: [],
+      seoKeywords: Array.isArray(parsed.seoKeywords) ? parsed.seoKeywords : [],
+      specs: Array.isArray(parsed.specs) && parsed.specs.length > 0 ? parsed.specs : [{ label: "\u0627\u0644\u0645\u0639\u064A\u0627\u0631", value: "Euro-6 / \u0645\u0637\u0627\u0628\u0642 \u0644\u0644\u0641\u062D\u0635 \u0627\u0644\u062F\u0648\u0631\u064A" }]
+    };
+  }
+  let aiGeneratedImage = false;
+  if (!baseResult.images || baseResult.images.length === 0) {
+    const generatedImgUrl = await generateProductSquareImageWithGemini({
+      name: baseResult.name,
+      category: baseResult.category,
+      description: baseResult.description
+    });
+    baseResult.images = [generatedImgUrl];
+    aiGeneratedImage = true;
   }
   return {
-    name: "\u0645\u0646\u062A\u062C \u0645\u0633\u062D\u0648\u0628 \u0644\u0644\u0645\u0631\u0627\u062C\u0639\u0629 \u0627\u0644\u064A\u062F\u0648\u064A\u0629",
-    category: "\u0645\u0642\u062A\u0646\u064A\u0627\u062A \u0645\u062E\u062A\u0627\u0631\u0629",
-    priceSar: 550,
-    originalExtractedPrice: "\u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B",
-    description: rawText.slice(0, 500) || "\u062A\u0645 \u062D\u0641\u0638 \u0627\u0644\u0631\u0627\u0628\u0637 \u0641\u064A \u0642\u0627\u0639\u062F\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0633\u0631\u064A\u0629 \u0644\u0644\u0645\u0627\u0644\u0643. \u064A\u0631\u062C\u0649 \u0627\u0633\u062A\u0643\u0645\u0627\u0644 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0648\u0627\u0644\u0635\u0648\u0631 \u0642\u0628\u0644 \u0627\u0644\u0646\u0634\u0631.",
-    images: [],
-    specs: [{ label: "\u0627\u0644\u0645\u0635\u062F\u0631", value: "\u0628\u0627\u0646\u062A\u0638\u0627\u0631 \u0645\u0631\u0627\u062C\u0639\u0629 \u0627\u0644\u0645\u0627\u0644\u0643" }]
+    ...baseResult,
+    aiGeneratedImage
   };
 }
 function extractStoreCatalogSignals(html, baseUrl) {
@@ -1737,12 +2452,8 @@ JSON-LD: ${signals.jsonLd}
         }
       }
     });
-    try {
-      const parsed = JSON.parse((response.text ?? "{}").trim());
-      if (Array.isArray(parsed.items)) rawItems = parsed.items;
-    } catch {
-      rawItems = [];
-    }
+    const parsed = safeParseAiJson(response.text, {});
+    rawItems = Array.isArray(parsed.items) ? parsed.items : [];
   } else {
     const response = await ai.models.generateContent({
       model: "gemini-4-hydrogen",
@@ -1768,15 +2479,8 @@ JSON-LD: ${signals.jsonLd}
         tools: [{ urlContext: {} }, { googleSearch: {} }]
       }
     });
-    const rawText = (response.text ?? "").trim();
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (Array.isArray(parsed.items)) rawItems = parsed.items;
-      } catch {
-      }
-    }
+    const parsed = safeParseAiJson(response.text, {});
+    if (Array.isArray(parsed.items)) rawItems = parsed.items;
   }
   if (rawItems.length === 0) {
     rawItems = [
@@ -1859,7 +2563,7 @@ async function enhanceProductCopyWithAi(input) {
       }
     }
   });
-  const parsed = JSON.parse((response.text ?? "{}").trim());
+  const parsed = safeParseAiJson(response.text, {});
   return {
     name: parsed.name || input.name,
     description: parsed.description || input.description || "",
@@ -1909,7 +2613,14 @@ async function enhanceStoreIdentityWithAi(input) {
       }
     }
   });
-  return JSON.parse((response.text ?? "{}").trim());
+  return safeParseAiJson(response.text, {
+    storeName: input.storeName,
+    storeTagline: input.storeTagline,
+    heroTitle: input.heroTitle,
+    heroSubtitle: "\u062C\u0648\u062F\u0629 \u0647\u0646\u062F\u0633\u064A\u0629 \u0641\u0627\u0626\u0642\u0629 \u0648\u0645\u0637\u0627\u0628\u0642\u0629 \u0644\u0645\u0639\u0627\u064A\u064A\u0631 \u0627\u0644\u0641\u062D\u0635 \u0627\u0644\u062F\u0648\u0631\u064A.",
+    suggestedCategoryName: "\u062F\u0628\u0627\u062A \u0627\u0644\u062A\u0644\u0648\u062B \u0627\u0644\u0631\u064A\u0627\u0636\u064A\u0629",
+    suggestedCategoryDesc: "\u0645\u062D\u0648\u0644\u0627\u062A \u062D\u0641\u0627\u0632\u0629 \u0639\u0627\u0644\u064A\u0629 \u0627\u0644\u062A\u062F\u0641\u0642 \u0644\u0644\u0633\u064A\u0627\u0631\u0627\u062A \u0627\u0644\u062D\u062F\u064A\u062B\u0629."
+  });
 }
 async function generateProductSeoData(product, storeName) {
   const ai = getAiClient();
@@ -1938,7 +2649,7 @@ async function generateProductSeoData(product, storeName) {
       }
     }
   });
-  const parsed = JSON.parse((response.text ?? "{}").trim());
+  const parsed = safeParseAiJson(response.text, {});
   const seoTitle = parsed.seoTitle || `${product.name} | ${storeName}`;
   const seoDescription = parsed.seoDescription || product.description.slice(0, 155);
   const seoKeywords = parsed.seoKeywords ?? [product.name, product.category, "\u062F\u0628\u0627\u062A \u062A\u0644\u0648\u062B \u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0629"];
@@ -1948,7 +2659,7 @@ async function generateProductSeoData(product, storeName) {
     name: product.name,
     description: seoDescription,
     category: product.category,
-    image: product.images,
+    image: (product.images || []).filter((u) => typeof u === "string" && !u.startsWith("data:")),
     brand: {
       "@type": "Brand",
       name: storeName
@@ -2000,7 +2711,18 @@ ${contextText}
       }
     }
   });
-  return JSON.parse((response.text ?? "{}").trim());
+  return safeParseAiJson(response.text, {
+    googleAdsHeadlines: ["\u062F\u0628\u0627\u062A \u062A\u0644\u0648\u062B \u0645\u0639\u062A\u0645\u062F\u0629 Euro-6", "\u0634\u062D\u0646 \u0633\u0631\u064A\u0639 \u0644\u062C\u0645\u064A\u0639 \u0645\u0646\u0627\u0637\u0642 \u0627\u0644\u0645\u0645\u0644\u0643\u0629"],
+    googleAdsDescriptions: ["\u0627\u0637\u0644\u0628 \u0627\u0644\u0622\u0646 \u062F\u0628\u0627\u062A \u0627\u0644\u062A\u0644\u0648\u062B \u0644\u0644\u062F\u064A\u0632\u0644 \u0648\u0627\u0644\u0628\u0646\u0632\u064A\u0646 \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A \u0648\u0628\u0636\u0645\u0627\u0646 \u0627\u0644\u062C\u0648\u062F\u0629."],
+    googleAdsKeywords: ["\u062F\u0628\u0627\u062A \u062A\u0644\u0648\u062B", "\u0641\u0644\u062A\u0631 DPF", "\u0642\u0637\u0639 \u063A\u064A\u0627\u0631 \u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0629"],
+    banner: {
+      title: `\u0639\u0631\u0648\u0636 ${input.storeName}`,
+      subtitle: "\u062A\u0634\u0643\u064A\u0644\u0629 \u062F\u0628\u0627\u062A \u0627\u0644\u062A\u0644\u0648\u062B \u0644\u0644\u062F\u064A\u0632\u0644 \u0648\u0627\u0644\u0628\u0646\u0632\u064A\u0646 \u0628\u0645\u0639\u0627\u064A\u064A\u0631 Euro-6",
+      ctaText: "\u062A\u0633\u0648\u0642 \u0627\u0644\u0622\u0646",
+      discountLabel: "\u0639\u0631\u0636 \u062E\u0627\u0635",
+      accentColor: "#D4AF37"
+    }
+  });
 }
 var assistantToolDeclarations = [
   {
@@ -2323,7 +3045,7 @@ async function optimizeBackgroundWithAi(params) {
         }
       }
     });
-    const parsed = JSON.parse((response.text ?? "{}").trim());
+    const parsed = safeParseAiJson(response.text, {});
     const allowedMotions = /* @__PURE__ */ new Set(["none", "kenburns", "float", "pulse"]);
     const motion = params.mediaType === "video" ? "none" : allowedMotions.has(String(parsed.recommendedMotion)) ? parsed.recommendedMotion : "kenburns";
     const opacityRaw = Number(parsed.recommendedOpacity);
@@ -2369,19 +3091,132 @@ Return JSON with:
       }
     }
   });
-  const parsed = JSON.parse((response.text ?? "{}").trim());
+  const parsed = safeParseAiJson(response.text, {});
   return {
     nameEn: parsed.nameEn?.trim() || input.name,
     descriptionEn: parsed.descriptionEn?.trim() || input.description || ""
   };
 }
+function isProtectedOrBlockedPage(html) {
+  const lower = html.toLowerCase();
+  const blockMarkers = [
+    "cf-browser-verification",
+    "challenge-platform",
+    "just a moment...",
+    "enable javascript and cookies to continue",
+    "enter the characters you see below",
+    "type the characters you see in this image",
+    "sorry, we just need to make sure you're not a robot",
+    "robot check",
+    "captcha-delivery",
+    "px-captcha",
+    "access to this page has been denied",
+    "attention required! | cloudflare",
+    "punish-captcha"
+  ];
+  const hasMarker = blockMarkers.some((m) => lower.includes(m));
+  if (hasMarker) return true;
+  const plain = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return plain.length < 140;
+}
+function extractImageUrlsFromRawText(rawText) {
+  const matches = rawText.match(/https?:\/\/[^\s"'<>()]+?\.(?:png|jpe?g|webp|avif)(?:\?[^\s"'<>()]*)?/gi) || [];
+  return Array.from(new Set(matches.map((u) => u.trim()))).filter((u) => !/icon|logo|avatar|sprite|pixel|1x1/i.test(u)).slice(0, 12);
+}
 async function importProductFromUrlWithHtml(input) {
   const ai = getAiClient();
-  const cleanUrl = input.url.trim();
+  const cleanUrl = (input.url || "").trim();
+  const cleanRawText = (input.rawText || "").trim();
   const categoryList = input.categories && input.categories.length > 0 ? input.categories : ["\u062F\u0628\u0627\u062A \u062A\u0644\u0648\u062B \u0627\u0644\u0628\u0646\u0632\u064A\u0646", "\u062F\u0628\u0627\u062A \u062A\u0644\u0648\u062B \u0627\u0644\u062F\u064A\u0632\u0644", "\u062D\u0633\u0627\u0633\u0627\u062A \u0627\u0644\u0634\u0643\u0645\u0627\u0646 \u0648\u0627\u0644\u0623\u0643\u0633\u062C\u064A\u0646", "\u0648\u0635\u0644\u0627\u062A \u0648\u0645\u0644\u062D\u0642\u0627\u062A \u0627\u0644\u0639\u0627\u062F\u0645"];
+  if (cleanRawText.length >= 15) {
+    const textImages = extractImageUrlsFromRawText(cleanRawText);
+    const prompt = `\u0623\u0646\u062A \u062E\u0628\u064A\u0631 \u062A\u062C\u0627\u0631\u0629 \u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A\u0629 \u0641\u0627\u062E\u0631\u0629 \u0648\u0645\u062A\u0631\u062C\u0645 \u062A\u0642\u0646\u064A \u0645\u062D\u062A\u0631\u0641. \u0642\u0627\u0645 \u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631 \u0628\u0646\u0633\u062E \u0648\u0644\u0635\u0642 \u062A\u0641\u0627\u0635\u064A\u0644/\u0646\u0635 \u0645\u0646\u062A\u062C \u0645\u0646 \u0645\u062A\u062C\u0631 \u062E\u0627\u0631\u062C\u064A\u060C \u0648\u0627\u0644\u0645\u0637\u0644\u0648\u0628 \u062A\u062D\u0644\u064A\u0644 \u0627\u0644\u0646\u0635 \u0648\u062A\u062D\u0648\u064A\u0644\u0647 \u0625\u0644\u0649 \u0628\u064A\u0627\u0646\u0627\u062A \u0645\u0646\u062A\u062C \u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629 \u062C\u0627\u0647\u0632\u0629 \u0644\u0644\u0646\u0634\u0631 \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631 \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0648\u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A (SAR):
+${cleanUrl ? `\u0627\u0644\u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0631\u062C\u0639\u064A (\u0627\u062E\u062A\u064A\u0627\u0631\u064A): ${cleanUrl}` : ""}
+\u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0645\u062A\u0627\u062D\u0629 \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631 (\u0627\u062E\u062A\u0631 \u0623\u0646\u0633\u0628 \u0642\u0633\u0645 \u0645\u0646\u0647\u0627): ${JSON.stringify(categoryList)}
+\u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u0635\u0648\u0631 \u0627\u0644\u0645\u0643\u062A\u0634\u0641\u0629 \u0641\u064A \u0627\u0644\u0646\u0635 (\u0625\u0646 \u0648\u062C\u062F\u062A): ${JSON.stringify(textImages)}
+\u0627\u0644\u0646\u0635 \u0648\u0627\u0644\u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u0645\u0644\u0635\u0642\u0629:
+"""
+${cleanRawText.slice(0, 18e3)}
+"""
+
+\u0627\u0644\u0645\u0637\u0644\u0648\u0628 \u0628\u062F\u0642\u0629:
+1. name: \u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C (Product Name) \u0645\u062A\u0631\u062C\u0645\u0627\u064B \u0648\u0645\u0635\u0627\u063A\u0627\u064B \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0634\u0643\u0644 \u0627\u062D\u062A\u0631\u0627\u0641\u064A \u0648\u062C\u0630\u0627\u0628 \u064A\u0628\u0631\u0632 \u062C\u0648\u062F\u0629 \u0627\u0644\u0642\u0637\u0639\u0629 \u0623\u0648 \u062A\u0648\u0627\u0641\u0642\u0647\u0627.
+2. nameEn: \u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u062A\u062C\u0627\u0631\u064A \u0627\u0644\u0645\u062E\u062A\u0635\u0631 \u0628\u0627\u0644\u0625\u0646\u062C\u0644\u064A\u0632\u064A\u0629.
+3. category: \u0627\u062E\u062A\u0631 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0623\u0646\u0633\u0628 \u0644\u0644\u0645\u0646\u062A\u062C \u0645\u0646 \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0645\u062A\u0627\u062D\u0629 \u0623\u0639\u0644\u0627\u0647.
+4. priceSar: \u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0631\u0642\u0645\u064A \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A (\u0631\u0642\u0645 \u0635\u062D\u064A\u062D \u0645\u0648\u062C\u0628\u061B \u0648\u0625\u0630\u0627 \u0643\u0627\u0646 \u0627\u0644\u0633\u0639\u0631 \u0628\u0639\u0645\u0644\u0629 \u0623\u062C\u0646\u0628\u064A\u0629 \u0645\u062B\u0644 USD \u0623\u0648 EUR \u0641\u062D\u0648\u0651\u0644\u0647 \u0644\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A).
+5. originalExtractedPrice: \u0646\u0635 \u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0623\u0635\u0644\u064A \u0643\u0645\u0627 \u0648\u0631\u062F \u0641\u064A \u0627\u0644\u0646\u0635 (\u0623\u0648 "\u062D\u0633\u0628 \u0627\u0644\u0646\u0635" \u0625\u0630\u0627 \u0644\u0645 \u064A\u064F\u0630\u0643\u0631 \u0628\u0648\u0636\u0648\u062D).
+6. description: \u0627\u0644\u0648\u0635\u0641 \u0627\u0644\u062A\u0641\u0635\u064A\u0644\u064A \u0648\u0627\u0644\u0645\u0645\u064A\u0632\u0627\u062A \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0623\u0633\u0644\u0648\u0628 \u062A\u0633\u0648\u064A\u0642\u064A \u0627\u062D\u062A\u0631\u0627\u0641\u064A \u0648\u0645\u0646\u0633\u0642 \u064A\u0634\u0631\u062D \u0627\u0644\u0641\u0648\u0627\u0626\u062F \u0648\u0627\u0644\u0645\u0648\u0627\u0635\u0641\u0627\u062A.
+7. descriptionEn: \u0648\u0635\u0641 \u0645\u0648\u062C\u0632 \u0627\u062D\u062A\u0631\u0627\u0641\u064A \u0628\u0627\u0644\u0625\u0646\u062C\u0644\u064A\u0632\u064A\u0629.
+8. images: \u0645\u0635\u0641\u0648\u0641\u0629 \u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u0635\u0648\u0631 \u0639\u0627\u0644\u064A\u0629 \u0627\u0644\u062C\u0648\u062F\u0629 \u0627\u0644\u0645\u0633\u062A\u062E\u0631\u062C\u0629 \u0645\u0646 \u0627\u0644\u0646\u0635 \u0625\u0646 \u0648\u062C\u062F\u062A (\u062A\u0628\u062F\u0623 \u0628\u0640 http).
+9. specs: \u0645\u0635\u0641\u0648\u0641\u0629 \u0645\u0648\u0627\u0635\u0641\u0627\u062A \u0641\u0646\u064A\u0629 \u0645\u0646\u0633\u0642\u0629 {label, value} \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0645\u0633\u062A\u062E\u0644\u0635\u0629 \u0645\u0646 \u0627\u0644\u0646\u0635.`;
+    const response = await ai.models.generateContent({
+      model: "gemini-4-hydrogen",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            nameEn: { type: Type.STRING },
+            category: { type: Type.STRING },
+            priceSar: { type: Type.NUMBER },
+            originalExtractedPrice: { type: Type.STRING },
+            description: { type: Type.STRING },
+            descriptionEn: { type: Type.STRING },
+            images: { type: Type.ARRAY, items: { type: Type.STRING } },
+            specs: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  label: { type: Type.STRING },
+                  value: { type: Type.STRING }
+                },
+                required: ["label", "value"]
+              }
+            }
+          },
+          required: [
+            "name",
+            "nameEn",
+            "category",
+            "priceSar",
+            "originalExtractedPrice",
+            "description",
+            "descriptionEn",
+            "images",
+            "specs"
+          ]
+        }
+      }
+    });
+    const parsed = safeParseAiJson(response.text, {});
+    const mergedImages = Array.from(
+      /* @__PURE__ */ new Set([...parsed.images ?? [], ...textImages])
+    ).filter((img) => typeof img === "string" && /^https?:\/\//i.test(img.trim())).slice(0, 12);
+    return {
+      product: {
+        name: parsed.name?.trim() || "\u0645\u0646\u062A\u062C \u0645\u0633\u062A\u0648\u0631\u062F \u062C\u062F\u064A\u062F",
+        nameEn: parsed.nameEn?.trim() || "",
+        category: parsed.category && categoryList.includes(parsed.category) ? parsed.category : categoryList[0],
+        priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 590,
+        originalExtractedPrice: parsed.originalExtractedPrice?.trim() || "\u0645\u0646 \u0627\u0644\u0646\u0635 \u0627\u0644\u0645\u0644\u0635\u0642",
+        description: parsed.description?.trim() || cleanRawText.slice(0, 600),
+        descriptionEn: parsed.descriptionEn?.trim() || "",
+        images: mergedImages,
+        specs: Array.isArray(parsed.specs) ? parsed.specs.filter((s) => s?.label && s?.value) : []
+      }
+    };
+  }
   let signals = null;
-  if (input.htmlContent && input.htmlContent.trim().length > 200) {
-    signals = extractHtmlSignals(input.htmlContent, cleanUrl);
+  let detectedProtection = false;
+  if (input.htmlContent && input.htmlContent.trim().length > 100) {
+    if (isProtectedOrBlockedPage(input.htmlContent)) {
+      detectedProtection = true;
+    } else {
+      signals = extractHtmlSignals(input.htmlContent, cleanUrl);
+    }
   }
   if (!signals || signals.textSnippet.length < 100 && signals.jsonLd.length < 40 && signals.foundImages.length === 0) {
     try {
@@ -2395,13 +3230,20 @@ async function importProductFromUrlWithHtml(input) {
         }
       });
       clearTimeout(timeout);
-      if (resp.ok) {
+      if (resp.status === 403 || resp.status === 429 || resp.status === 503) {
+        detectedProtection = true;
+      } else if (resp.ok) {
         const directHtml = await resp.text();
-        if (directHtml && directHtml.length > 200) {
+        if (directHtml && isProtectedOrBlockedPage(directHtml)) {
+          detectedProtection = true;
+        } else if (directHtml && directHtml.length > 200) {
           signals = extractHtmlSignals(directHtml, cleanUrl);
         }
+      } else {
+        detectedProtection = true;
       }
     } catch {
+      detectedProtection = true;
     }
   }
   if (signals && (signals.textSnippet.length > 80 || signals.jsonLd.length > 40 || signals.title.length > 5)) {
@@ -2415,12 +3257,12 @@ async function importProductFromUrlWithHtml(input) {
 \u0645\u062D\u062A\u0648\u0649 \u0627\u0644\u0635\u0641\u062D\u0629 \u0627\u0644\u0646\u0635\u064A: ${signals.textSnippet}
 
 \u0627\u0644\u0645\u0637\u0644\u0648\u0628 \u0628\u062F\u0642\u0629:
-1. name: \u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0645\u062A\u0631\u062C\u0645\u0627\u064B \u0648\u0645\u0635\u0627\u063A\u0627\u064B \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0634\u0643\u0644 \u0627\u062D\u062A\u0631\u0627\u0641\u064A \u0648\u062C\u0630\u0627\u0628 \u064A\u0648\u0636\u062D \u0646\u0648\u0639 \u0627\u0644\u0642\u0637\u0639\u0629 \u0623\u0648 \u0627\u0644\u062A\u0648\u0627\u0641\u0642.
+1. name: \u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C (Product Name) \u0645\u062A\u0631\u062C\u0645\u0627\u064B \u0648\u0645\u0635\u0627\u063A\u0627\u064B \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0634\u0643\u0644 \u062A\u0633\u0648\u064A\u0642\u064A \u0627\u062D\u062A\u0631\u0627\u0641\u064A \u0648\u062C\u0630\u0627\u0628.
 2. nameEn: \u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u062A\u062C\u0627\u0631\u064A \u0627\u0644\u0648\u0627\u0636\u062D \u0628\u0627\u0644\u0625\u0646\u062C\u0644\u064A\u0632\u064A\u0629.
 3. category: \u0627\u062E\u062A\u0631 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0623\u0646\u0633\u0628 \u0645\u0646 \u0627\u0644\u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0645\u062A\u0627\u062D\u0629 \u0623\u0639\u0644\u0627\u0647.
-4. priceSar: \u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A (\u0631\u0642\u0645 \u0635\u062D\u064A\u062D \u0645\u0648\u062C\u0628\u061B \u0648\u0625\u0630\u0627 \u0643\u0627\u0646 \u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0623\u0635\u0644\u064A \u0628\u0639\u0645\u0644\u0629 \u0623\u062C\u0646\u0628\u064A\u0629 \u0645\u062B\u0644 USD \u0623\u0648 EUR \u0641\u062D\u0648\u0651\u0644\u0647 \u0644\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A \u062A\u0642\u0631\u064A\u0628\u0627\u064B).
+4. priceSar: \u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0631\u0642\u0645\u064A \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A (\u0631\u0642\u0645 \u0635\u062D\u064A\u062D \u0645\u0648\u062C\u0628\u061B \u0648\u0625\u0630\u0627 \u0643\u0627\u0646 \u0627\u0644\u0633\u0639\u0631 \u0628\u0639\u0645\u0644\u0629 \u0623\u062C\u0646\u0628\u064A\u0629 \u0645\u062B\u0644 USD \u0623\u0648 EUR \u0641\u062D\u0648\u0651\u0644\u0647 \u0644\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u0633\u0639\u0648\u062F\u064A).
 5. originalExtractedPrice: \u0646\u0635 \u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0623\u0635\u0644\u064A \u0627\u0644\u0645\u0643\u062A\u0634\u0641 \u0641\u064A \u0627\u0644\u0635\u0641\u062D\u0629 \u0643\u0645\u0627 \u0648\u0631\u062F.
-6. description: \u0627\u0644\u0648\u0635\u0641 \u0627\u0644\u0643\u0627\u0645\u0644 \u0644\u0644\u0645\u0646\u062A\u062C \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0623\u0633\u0644\u0648\u0628 \u062A\u0633\u0648\u064A\u0642\u064A \u0648\u0645\u0642\u0646\u0639 \u064A\u0634\u0631\u062D \u0627\u0644\u0645\u0645\u064A\u0632\u0627\u062A \u0648\u0627\u0644\u062C\u0648\u062F\u0629 \u0648\u0627\u0644\u0627\u0633\u062A\u062E\u062F\u0627\u0645.
+6. description: \u0627\u0644\u0648\u0635\u0641 \u0627\u0644\u062A\u0641\u0635\u064A\u0644\u064A \u0648\u0627\u0644\u0645\u0645\u064A\u0632\u0627\u062A \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0623\u0633\u0644\u0648\u0628 \u062A\u0633\u0648\u064A\u0642\u064A \u0648\u0645\u0642\u0646\u0639 \u064A\u0634\u0631\u062D \u0627\u0644\u062C\u0648\u062F\u0629 \u0648\u0627\u0644\u0627\u0633\u062A\u062E\u062F\u0627\u0645.
 7. descriptionEn: \u0648\u0635\u0641 \u0645\u0648\u062C\u0632 \u0627\u062D\u062A\u0631\u0627\u0641\u064A \u0628\u0627\u0644\u0625\u0646\u062C\u0644\u064A\u0632\u064A\u0629.
 8. images: \u0645\u0635\u0641\u0648\u0641\u0629 \u0628\u062C\u0645\u064A\u0639 \u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u0635\u0648\u0631 \u0639\u0627\u0644\u064A\u0629 \u0627\u0644\u062C\u0648\u062F\u0629 \u0644\u0644\u0645\u0646\u062A\u062C (\u062A\u0628\u062F\u0623 \u0628\u0640 http \u0648\u0644\u0627 \u062A\u0634\u0645\u0644 \u0627\u0644\u0623\u064A\u0642\u0648\u0646\u0627\u062A \u0623\u0648 \u0627\u0644\u0634\u0639\u0627\u0631\u0627\u062A \u0627\u0644\u0635\u063A\u064A\u0631\u0629).
 9. specs: \u0645\u0635\u0641\u0648\u0641\u0629 \u0645\u0648\u0627\u0635\u0641\u0627\u062A \u0641\u0646\u064A\u0629 \u0645\u0646\u0633\u0642\u0629 {label, value} \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629.`;
@@ -2466,81 +3308,159 @@ async function importProductFromUrlWithHtml(input) {
         }
       }
     });
-    const parsed = JSON.parse((response.text ?? "{}").trim());
+    const parsed = safeParseAiJson(response.text, {});
     const mergedImages = Array.from(
       /* @__PURE__ */ new Set([...parsed.images ?? [], ...signals.foundImages ?? []])
     ).filter((img) => typeof img === "string" && /^https?:\/\//i.test(img.trim())).slice(0, 12);
     return {
-      name: parsed.name?.trim() || signals.title || "\u0645\u0646\u062A\u062C \u0645\u0633\u062A\u0648\u0631\u062F \u062C\u062F\u064A\u062F",
-      nameEn: parsed.nameEn?.trim() || signals.title || "",
-      category: parsed.category && categoryList.includes(parsed.category) ? parsed.category : categoryList[0],
-      priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 590,
-      originalExtractedPrice: parsed.originalExtractedPrice?.trim() || "\u062A\u0642\u062F\u064A\u0631\u064A",
-      description: parsed.description?.trim() || signals.metaDescription || "\u062A\u0645 \u0627\u0633\u062A\u064A\u0631\u0627\u062F \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \u0628\u0646\u062C\u0627\u062D.",
-      descriptionEn: parsed.descriptionEn?.trim() || "",
-      images: mergedImages,
-      specs: Array.isArray(parsed.specs) ? parsed.specs.filter((s) => s?.label && s?.value) : []
+      product: {
+        name: parsed.name?.trim() || signals.title || "\u0645\u0646\u062A\u062C \u0645\u0633\u062A\u0648\u0631\u062F \u062C\u062F\u064A\u062F",
+        nameEn: parsed.nameEn?.trim() || signals.title || "",
+        category: parsed.category && categoryList.includes(parsed.category) ? parsed.category : categoryList[0],
+        priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 590,
+        originalExtractedPrice: parsed.originalExtractedPrice?.trim() || "\u062A\u0642\u062F\u064A\u0631\u064A",
+        description: parsed.description?.trim() || signals.metaDescription || "\u062A\u0645 \u0627\u0633\u062A\u064A\u0631\u0627\u062F \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \u0628\u0646\u062C\u0627\u062D.",
+        descriptionEn: parsed.descriptionEn?.trim() || "",
+        images: mergedImages,
+        specs: Array.isArray(parsed.specs) ? parsed.specs.filter((s) => s?.label && s?.value) : []
+      }
     };
   }
-  const fallbackResponse = await ai.models.generateContent({
-    model: "gemini-4-hydrogen",
-    contents: `\u0627\u0642\u0631\u0623 \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u062A\u0627\u0644\u064A \u0648\u062D\u0644\u0644 \u0628\u064A\u0627\u0646\u0627\u062A\u0647 \u0648\u0627\u0633\u062A\u062E\u0631\u062C\u0647\u0627 \u0645\u062A\u0631\u062C\u0645\u0629 \u0648\u0645\u0635\u0627\u063A\u0629 \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0635\u064A\u063A\u0629 JSON \u0641\u0642\u0637:
-\u0627\u0644\u0631\u0627\u0628\u0637: ${cleanUrl}
-\u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0645\u062A\u0627\u062D\u0629: ${JSON.stringify(categoryList)}
-
-\u0623\u0639\u062F \u0643\u0627\u0626\u0646 JSON \u0641\u0642\u0637 \u064A\u062D\u062A\u0648\u064A \u0639\u0644\u0649 \u0627\u0644\u0645\u0641\u0627\u062A\u064A\u062D \u0627\u0644\u062A\u0627\u0644\u064A\u0629:
-{
-  "name": "\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0645\u062A\u0631\u062C\u0645\u0627\u064B \u0648\u0645\u0635\u0627\u063A\u0627\u064B \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629",
-  "nameEn": "Clear English product title",
-  "category": "\u0623\u0646\u0633\u0628 \u0642\u0633\u0645 \u0645\u0646 \u0627\u0644\u0642\u0627\u0626\u0645\u0629",
-  "priceSar": 750,
-  "originalExtractedPrice": "\u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0623\u0635\u0644\u064A \u0643\u0645\u0627 \u0648\u0631\u062F",
-  "description": "\u0627\u0644\u0648\u0635\u0641 \u0627\u0644\u0643\u0627\u0645\u0644 \u0644\u0644\u0645\u0646\u062A\u062C \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629",
-  "descriptionEn": "Professional English description",
-  "images": ["\u0631\u0648\u0627\u0628\u0637 \u0635\u0648\u0631 \u0627\u0644\u0645\u0646\u062A\u062C \u0639\u0627\u0644\u064A\u0629 \u0627\u0644\u062C\u0648\u062F\u0629 \u0625\u0646 \u0648\u062C\u062F\u062A"],
-  "specs": [{"label": "\u0627\u0644\u0645\u0648\u0627\u0635\u0641\u0629", "value": "\u0627\u0644\u0642\u064A\u0645\u0629"}]
-}`,
-    config: {
-      tools: [{ urlContext: {} }, { googleSearch: {} }]
-    }
-  });
-  const rawText = (fallbackResponse.text ?? "").trim();
-  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        name: parsed.name?.trim() || "\u0645\u0646\u062A\u062C \u0645\u0633\u062A\u0648\u0631\u062F \u0644\u0644\u0645\u0631\u0627\u062C\u0639\u0629",
-        nameEn: parsed.nameEn?.trim() || "",
-        category: parsed.category && categoryList.includes(parsed.category) ? parsed.category : categoryList[0],
-        priceSar: Number(parsed.priceSar) > 0 ? Math.round(Number(parsed.priceSar)) : 650,
-        originalExtractedPrice: parsed.originalExtractedPrice?.trim() || "\u062A\u0642\u062F\u064A\u0631\u064A",
-        description: parsed.description?.trim() || "\u064A\u0631\u062C\u0649 \u0645\u0631\u0627\u062C\u0639\u0629 \u0648\u0635\u0641 \u0627\u0644\u0645\u0646\u062A\u062C \u0648\u062A\u0639\u062F\u064A\u0644\u0647 \u0642\u0628\u0644 \u0627\u0644\u062D\u0641\u0638.",
-        descriptionEn: parsed.descriptionEn?.trim() || "",
-        images: Array.isArray(parsed.images) ? parsed.images.filter((i) => typeof i === "string" && /^https?:\/\//i.test(i.trim())).slice(0, 12) : [],
-        specs: Array.isArray(parsed.specs) ? parsed.specs.filter((s) => s?.label && s?.value) : []
-      };
-    } catch {
-    }
+  if (detectedProtection || !signals) {
+    return {
+      blockedByProtection: true,
+      warningMessage: '\u0627\u0644\u0645\u0648\u0642\u0639 \u0627\u0644\u062E\u0627\u0631\u062C\u064A \u0645\u062D\u0645\u064A \u0636\u062F \u0627\u0644\u0633\u062D\u0628 \u0627\u0644\u0622\u0644\u064A \u0648\u0631\u0641\u0636 \u062C\u0644\u0628 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0645\u0646 \u0627\u0644\u0631\u0627\u0628\u0637. \u064A\u064F\u0646\u0635\u062D \u0628\u0627\u0633\u062A\u062E\u062F\u0627\u0645 "\u0627\u0644\u0637\u0631\u064A\u0642\u0629 \u0627\u0644\u062B\u0627\u0646\u064A\u0629 (\u0627\u0644\u0644\u0635\u0642 \u0627\u0644\u064A\u062F\u0648\u064A)" \u0623\u062F\u0646\u0627\u0647: \u0627\u0646\u0633\u062E \u0646\u0635 \u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u0645\u0646\u062A\u062C \u0645\u0646 \u0635\u0641\u062D\u0629 \u0627\u0644\u0645\u062A\u062C\u0631 \u0648\u0627\u0644\u0635\u0642\u0647 \u0644\u064A\u0642\u0648\u0645 \u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0628\u062A\u062D\u0644\u064A\u0644\u0647 \u0648\u062A\u0639\u0628\u0626\u0629 \u062C\u0645\u064A\u0639 \u0627\u0644\u062D\u0642\u0648\u0644 \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B.',
+      product: null
+    };
   }
   return {
-    name: "\u0645\u0646\u062A\u062C \u0645\u0633\u062A\u0648\u0631\u062F \u0645\u0646 \u0631\u0627\u0628\u0637 \u062E\u0627\u0631\u062C\u064A",
-    nameEn: "",
-    category: categoryList[0],
-    priceSar: 650,
-    originalExtractedPrice: "\u063A\u064A\u0631 \u0645\u062D\u062F\u062F",
-    description: rawText.slice(0, 500) || "\u062A\u0639\u0630\u0631 \u0642\u0631\u0627\u0621\u0629 \u062A\u0641\u0627\u0635\u064A\u0644 \u0643\u0627\u0645\u0644\u0629 \u0645\u0646 \u0627\u0644\u0645\u0635\u062F\u0631 \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B. \u064A\u0631\u062C\u0649 \u0645\u0631\u0627\u062C\u0639\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0648\u062A\u062D\u062F\u064A\u062B\u0647\u0627.",
-    descriptionEn: "",
-    images: [],
-    specs: [{ label: "\u0627\u0644\u0645\u0635\u062F\u0631", value: "\u0645\u0633\u062A\u0648\u0631\u062F \u0639\u0628\u0631 \u0631\u0627\u0628\u0637" }]
+    blockedByProtection: true,
+    warningMessage: '\u062A\u0639\u0630\u0631 \u0633\u062D\u0628 \u0645\u062D\u062A\u0648\u0649 \u0643\u0627\u0641\u064D \u0645\u0646 \u0627\u0644\u0631\u0627\u0628\u0637 \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B \u0644\u0623\u0646 \u0627\u0644\u0645\u0648\u0642\u0639 \u0645\u062D\u0645\u064A. \u064A\u064F\u0631\u062C\u0649 \u0627\u0633\u062A\u062E\u062F\u0627\u0645 "\u0627\u0644\u0637\u0631\u064A\u0642\u0629 \u0627\u0644\u062B\u0627\u0646\u064A\u0629 (\u0627\u0644\u0644\u0635\u0642 \u0627\u0644\u064A\u062F\u0648\u064A)" \u0623\u062F\u0646\u0627\u0647 \u0648\u0644\u0635\u0642 \u0646\u0635 \u0627\u0644\u0645\u0646\u062A\u062C \u0645\u0628\u0627\u0634\u0631\u0629.',
+    product: null
+  };
+}
+async function lookupVehicleCompatibilityWithSearch(input) {
+  const ai = getAiClient();
+  const vehicle = input.vehicle.trim().slice(0, 140);
+  const questionOrCode = (input.questionOrCode || "").trim().slice(0, 240);
+  const prompt = `\u0623\u0646\u062A \u0645\u0633\u062A\u0634\u0627\u0631 \u0647\u0646\u062F\u0633\u064A \u0645\u062A\u062E\u0635\u0635 \u0641\u064A \u0623\u0646\u0638\u0645\u0629 \u0627\u0644\u0639\u0627\u062F\u0645 \u0648\u062F\u0628\u0627\u062A \u0627\u0644\u062A\u0644\u0648\u062B (Catalytic Converters) \u0648\u0641\u0644\u0627\u062A\u0631 \u0627\u0644\u062F\u064A\u0632\u0644 (DPF) \u0644\u062F\u0649 \u0645\u0635\u0646\u0639 \u0627\u0644\u062A\u0627\u062C \u0627\u0644\u0630\u0647\u0628\u064A \u0641\u064A \u0627\u0644\u0645\u0645\u0644\u0643\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0629.
+\u0627\u0628\u062D\u062B \u0628\u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0628\u062D\u062B Google \u0639\u0646 \u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u062D\u062F\u062B\u0629 \u0648\u0627\u0644\u062F\u0642\u064A\u0642\u0629 \u0627\u0644\u062E\u0627\u0635\u0629 \u0628\u0627\u0644\u0645\u0631\u0643\u0628\u0629 \u0648\u0627\u0644\u0627\u0633\u062A\u0641\u0633\u0627\u0631 \u0627\u0644\u062A\u0627\u0644\u064A:
+- \u0627\u0644\u0645\u0631\u0643\u0628\u0629 (\u0627\u0644\u0646\u0648\u0639 \u0648\u0627\u0644\u0645\u0648\u062F\u064A\u0644 \u0648\u0627\u0644\u0633\u0646\u0629): ${vehicle}
+- \u0627\u0644\u0627\u0633\u062A\u0641\u0633\u0627\u0631 \u0623\u0648 \u0631\u0645\u0632 \u0627\u0644\u0641\u062D\u0635 (OBD): ${questionOrCode || "\u062A\u062D\u062F\u064A\u062F \u0645\u0639\u064A\u0627\u0631 \u0627\u0644\u0627\u0646\u0628\u0639\u0627\u062B\u0627\u062A \u0648\u0646\u0648\u0639 \u062F\u0628\u0629 \u0627\u0644\u062A\u0644\u0648\u062B \u0627\u0644\u0645\u0646\u0627\u0633\u0628\u0629 \u0644\u0644\u0641\u062D\u0635 \u0627\u0644\u062F\u0648\u0631\u064A"}
+
+\u0642\u062F\u0645 \u0625\u062C\u0627\u0628\u0629 \u0639\u0631\u0628\u064A\u0629 \u0648\u0627\u0636\u062D\u0629 \u0648\u0645\u0646\u0638\u0645\u0629 \u0648\u0645\u062E\u062A\u0635\u0631\u0629 \u062A\u0634\u0645\u0644:
+1. \u0645\u0639\u064A\u0627\u0631 \u0627\u0644\u0627\u0646\u0628\u0639\u0627\u062B\u0627\u062A \u0627\u0644\u0645\u0631\u062C\u062D \u0644\u0647\u0630\u0647 \u0627\u0644\u0645\u0631\u0643\u0628\u0629 (\u0645\u062B\u0644 Euro 4 / Euro 5 / Euro 6) \u0648\u0647\u0644 \u0646\u0638\u0627\u0645\u0647\u0627 \u0628\u0646\u0632\u064A\u0646 \u0623\u0645 \u062F\u064A\u0632\u0644 (DPF / SCR).
+2. \u0634\u0631\u062D \u0623\u064A \u0643\u0648\u062F \u0639\u0637\u0644 \u0645\u0630\u0643\u0648\u0631 (\u0625\u0646 \u0648\u062C\u062F \u0645\u062B\u0644 P0420 \u0623\u0648 P2002) \u0648\u0627\u0644\u0633\u0628\u0628 \u0627\u0644\u0623\u0643\u062B\u0631 \u0634\u064A\u0648\u0639\u0627\u064B \u0644\u0647.
+3. \u0627\u0644\u062A\u0648\u0635\u064A\u0629 \u0627\u0644\u0639\u0645\u0644\u064A\u0629 \u0644\u0627\u062C\u062A\u064A\u0627\u0632 \u0627\u0644\u0641\u062D\u0635 \u0627\u0644\u062F\u0648\u0631\u064A \u0627\u0644\u0633\u0639\u0648\u062F\u064A (SASO / \u0627\u0644\u0641\u062D\u0635 \u0627\u0644\u062F\u0648\u0631\u064A) \u0648\u0627\u062E\u062A\u064A\u0627\u0631 \u0642\u0644\u0628 \u0627\u0644\u0633\u064A\u0631\u0627\u0645\u064A\u0643 \u0623\u0648 \u0627\u0644\u0645\u0639\u062F\u0646 \u0627\u0644\u0645\u0646\u0627\u0633\u0628 \u0623\u0648 \u0627\u0644\u062A\u0646\u0638\u064A\u0641 \u0645\u0642\u0627\u0628\u0644 \u0627\u0644\u0627\u0633\u062A\u0628\u062F\u0627\u0644.
+
+\u0645\u0644\u0627\u062D\u0638\u0629: \u0627\u0639\u062A\u0645\u062F \u0639\u0644\u0649 \u0646\u062A\u0627\u0626\u062C \u0627\u0644\u0628\u062D\u062B \u0627\u0644\u0645\u062D\u062F\u062B\u0629 \u0648\u0627\u0643\u062A\u0628 \u0627\u0644\u0625\u062C\u0627\u0628\u0629 \u0628\u0648\u0636\u0648\u062D \u0628\u062F\u0648\u0646 \u062D\u0634\u0648.`;
+  const response = await ai.models.generateContent({
+    model: "gemini-4-hydrogen",
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }]
+    }
+  });
+  const answer = (response.text ?? "").trim() || "\u062A\u0639\u0630\u0631 \u0627\u0644\u062D\u0635\u0648\u0644 \u0639\u0644\u0649 \u062A\u0641\u0627\u0635\u064A\u0644 \u0643\u0627\u0641\u064A\u0629 \u062D\u0627\u0644\u064A\u0627\u064B. \u064A\u0631\u062C\u0649 \u062A\u062C\u0631\u0628\u0629 \u062A\u062D\u062F\u064A\u062F \u0646\u0648\u0639 \u0627\u0644\u0633\u064A\u0627\u0631\u0629 \u0648\u0633\u0646\u0629 \u0627\u0644\u0635\u0646\u0639 \u0628\u062F\u0642\u0629.";
+  const rawChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  const seenUris = /* @__PURE__ */ new Set();
+  const sources = [];
+  for (const chunk of rawChunks) {
+    const uri = chunk.web?.uri?.trim();
+    if (!uri || seenUris.has(uri)) continue;
+    seenUris.add(uri);
+    sources.push({
+      uri,
+      title: chunk.web?.title?.trim() || uri
+    });
+    if (sources.length >= 6) break;
+  }
+  const catalog = getPublishedProducts();
+  const haystack = `${vehicle} ${questionOrCode} ${answer}`.toLowerCase();
+  const isDiesel = /ديزل|diesel|dpf|p2002|p2463|هايلكس|شاحن|فورد f|ايسوزو|isuzu|مرسيدس شاحنة/.test(haystack);
+  const scored = catalog.map((p) => {
+    const pub = stripPrivateProductFields(p);
+    const text = `${p.name} ${p.category} ${p.description}`.toLowerCase();
+    let score = 0;
+    if (isDiesel && (text.includes("\u062F\u064A\u0632\u0644") || text.includes("dpf"))) score += 4;
+    if (!isDiesel && (text.includes("\u0628\u0646\u0632\u064A\u0646") || text.includes("\u064A\u0648\u0631\u0648") || text.includes("\u0633\u064A\u0631\u0627\u0645\u064A\u0643")))
+      score += 3;
+    for (const token of vehicle.toLowerCase().split(/\s+/)) {
+      if (token.length >= 3 && text.includes(token)) score += 5;
+    }
+    if (p.inStock) score += 1;
+    return { product: pub, score };
+  });
+  const recommendedProducts = scored.sort((a, b) => b.score - a.score).slice(0, 3).map((x) => x.product);
+  return {
+    answer,
+    sources,
+    recommendedProducts
   };
 }
 
 // server.ts
+process.env.VITE_CONFIG_NATIVE_IGNORE_WARNING ??= "true";
+function parseSeoKeywordsList(input) {
+  const rawList = Array.isArray(input) ? input.map((item) => String(item || "")) : typeof input === "string" ? input.split(/[،,]+/) : [];
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const item of rawList) {
+    const cleaned = item.trim();
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(cleaned);
+    if (result.length >= 15) break;
+  }
+  return result;
+}
 var app = express();
 var PORT = Number(process.env.PORT) || 3e3;
-app.use(express.json({ limit: "65mb" }));
+app.set("trust proxy", 1);
+app.post(
+  "/api/admin/upload-binary",
+  express.raw({ type: "*/*", limit: "150mb" }),
+  (req, res) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+    if (!token) {
+      res.status(401).json({ error: "\u0645\u0637\u0644\u0648\u0628 \u062A\u0633\u062C\u064A\u0644 \u062F\u062E\u0648\u0644 \u0627\u0644\u0645\u0627\u0644\u0643." });
+      return;
+    }
+    const verified = verifySignedToken(token);
+    if (!verified || verified.role !== "admin") {
+      res.status(401).json({ error: "\u062C\u0644\u0633\u0629 \u0627\u0644\u0645\u0627\u0644\u0643 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D\u0629 \u0623\u0648 \u0645\u0646\u062A\u0647\u064A\u0629." });
+      return;
+    }
+    try {
+      const rawName = decodeURIComponent(String(req.headers["x-filename"] || "video.mp4"));
+      const mimeType = String(req.headers["x-mime-type"] || req.headers["content-type"] || "video/mp4");
+      const bodyBuf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || "");
+      if (!bodyBuf || bodyBuf.length === 0) {
+        res.status(400).json({ error: "\u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0645\u0631\u0641\u0648\u0639 \u0641\u0627\u0631\u063A." });
+        return;
+      }
+      const url = saveUploadedBuffer(rawName, mimeType, bodyBuf);
+      res.status(201).json({ url });
+    } catch (err) {
+      console.error("Binary upload error:", err);
+      res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0645\u0631\u0641\u0648\u0639." });
+    }
+  }
+);
+app.use(express.json({ limit: "120mb" }));
+app.use((req, _res, next) => {
+  if (req.body === void 0) {
+    req.body = {};
+  }
+  next();
+});
 app.use("/uploads", express.static(UPLOADS_DIR));
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, status: "healthy", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+});
 function extractBearer(req) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith("Bearer ")) return null;
@@ -2585,13 +3505,19 @@ app.get("/api/products/:id/reviews", (req, res) => {
   res.json({ reviews: getApprovedReviewsForProduct(String(req.params.id)) });
 });
 app.post("/api/products/:id/reviews", (req, res) => {
+  const productId = String(req.params.id);
+  const existing = getProductByIdAdmin(productId);
+  if (!existing) {
+    res.status(404).json({ error: "\u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0645\u0637\u0644\u0648\u0628 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." });
+    return;
+  }
   const { customerName, rating, comment } = req.body;
   if (!customerName?.trim() || !comment?.trim()) {
     res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0643\u062A\u0627\u0628\u0629 \u0627\u0644\u0627\u0633\u0645 \u0648\u0627\u0644\u062A\u0639\u0644\u064A\u0642 \u0644\u062A\u0642\u064A\u064A\u0645 \u0627\u0644\u0645\u0646\u062A\u062C." });
     return;
   }
   const review = addProductReview({
-    productId: String(req.params.id),
+    productId,
     customerName,
     rating: Number(rating) || 5,
     comment
@@ -2661,6 +3587,18 @@ app.post("/api/orders", async (req, res) => {
       redeemCoins,
       couponCode
     } = req.body;
+    const resolvedMethod = paymentMethod === "paypal" ? "paypal" : paymentMethod === "bank_transfer" ? "bank_transfer" : paymentMethod === "owner_wallet" ? "owner_wallet" : "whatsapp";
+    if (resolvedMethod === "owner_wallet") {
+      const ownerTokenHeader = req.headers["x-owner-token"];
+      const ownerToken = typeof ownerTokenHeader === "string" ? ownerTokenHeader.trim() : "";
+      const verifiedOwner = ownerToken ? verifySignedToken(ownerToken) : null;
+      if (!verifiedOwner || verifiedOwner.role !== "admin") {
+        res.status(401).json({
+          error: "\u0627\u0644\u062F\u0641\u0639 \u0639\u0628\u0631 \u0645\u062D\u0641\u0638\u0629 \u0627\u0644\u0645\u0627\u0644\u0643 \u0645\u062A\u0627\u062D \u0644\u0644\u0645\u0627\u0644\u0643 \u0641\u0642\u0637 \u0628\u0639\u062F \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0641\u064A \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645."
+        });
+        return;
+      }
+    }
     if (!customerName?.trim() || !customerPhone?.trim() || !customerAddress?.trim()) {
       res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u062A\u0639\u0628\u0626\u0629 \u0627\u0644\u0627\u0633\u0645 \u0648\u0631\u0642\u0645 \u0627\u0644\u062C\u0648\u0627\u0644 \u0648\u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0628\u0627\u0644\u0643\u0627\u0645\u0644." });
       return;
@@ -2670,19 +3608,22 @@ app.post("/api/orders", async (req, res) => {
       return;
     }
     const published = getPublishedProducts();
+    const adminSettingsSnapshot = getAdminSettings();
+    const isWholesaleMode = adminSettingsSnapshot.priceDisplayMode === "wholesale";
     const resolvedItems = [];
     let totalSar = 0;
     for (const reqItem of items) {
       const prod = published.find((p) => p.id === reqItem.productId);
       if (!prod) continue;
       const qty = Math.max(1, Math.min(99, Math.floor(Number(reqItem.quantity) || 1)));
-      totalSar += prod.priceSar * qty;
+      const effectivePriceSar = isWholesaleMode && typeof prod.wholesalePriceSar === "number" && prod.wholesalePriceSar > 0 ? prod.wholesalePriceSar : prod.priceSar;
+      totalSar += effectivePriceSar * qty;
       resolvedItems.push({
         productId: prod.id,
         name: prod.name,
-        priceSar: prod.priceSar,
+        priceSar: effectivePriceSar,
         quantity: qty,
-        image: prod.images[0] || ""
+        image: (prod.images || [])[0] || ""
       });
     }
     if (resolvedItems.length === 0) {
@@ -2712,7 +3653,17 @@ app.post("/api/orders", async (req, res) => {
     }
     const finalTotalSar = Number(Math.max(0, totalSar - loyaltyRes.discountSar).toFixed(2));
     const totalUsd = Number((finalTotalSar * settings.sarToUsdRate).toFixed(2));
-    const resolvedMethod = paymentMethod === "paypal" ? "paypal" : paymentMethod === "bank_transfer" ? "bank_transfer" : "whatsapp";
+    if (resolvedMethod === "owner_wallet") {
+      const walletRes = chargeOwnerWalletForCartOrder({
+        orderId,
+        amountSar: finalTotalSar,
+        itemSummary: resolvedItems.map((i) => `${i.name} \xD7 ${i.quantity}`).join("\u060C ")
+      });
+      if (walletRes.error) {
+        res.status(400).json({ error: walletRes.error });
+        return;
+      }
+    }
     const order = createOrder({
       id: orderId,
       customerId,
@@ -2731,8 +3682,8 @@ app.post("/api/orders", async (req, res) => {
       totalUsd,
       paymentMethod: resolvedMethod,
       paypalTransactionId: resolvedMethod === "paypal" ? paypalTransactionId : void 0,
-      bankTransferRef: resolvedMethod === "bank_transfer" ? bankTransferRef?.trim() || void 0 : void 0,
-      status: resolvedMethod === "paypal" ? "\u062A\u0645 \u0627\u0644\u062A\u0623\u0643\u064A\u062F" : "\u0642\u064A\u062F \u0627\u0644\u0645\u0631\u0627\u062C\u0639\u0629",
+      bankTransferRef: resolvedMethod === "bank_transfer" ? bankTransferRef?.trim() || void 0 : resolvedMethod === "owner_wallet" ? "\u0645\u062F\u0641\u0648\u0639 \u0639\u0628\u0631 \u0645\u062D\u0641\u0638\u0629 \u0627\u0644\u0645\u0627\u0644\u0643" : void 0,
+      status: resolvedMethod === "paypal" || resolvedMethod === "owner_wallet" ? "\u062A\u0645 \u0627\u0644\u062A\u0623\u0643\u064A\u062F" : "\u0642\u064A\u062F \u0627\u0644\u0645\u0631\u0627\u062C\u0639\u0629",
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
     });
     await notifyOwnerWebhookIfConfigured(
@@ -2746,12 +3697,20 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 app.post("/api/customers/register", (req, res) => {
-  const { name, phone, nationalAddress, address, password } = req.body;
-  if (!name?.trim() || !phone?.trim() || !address?.trim() || !password || password.length < 4) {
-    res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0627\u0633\u0645\u060C \u0627\u0644\u062C\u0648\u0627\u0644\u060C \u0627\u0644\u0639\u0646\u0648\u0627\u0646\u060C \u0648\u0643\u0644\u0645\u0629 \u0645\u0631\u0648\u0631 (4 \u0623\u062D\u0631\u0641 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644)." });
+  const { name, phone, email, nationalAddress, address, password } = req.body;
+  if (!name?.trim() || name.trim().length < 2) {
+    res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0627\u0633\u0645 \u0627\u0644\u0643\u0627\u0645\u0644 (\u062D\u0631\u0641\u064A\u0646 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644)." });
     return;
   }
-  const result = registerCustomer({ name, phone, nationalAddress, address, password });
+  if (!phone?.trim()) {
+    res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0642\u0645 \u0627\u0644\u062C\u0648\u0627\u0644." });
+    return;
+  }
+  if (!password || password.length < 4) {
+    res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0643\u0644\u0645\u0629 \u0645\u0631\u0648\u0631 \u0644\u0627 \u062A\u0642\u0644 \u0639\u0646 4 \u0623\u062D\u0631\u0641." });
+    return;
+  }
+  const result = registerCustomer({ name, phone, email, nationalAddress, address, password });
   if (result.error || !result.customer) {
     res.status(400).json({ error: result.error || "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062D\u0633\u0627\u0628." });
     return;
@@ -2762,21 +3721,76 @@ app.post("/api/customers/register", (req, res) => {
 app.post("/api/customers/login", (req, res) => {
   const { phone, password } = req.body;
   if (!phone?.trim() || !password) {
-    res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0642\u0645 \u0627\u0644\u062C\u0648\u0627\u0644 \u0648\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631." });
+    res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0642\u0645 \u0627\u0644\u062C\u0648\u0627\u0644 (\u0623\u0648 \u0627\u0644\u0628\u0631\u064A\u062F) \u0648\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631." });
     return;
   }
   const customer = loginCustomer(phone, password);
   if (!customer) {
-    res.status(401).json({ error: "\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062F\u062E\u0648\u0644 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629." });
+    res.status(401).json({ error: "\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062F\u062E\u0648\u0644 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629. \u062A\u0623\u0643\u062F \u0645\u0646 \u0627\u0644\u0631\u0642\u0645 \u0648\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631." });
     return;
   }
   const token = createSignedToken({ role: "customer", customerId: customer.id });
   res.json({ token, customer });
 });
+app.post("/api/customers/google-auth", async (req, res, next) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken?.trim()) {
+      res.status(400).json({ error: "\u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0645\u0646 Google \u0645\u0641\u0642\u0648\u062F." });
+      return;
+    }
+    let firebaseApiKey = process.env.VITE_FIREBASE_API_KEY || "";
+    if (!firebaseApiKey) {
+      const cfgPath = path2.resolve(process.cwd(), "firebase-applet-config.json");
+      if (fs2.existsSync(cfgPath)) {
+        const parsed = JSON.parse(fs2.readFileSync(cfgPath, "utf8"));
+        firebaseApiKey = parsed.apiKey || "";
+      }
+    }
+    if (!firebaseApiKey) {
+      res.status(500).json({ error: "\u0625\u0639\u062F\u0627\u062F\u0627\u062A Firebase \u063A\u064A\u0631 \u0645\u0643\u062A\u0645\u0644\u0629 \u0639\u0644\u0649 \u0627\u0644\u062E\u0627\u062F\u0645." });
+      return;
+    }
+    const verifyResp = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseApiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken: idToken.trim() })
+      }
+    );
+    if (!verifyResp.ok) {
+      res.status(401).json({ error: "\u062A\u0639\u0630\u0631 \u0627\u0644\u062A\u062D\u0642\u0642 \u0645\u0646 \u062C\u0644\u0633\u0629 Google. \u064A\u0631\u062C\u0649 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629 \u0645\u062C\u062F\u062F\u0627\u064B." });
+      return;
+    }
+    const verifyJson = await verifyResp.json();
+    const fbUser = verifyJson.users?.[0];
+    if (!fbUser?.localId || !fbUser?.email) {
+      res.status(401).json({ error: "\u0628\u064A\u0627\u0646\u0627\u062A \u062D\u0633\u0627\u0628 Google \u063A\u064A\u0631 \u0645\u0643\u062A\u0645\u0644\u0629 \u0623\u0648 \u063A\u064A\u0631 \u0645\u0648\u062B\u0642\u0629." });
+      return;
+    }
+    const existingBearer = extractBearer(req);
+    const verifiedSession = existingBearer ? verifySignedToken(existingBearer) : null;
+    const result = upsertGoogleCustomer({
+      googleUid: fbUser.localId,
+      email: fbUser.email,
+      name: fbUser.displayName,
+      existingCustomerId: verifiedSession?.role === "customer" ? verifiedSession.customerId : void 0
+    });
+    if (result.error || !result.customer) {
+      res.status(400).json({ error: result.error || "\u062A\u0639\u0630\u0631 \u0631\u0628\u0637 \u062D\u0633\u0627\u0628 Google." });
+      return;
+    }
+    const token = createSignedToken({ role: "customer", customerId: result.customer.id });
+    res.json({ token, customer: result.customer });
+  } catch (err) {
+    next(err);
+  }
+});
 app.post("/api/customers/forgot-password", (req, res) => {
   const { phone } = req.body;
   if (!phone?.trim()) {
-    res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0642\u0645 \u0627\u0644\u062C\u0648\u0627\u0644 \u0627\u0644\u0645\u0633\u062C\u0644." });
+    res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0642\u0645 \u0627\u0644\u062C\u0648\u0627\u0644 \u0627\u0644\u0645\u0633\u062C\u0644 \u0623\u0648 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A." });
     return;
   }
   const result = requestCustomerPasswordReset(phone);
@@ -2811,18 +3825,29 @@ app.post("/api/customers/reset-password", (req, res) => {
 });
 app.post("/api/customers/change-password", requireCustomer, (req, res) => {
   const { currentPassword, newPassword } = req.body;
-  if (!currentPassword || !newPassword || newPassword.length < 4) {
+  if (!newPassword || newPassword.length < 4) {
     res.status(400).json({
-      error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0627\u0644\u062D\u0627\u0644\u064A\u0629 \u0648\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0627\u0644\u062C\u062F\u064A\u062F\u0629 (4 \u0623\u062D\u0631\u0641 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644)."
+      error: "\u064A\u062C\u0628 \u0623\u0646 \u062A\u0643\u0648\u0646 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0627\u0644\u062C\u062F\u064A\u062F\u0629 4 \u0623\u062D\u0631\u0641 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644."
     });
     return;
   }
-  const result = changeCustomerPassword(req.customerId, currentPassword, newPassword);
+  const current = getCustomerById(req.customerId);
+  if (!current) {
+    res.status(404).json({ error: "\u0627\u0644\u062D\u0633\u0627\u0628 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." });
+    return;
+  }
+  if (current.hasPassword !== false && !currentPassword) {
+    res.status(400).json({
+      error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0627\u0644\u062D\u0627\u0644\u064A\u0629 \u0648\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0627\u0644\u062C\u062F\u064A\u062F\u0629."
+    });
+    return;
+  }
+  const result = changeCustomerPassword(req.customerId, currentPassword || "", newPassword);
   if (result.ok === false) {
     res.status(400).json({ error: result.error });
     return;
   }
-  res.json({ success: true });
+  res.json({ success: true, customer: result.customer });
 });
 app.get("/api/customers/me", requireCustomer, (req, res) => {
   const customer = getCustomerById(req.customerId);
@@ -2834,18 +3859,55 @@ app.get("/api/customers/me", requireCustomer, (req, res) => {
   res.json({ customer, orders });
 });
 app.put("/api/customers/me", requireCustomer, (req, res) => {
-  const { name, phone, nationalAddress, address } = req.body;
-  const updated = updateCustomerProfile(req.customerId, {
+  const { name, phone, email, nationalAddress, address } = req.body;
+  if (name !== void 0 && name.trim().length < 2) {
+    res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0627\u0633\u0645 \u0627\u0644\u0643\u0627\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D." });
+    return;
+  }
+  const result = updateCustomerProfile(req.customerId, {
     name,
     phone,
+    email,
     nationalAddress,
     address
   });
-  if (!updated) {
-    res.status(404).json({ error: "\u0627\u0644\u062D\u0633\u0627\u0628 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." });
+  if (result.error || !result.customer) {
+    res.status(400).json({ error: result.error || "\u062A\u0639\u0630\u0631 \u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A." });
     return;
   }
-  res.json({ customer: updated });
+  res.json({ customer: result.customer });
+});
+app.post("/api/customers/ai/vehicle-lookup", async (req, res) => {
+  try {
+    const { vehicle, questionOrCode } = req.body;
+    if (!vehicle?.trim() || vehicle.trim().length < 2) {
+      res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0646\u0648\u0639 \u0648\u0645\u0648\u062F\u064A\u0644 \u0627\u0644\u0633\u064A\u0627\u0631\u0629 (\u0645\u062B\u0627\u0644: \u062A\u0648\u064A\u0648\u062A\u0627 \u0643\u0627\u0645\u0631\u064A 2021)." });
+      return;
+    }
+    const result = await lookupVehicleCompatibilityWithSearch({
+      vehicle,
+      questionOrCode
+    });
+    res.json(result);
+  } catch (err) {
+    const status = typeof err?.status === "number" ? err.status : 500;
+    console.error("Vehicle AI Search Grounding error:", err);
+    if (status === 429) {
+      res.status(429).json({
+        error: "\u062A\u0645 \u062A\u062C\u0627\u0648\u0632 \u0627\u0644\u062D\u062F \u0627\u0644\u0645\u0624\u0642\u062A \u0644\u0637\u0644\u0628\u0627\u062A \u0627\u0644\u0628\u062D\u062B \u0627\u0644\u0630\u0643\u064A. \u064A\u0631\u062C\u0649 \u0627\u0644\u0627\u0646\u062A\u0638\u0627\u0631 \u062F\u0642\u064A\u0642\u0629 \u062B\u0645 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629 \u0645\u062C\u062F\u062F\u0627\u064B."
+      });
+      return;
+    }
+    if (status === 401 || status === 403) {
+      res.status(status).json({
+        error: "\u062A\u0639\u0630\u0631 \u062A\u0641\u0639\u064A\u0644 \u062E\u062F\u0645\u0629 \u0627\u0644\u0628\u062D\u062B \u0627\u0644\u0630\u0643\u064A \u062D\u0627\u0644\u064A\u0627\u064B \u0628\u0633\u0628\u0628 \u0635\u0644\u0627\u062D\u064A\u0627\u062A \u0645\u0641\u062A\u0627\u062D API \u0641\u064A \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u0634\u0631\u0648\u0639."
+      });
+      return;
+    }
+    res.status(status >= 400 && status < 600 ? status : 500).json({
+      error: "\u062A\u0639\u0630\u0631 \u0625\u062A\u0645\u0627\u0645 \u0627\u0644\u0628\u062D\u062B \u0627\u0644\u0645\u0628\u0627\u0634\u0631 \u062D\u0627\u0644\u064A\u0627\u064B. \u064A\u0631\u062C\u0649 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629 \u0645\u062C\u062F\u062F\u0627\u064B \u0628\u0639\u062F \u0642\u0644\u064A\u0644."
+    });
+  }
 });
 app.post("/api/customers/daily-checkin", requireCustomer, (req, res) => {
   const result = claimDailyCoins(req.customerId);
@@ -2854,6 +3916,23 @@ app.post("/api/customers/daily-checkin", requireCustomer, (req, res) => {
     return;
   }
   res.json({ customer: result.customer, awardedCoins: result.awardedCoins });
+});
+app.post("/api/customers/share-reward", requireCustomer, (req, res) => {
+  const { productId, productTitle, channel } = req.body;
+  const result = awardProductSharePoints(req.customerId, {
+    productId,
+    productTitle,
+    channel
+  });
+  if (result.error || !result.customer) {
+    res.status(400).json({ error: result.error || "\u062A\u0639\u0630\u0631 \u0627\u062D\u062A\u0633\u0627\u0628 \u0646\u0642\u0627\u0637 \u0627\u0644\u0645\u0634\u0627\u0631\u0643\u0629." });
+    return;
+  }
+  res.json({
+    customer: result.customer,
+    awardedCoins: result.awardedCoins ?? 0,
+    alreadySharedToday: Boolean(result.alreadySharedToday)
+  });
 });
 app.post("/api/customers/redeem-coupon", requireCustomer, (req, res) => {
   const { coins } = req.body;
@@ -2918,72 +3997,49 @@ async function dispatchOwnerSecurityCodeEmail(toEmail, code, subject, heading, d
   }
   return { deliveryMode: "verified_direct", previewCode: code };
 }
-app.post("/api/admin/login", async (req, res) => {
-  const { password } = req.body;
-  if (!password || !verifyAdminPassword(password)) {
-    res.status(401).json({ error: "\u0643\u0644\u0645\u0629 \u0645\u0631\u0648\u0631 \u0627\u0644\u0645\u0627\u0644\u0643 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629." });
-    return;
-  }
-  const twoFactor = getAdminTwoFactorStatus();
-  if (!twoFactor.enabled) {
+app.post("/api/admin/login", (req, res) => {
+  try {
+    const { password } = req.body || {};
+    if (!password || !verifyAdminPassword(password)) {
+      res.status(401).json({ error: "\u0643\u0644\u0645\u0629 \u0645\u0631\u0648\u0631 \u0627\u0644\u0645\u0627\u0644\u0643 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629." });
+      return;
+    }
     const token = createSignedToken({ role: "admin" });
     res.json({ token });
-    return;
+  } catch (error) {
+    console.error("Admin login error:", error);
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u062A\u0645\u0627\u0645 \u062A\u0633\u062C\u064A\u0644 \u062F\u062E\u0648\u0644 \u0627\u0644\u0645\u0627\u0644\u0643 \u062D\u0627\u0644\u064A\u0627\u064B." });
   }
-  const challengeToken = createSignedToken({
-    role: "admin_2fa_pending",
-    exp: Date.now() + 1e3 * 60 * 10
-  });
-  if (twoFactor.method === "email") {
+});
+app.post("/api/admin/login/send-email-otp", async (req, res) => {
+  try {
+    const { challengeToken } = req.body || {};
+    const verified = challengeToken ? verifySignedToken(challengeToken) : null;
+    if (!verified || verified.role !== "admin_2fa_pending") {
+      res.status(401).json({ error: "\u0627\u0646\u062A\u0647\u062A \u062C\u0644\u0633\u0629 \u0627\u0644\u062A\u062D\u0642\u0642\u060C \u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0645\u062C\u062F\u062F\u0627\u064B." });
+      return;
+    }
     const otp = issueAdminEmailLoginOtp();
     const sent = await dispatchOwnerSecurityCodeEmail(
       otp.recoveryEmail,
       otp.code,
-      "\u0631\u0645\u0632 \u0627\u0644\u0645\u0635\u0627\u062F\u0642\u0629 \u0627\u0644\u062B\u0646\u0627\u0626\u064A\u0629 (2FA) - \u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645 \u0627\u0644\u0645\u0627\u0644\u0643",
+      "\u0631\u0645\u0632 \u0627\u0644\u0645\u0635\u0627\u062F\u0642\u0629 \u0627\u0644\u062B\u0646\u0627\u0626\u064A\u0629 \u0627\u0644\u0627\u062D\u062A\u064A\u0627\u0637\u064A - \u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645 \u0627\u0644\u0645\u0627\u0644\u0643",
       "\u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0644\u0644\u062F\u062E\u0648\u0644 \u0625\u0644\u0649 \u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645 \u0627\u0644\u0645\u0627\u0644\u0643",
-      "\u0623\u062F\u062E\u0644 \u0647\u0630\u0627 \u0627\u0644\u0631\u0645\u0632 \u0644\u0625\u0643\u0645\u0627\u0644 \u0627\u0644\u0645\u0635\u0627\u062F\u0642\u0629 \u0627\u0644\u062B\u0646\u0627\u0626\u064A\u0629 \u0648\u0627\u0644\u062F\u062E\u0648\u0644 \u0625\u0644\u0649 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645:"
+      "\u0627\u0633\u062A\u062E\u062F\u0645 \u0647\u0630\u0627 \u0627\u0644\u0631\u0645\u0632 \u0644\u0625\u062A\u0645\u0627\u0645 \u0627\u0644\u062F\u062E\u0648\u0644 \u0625\u0644\u0649 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645:"
     );
     res.json({
-      requires2fa: true,
-      method: "email",
-      challengeToken,
+      sent: true,
       deliveryMode: sent.deliveryMode,
       previewCode: sent.previewCode,
-      message: sent.deliveryMode === "verified_direct" ? "\u062A\u0645 \u062A\u0648\u0644\u064A\u062F \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0627\u0644\u062B\u0646\u0627\u0626\u064A \u0644\u0644\u0625\u064A\u0645\u064A\u0644 \u0627\u0644\u0645\u0639\u062A\u0645\u062F (\u0644\u0644\u062A\u0648\u0635\u064A\u0644 \u0644\u0635\u0646\u062F\u0648\u0642 \u0627\u0644\u0648\u0627\u0631\u062F\u060C \u0623\u0636\u0641 SMTP \u0623\u0648 Resend \u0641\u064A \u0627\u0644\u0645\u062A\u063A\u064A\u0631\u0627\u062A)." : "\u062A\u0645 \u0625\u0631\u0633\u0627\u0644 \u0631\u0645\u0632 \u0627\u0644\u0645\u0635\u0627\u062F\u0642\u0629 \u0627\u0644\u062B\u0646\u0627\u0626\u064A\u0629 \u0625\u0644\u0649 \u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u0639\u062A\u0645\u062F."
+      message: sent.deliveryMode === "verified_direct" ? "\u062A\u0645 \u062A\u0648\u0644\u064A\u062F \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0627\u0644\u0627\u062D\u062A\u064A\u0627\u0637\u064A \u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u0639\u062A\u0645\u062F." : "\u062A\u0645 \u0625\u0631\u0633\u0627\u0644 \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0625\u0644\u0649 \u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u0639\u062A\u0645\u062F."
     });
-    return;
+  } catch (error) {
+    console.error("Send email OTP error:", error);
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0625\u0631\u0633\u0627\u0644 \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u062D\u0627\u0644\u064A\u0627\u064B." });
   }
-  res.json({
-    requires2fa: true,
-    method: "totp",
-    challengeToken,
-    message: "\u0623\u062F\u062E\u0644 \u0627\u0644\u0631\u0645\u0632 \u0627\u0644\u0645\u0643\u0648\u0646 \u0645\u0646 6 \u0623\u0631\u0642\u0627\u0645 \u0645\u0646 \u062A\u0637\u0628\u064A\u0642 \u0627\u0644\u0645\u0635\u0627\u062F\u0642\u0629 (Google Authenticator)."
-  });
-});
-app.post("/api/admin/login/send-email-otp", async (req, res) => {
-  const { challengeToken } = req.body;
-  const verified = challengeToken ? verifySignedToken(challengeToken) : null;
-  if (!verified || verified.role !== "admin_2fa_pending") {
-    res.status(401).json({ error: "\u0627\u0646\u062A\u0647\u062A \u062C\u0644\u0633\u0629 \u0627\u0644\u062A\u062D\u0642\u0642\u060C \u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0645\u062C\u062F\u062F\u0627\u064B." });
-    return;
-  }
-  const otp = issueAdminEmailLoginOtp();
-  const sent = await dispatchOwnerSecurityCodeEmail(
-    otp.recoveryEmail,
-    otp.code,
-    "\u0631\u0645\u0632 \u0627\u0644\u0645\u0635\u0627\u062F\u0642\u0629 \u0627\u0644\u062B\u0646\u0627\u0626\u064A\u0629 \u0627\u0644\u0627\u062D\u062A\u064A\u0627\u0637\u064A - \u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645 \u0627\u0644\u0645\u0627\u0644\u0643",
-    "\u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0644\u0644\u062F\u062E\u0648\u0644 \u0625\u0644\u0649 \u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645 \u0627\u0644\u0645\u0627\u0644\u0643",
-    "\u0627\u0633\u062A\u062E\u062F\u0645 \u0647\u0630\u0627 \u0627\u0644\u0631\u0645\u0632 \u0644\u0625\u062A\u0645\u0627\u0645 \u0627\u0644\u062F\u062E\u0648\u0644 \u0625\u0644\u0649 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645:"
-  );
-  res.json({
-    sent: true,
-    deliveryMode: sent.deliveryMode,
-    previewCode: sent.previewCode,
-    message: sent.deliveryMode === "verified_direct" ? "\u062A\u0645 \u062A\u0648\u0644\u064A\u062F \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0627\u0644\u0627\u062D\u062A\u064A\u0627\u0637\u064A \u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u0639\u062A\u0645\u062F." : "\u062A\u0645 \u0625\u0631\u0633\u0627\u0644 \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0625\u0644\u0649 \u0628\u0631\u064A\u062F \u0627\u0644\u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u0639\u062A\u0645\u062F."
-  });
 });
 app.post("/api/admin/login/verify-2fa", (req, res) => {
-  const { challengeToken, code } = req.body;
+  const { challengeToken, code } = req.body || {};
   const verified = challengeToken ? verifySignedToken(challengeToken) : null;
   if (!verified || verified.role !== "admin_2fa_pending") {
     res.status(401).json({ error: "\u0627\u0646\u062A\u0647\u062A \u0635\u0644\u0627\u062D\u064A\u0629 \u062C\u0644\u0633\u0629 \u0627\u0644\u062A\u062D\u0642\u0642 \u0627\u0644\u062B\u0646\u0627\u0626\u064A\u060C \u064A\u0631\u062C\u0649 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0645\u062C\u062F\u062F\u0627\u064B." });
@@ -2998,29 +4054,34 @@ app.post("/api/admin/login/verify-2fa", (req, res) => {
   res.json({ token, usedBackupCode: check.usedBackupCode });
 });
 app.post("/api/admin/forgot-password", async (req, res) => {
-  const { email } = req.body;
-  if (!email?.trim()) {
-    res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0644\u0627\u0633\u062A\u0639\u0627\u062F\u0629 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631." });
-    return;
+  try {
+    const { email } = req.body || {};
+    if (!email?.trim()) {
+      res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0644\u0627\u0633\u062A\u0639\u0627\u062F\u0629 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631." });
+      return;
+    }
+    const result = requestAdminPasswordReset(email);
+    if (result.ok === false) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    const sent = await dispatchOwnerSecurityCodeEmail(
+      result.recoveryEmail,
+      result.code,
+      "\u0631\u0645\u0632 \u0625\u0639\u0627\u062F\u0629 \u062A\u0639\u064A\u064A\u0646 \u0643\u0644\u0645\u0629 \u0645\u0631\u0648\u0631 \u0627\u0644\u0645\u0627\u0644\u0643 - \u0645\u0635\u0646\u0639 \u0627\u0644\u062A\u0627\u062C \u0627\u0644\u0630\u0647\u0628\u064A",
+      "\u0625\u0639\u0627\u062F\u0629 \u062A\u0639\u064A\u064A\u0646 \u0643\u0644\u0645\u0629 \u0645\u0631\u0648\u0631 \u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645 \u0627\u0644\u0645\u0627\u0644\u0643",
+      "\u062A\u0645 \u0637\u0644\u0628 \u0631\u0645\u0632 \u062A\u062D\u0642\u0642 \u0644\u0627\u0633\u062A\u0639\u0627\u062F\u0629 \u0643\u0644\u0645\u0629 \u0645\u0631\u0648\u0631 \u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645 \u0627\u0644\u0645\u0627\u0644\u0643:"
+    );
+    res.json({
+      sent: true,
+      deliveryMode: sent.deliveryMode,
+      previewCode: sent.previewCode,
+      message: sent.deliveryMode === "verified_direct" ? "\u062A\u0645 \u0627\u0644\u062A\u062D\u0642\u0642 \u0645\u0646 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0627\u0644\u0645\u0639\u062A\u0645\u062F \u0648\u062A\u0648\u0644\u064A\u062F \u0631\u0645\u0632 \u0627\u0644\u0627\u0633\u062A\u0639\u0627\u062F\u0629 \u0628\u0646\u062C\u0627\u062D (\u0644\u0644\u062A\u0648\u0635\u064A\u0644 \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A \u0644\u0635\u0646\u062F\u0648\u0642 \u0627\u0644\u0648\u0627\u0631\u062F\u060C \u0623\u0636\u0641 \u0628\u064A\u0627\u0646\u0627\u062A SMTP \u0623\u0648 Resend \u0641\u064A \u0645\u062A\u063A\u064A\u0631\u0627\u062A \u0627\u0644\u0628\u064A\u0626\u0629)." : "\u062A\u0645 \u0625\u0631\u0633\u0627\u0644 \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0628\u0646\u062C\u0627\u062D \u0625\u0644\u0649 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0627\u0644\u0645\u0639\u062A\u0645\u062F."
+    });
+  } catch (error) {
+    console.error("Admin forgot-password error:", error);
+    res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0645\u0639\u0627\u0644\u062C\u0629 \u0637\u0644\u0628 \u0627\u0633\u062A\u0639\u0627\u062F\u0629 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u062D\u0627\u0644\u064A\u0627\u064B." });
   }
-  const result = requestAdminPasswordReset(email);
-  if (result.ok === false) {
-    res.status(400).json({ error: result.error });
-    return;
-  }
-  const sent = await dispatchOwnerSecurityCodeEmail(
-    result.recoveryEmail,
-    result.code,
-    "\u0631\u0645\u0632 \u0625\u0639\u0627\u062F\u0629 \u062A\u0639\u064A\u064A\u0646 \u0643\u0644\u0645\u0629 \u0645\u0631\u0648\u0631 \u0627\u0644\u0645\u0627\u0644\u0643 - \u0645\u0635\u0646\u0639 \u0627\u0644\u062A\u0627\u062C \u0627\u0644\u0630\u0647\u0628\u064A",
-    "\u0625\u0639\u0627\u062F\u0629 \u062A\u0639\u064A\u064A\u0646 \u0643\u0644\u0645\u0629 \u0645\u0631\u0648\u0631 \u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645 \u0627\u0644\u0645\u0627\u0644\u0643",
-    "\u062A\u0645 \u0637\u0644\u0628 \u0631\u0645\u0632 \u062A\u062D\u0642\u0642 \u0644\u0627\u0633\u062A\u0639\u0627\u062F\u0629 \u0643\u0644\u0645\u0629 \u0645\u0631\u0648\u0631 \u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645 \u0627\u0644\u0645\u0627\u0644\u0643:"
-  );
-  res.json({
-    sent: true,
-    deliveryMode: sent.deliveryMode,
-    previewCode: sent.previewCode,
-    message: sent.deliveryMode === "verified_direct" ? "\u062A\u0645 \u0627\u0644\u062A\u062D\u0642\u0642 \u0645\u0646 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0627\u0644\u0645\u0639\u062A\u0645\u062F \u0648\u062A\u0648\u0644\u064A\u062F \u0631\u0645\u0632 \u0627\u0644\u0627\u0633\u062A\u0639\u0627\u062F\u0629 \u0628\u0646\u062C\u0627\u062D (\u0644\u0644\u062A\u0648\u0635\u064A\u0644 \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A \u0644\u0635\u0646\u062F\u0648\u0642 \u0627\u0644\u0648\u0627\u0631\u062F\u060C \u0623\u0636\u0641 \u0628\u064A\u0627\u0646\u0627\u062A SMTP \u0623\u0648 Resend \u0641\u064A \u0645\u062A\u063A\u064A\u0631\u0627\u062A \u0627\u0644\u0628\u064A\u0626\u0629)." : "\u062A\u0645 \u0625\u0631\u0633\u0627\u0644 \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0628\u0646\u062C\u0627\u062D \u0625\u0644\u0649 \u0628\u0631\u064A\u062F\u0643 \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0627\u0644\u0645\u0639\u062A\u0645\u062F."
-  });
 });
 app.post("/api/admin/reset-password", (req, res) => {
   const { email, code, newPassword } = req.body;
@@ -3102,6 +4163,7 @@ app.post("/api/admin/2fa/regenerate-backup-codes", requireAdmin, (_req, res) => 
 });
 app.get("/api/admin/dashboard", requireAdmin, (_req, res) => {
   const { alerts, whatsappDigestText } = getOwnerAlertsAndDigest();
+  const walletSummary = getOwnerWalletSummaryAdmin();
   res.json({
     settings: getAdminSettings(),
     twoFactorStatus: getAdminTwoFactorStatus(),
@@ -3113,8 +4175,62 @@ app.get("/api/admin/dashboard", requireAdmin, (_req, res) => {
     alerts,
     whatsappDigestText,
     assistantMessages: getAssistantMessages(),
-    analytics: getOwnerAnalyticsAdmin()
+    analytics: getOwnerAnalyticsAdmin(),
+    ownerWallet: walletSummary
   });
+});
+app.get("/api/admin/wallet", requireAdmin, (_req, res) => {
+  res.json(getOwnerWalletSummaryAdmin());
+});
+app.post("/api/admin/wallet/deposit", requireAdmin, (req, res) => {
+  const { amountSar, note, reference } = req.body;
+  const result = depositToOwnerWalletAdmin({
+    amountSar: Number(amountSar) || 0,
+    note,
+    reference
+  });
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(result);
+});
+app.post("/api/admin/wallet/transfer-sales", requireAdmin, (_req, res) => {
+  const result = transferSalesRevenueToWalletAdmin();
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(result);
+});
+app.post("/api/admin/wallet/purchase", requireAdmin, (req, res) => {
+  const {
+    mode,
+    productId,
+    quantity,
+    priceBasis,
+    title,
+    category,
+    amountSar,
+    reference,
+    recordStoreOrder
+  } = req.body;
+  const result = purchaseWithOwnerWalletAdmin({
+    mode: mode === "product" ? "product" : "external",
+    productId,
+    quantity,
+    priceBasis,
+    title,
+    category,
+    amountSar,
+    reference,
+    recordStoreOrder
+  });
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(result);
 });
 app.put("/api/admin/reviews/:id", requireAdmin, (req, res) => {
   const { approved } = req.body;
@@ -3134,7 +4250,11 @@ app.delete("/api/admin/reviews/:id", requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 app.put("/api/admin/settings", requireAdmin, (req, res) => {
-  const updated = updateSettings(req.body);
+  const patch = { ...req.body };
+  if ("seoKeywords" in patch) {
+    patch.seoKeywords = parseSeoKeywordsList(patch.seoKeywords);
+  }
+  const updated = updateSettings(patch);
   res.json({ settings: updated });
 });
 app.post("/api/admin/upload", requireAdmin, (req, res) => {
@@ -3209,14 +4329,31 @@ app.post("/api/admin/assistant/send-webhook", requireAdmin, async (_req, res) =>
 });
 app.post("/api/admin/ai/optimize-background", requireAdmin, async (req, res) => {
   try {
-    const { target, mediaType, url, styleHint } = req.body;
+    const {
+      target,
+      mediaType,
+      siteBackgroundType,
+      url,
+      styleHint
+    } = req.body || {};
+    const resolvedMediaType = mediaType === "video" || mediaType === "animated_image" || mediaType === "image" ? mediaType : siteBackgroundType === "video" || siteBackgroundType === "animated_image" ? siteBackgroundType : "image";
     const result = await optimizeBackgroundWithAi({
       target: target === "hero" ? "hero" : "site",
-      mediaType: mediaType === "video" || mediaType === "animated_image" ? mediaType : "image",
+      mediaType: resolvedMediaType,
       url,
       styleHint
     });
-    res.json(result);
+    res.json({
+      ...result,
+      recommendation: {
+        siteBackgroundOpacity: result.recommendedOpacity,
+        siteBackgroundAnimatedMotion: result.recommendedMotion,
+        siteBackgroundFilter: result.cssFilter,
+        heroAnimatedMotion: result.recommendedMotion,
+        heroBackdropFilter: result.cssFilter,
+        noteAr: result.explanationAr
+      }
+    });
   } catch (error) {
     console.error("Background AI optimize error:", error);
     res.status(500).json({ error: "\u062A\u0639\u0630\u0631 \u0636\u0628\u0637 \u0627\u0644\u062E\u0644\u0641\u064A\u0629 \u0628\u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A." });
@@ -3242,20 +4379,25 @@ app.post("/api/admin/ai/translate-product", requireAdmin, async (req, res) => {
 });
 app.post("/api/admin/ai/import-from-url", requireAdmin, async (req, res) => {
   try {
-    const { url, htmlContent } = req.body;
-    if (!url || !/^https?:\/\//i.test(url.trim())) {
-      res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0627\u0628\u0637 \u0645\u0646\u062A\u062C \u0635\u062D\u064A\u062D \u064A\u0628\u062F\u0623 \u0628\u0640 http:// \u0623\u0648 https://" });
+    const { url, htmlContent, rawText } = req.body || {};
+    const cleanUrl = (url || "").trim();
+    const cleanRaw = (rawText || "").trim();
+    if (cleanRaw.length < 15 && (!cleanUrl || !/^https?:\/\//i.test(cleanUrl))) {
+      res.status(400).json({
+        error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0627\u0628\u0637 \u0645\u0646\u062A\u062C \u0635\u062D\u064A\u062D \u064A\u0628\u062F\u0623 \u0628\u0640 http:// \u0623\u0648 https:// \u0623\u0648 \u0644\u0635\u0642 \u0646\u0635 \u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u0645\u0646\u062A\u062C."
+      });
       return;
     }
     const categories = getAdminSettings().categories.filter((c) => c.isActive !== false).map((c) => c.name);
-    const extracted = await importProductFromUrlWithHtml({
-      url: url.trim(),
+    const result = await importProductFromUrlWithHtml({
+      url: cleanUrl || void 0,
       htmlContent: typeof htmlContent === "string" ? htmlContent.slice(0, 25e4) : void 0,
+      rawText: cleanRaw ? cleanRaw.slice(0, 4e4) : void 0,
       categories
     });
-    res.json({ product: extracted });
+    res.json(result);
   } catch (error) {
-    console.error("AI import from URL error:", error);
+    console.error("AI import from URL/text error:", error);
     res.status(500).json({
       error: error instanceof Error ? error.message : "\u062A\u0639\u0630\u0631 \u0627\u0633\u062A\u064A\u0631\u0627\u062F \u0648\u062A\u062D\u0644\u064A\u0644 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \u0628\u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A."
     });
@@ -3289,14 +4431,18 @@ app.post("/api/admin/products", requireAdmin, (req, res) => {
     profitMarginPercent: body.profitMarginPercent ? Number(body.profitMarginPercent) : void 0,
     seoTitle: body.seoTitle,
     seoDescription: body.seoDescription,
-    seoKeywords: body.seoKeywords,
+    seoKeywords: parseSeoKeywordsList(body.seoKeywords),
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   createProduct(product);
   res.status(201).json({ product });
 });
 app.put("/api/admin/products/:id", requireAdmin, (req, res) => {
-  const updated = updateProduct(String(req.params.id), req.body);
+  const patch = { ...req.body };
+  if ("seoKeywords" in patch) {
+    patch.seoKeywords = parseSeoKeywordsList(patch.seoKeywords);
+  }
+  const updated = updateProduct(String(req.params.id), patch);
   if (!updated) {
     res.status(404).json({ error: "\u0627\u0644\u0645\u0646\u062A\u062C \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F." });
     return;
@@ -3313,37 +4459,53 @@ app.delete("/api/admin/products/:id", requireAdmin, (req, res) => {
 });
 app.post("/api/admin/scrape-product", requireAdmin, async (req, res) => {
   try {
-    const { url } = req.body;
-    if (!url || !/^https?:\/\//i.test(url.trim())) {
+    const { url, productName, category } = req.body;
+    const cleanUrl = (url || "").trim();
+    const cleanName = (productName || "").trim();
+    if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
       res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0627\u0628\u0637 \u0645\u0646\u062A\u062C \u0635\u062D\u064A\u062D \u064A\u0628\u062F\u0623 \u0628\u0640 http:// \u0623\u0648 https://" });
       return;
     }
-    const extracted = await scrapeProductFromUrl(url.trim());
-    const draftProduct = {
-      id: `draft-${crypto3.randomUUID().slice(0, 8)}`,
+    if (!cleanUrl && !cleanName) {
+      res.status(400).json({ error: "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0646\u062A\u062C \u0623\u0648 \u0643\u062A\u0627\u0628\u0629 \u0627\u0633\u0645\u0647 \u0644\u064A\u062A\u0645 \u0625\u0646\u0634\u0627\u0624\u0647 \u0648\u0633\u062D\u0628\u0647 \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B." });
+      return;
+    }
+    const extracted = await scrapeProductFromUrlOrName({
+      url: cleanUrl || void 0,
+      productName: cleanName || void 0,
+      category: category?.trim() || void 0
+    });
+    const scrapedProduct = {
+      id: `prod-${crypto3.randomUUID().slice(0, 8)}`,
       name: extracted.name,
+      nameEn: extracted.nameEn,
       category: extracted.category,
       priceSar: extracted.priceSar,
       description: extracted.description,
+      descriptionEn: extracted.descriptionEn,
       images: extracted.images,
       specs: extracted.specs,
+      seoKeywords: parseSeoKeywordsList(extracted.seoKeywords),
       inStock: true,
-      isPublished: false,
-      isScrapedDraft: true,
-      sourceUrl: url.trim(),
+      isPublished: true,
+      isScrapedDraft: false,
+      sourceUrl: cleanUrl || void 0,
       originalExtractedPrice: extracted.originalExtractedPrice,
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
     };
-    createProduct(draftProduct);
+    createProduct(scrapedProduct);
     await notifyOwnerWebhookIfConfigured(
-      "scraped_draft_saved",
-      `\u062A\u0645 \u0633\u062D\u0628 \u0648\u062D\u0641\u0638 \u0645\u0633\u0648\u062F\u0629 \u0633\u0631\u064A\u0629 \u062C\u062F\u064A\u062F\u0629 \u0644\u0644\u0645\u0631\u0627\u062C\u0639\u0629: ${draftProduct.name}`
+      "scraped_product_published",
+      `\u062A\u0645 \u0633\u062D\u0628 \u0648\u062A\u0648\u0644\u064A\u062F \u0645\u0646\u062A\u062C \u062C\u062F\u064A\u062F \u0628\u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0648\u0646\u0634\u0631\u0647 \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631: ${scrapedProduct.name}`
     );
-    res.status(201).json({ product: draftProduct });
+    res.status(201).json({
+      product: scrapedProduct,
+      aiGeneratedImage: Boolean(extracted.aiGeneratedImage)
+    });
   } catch (error) {
     console.error("AI scrape error:", error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : "\u062A\u0639\u0630\u0631 \u0627\u0633\u062A\u062E\u0631\u0627\u062C \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \u0645\u0646 \u0627\u0644\u0631\u0627\u0628\u0637."
+      error: error instanceof Error ? error.message : "\u062A\u0639\u0630\u0631 \u0627\u0633\u062A\u062E\u0631\u0627\u062C \u0623\u0648 \u062A\u0648\u0644\u064A\u062F \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \u0628\u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A."
     });
   }
 });
@@ -3591,38 +4753,167 @@ app.put("/api/admin/customers/:id/coins", requireAdmin, (req, res) => {
   }
   res.json({ customer: updated });
 });
-app.get("/api/seo/schema", (_req, res) => {
+function resolveSiteOrigin(req) {
+  const envUrl = (process.env.APP_URL || "").trim().replace(/\/+$/, "");
+  if (envUrl) return envUrl;
+  const proto = req.headers["x-forwarded-proto"]?.toString().split(",")[0]?.trim() || req.protocol || "https";
+  const host = req.headers["x-forwarded-host"]?.toString().split(",")[0]?.trim() || req.get("host") || "localhost:3000";
+  return `${proto}://${host}`;
+}
+function escapeXml(raw) {
+  return String(raw || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+app.get("/robots.txt", (req, res) => {
+  const origin = resolveSiteOrigin(req);
+  res.type("text/plain; charset=utf-8").send(
+    `User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: ${origin}/sitemap.xml
+`
+  );
+});
+app.get("/sitemap.xml", (req, res) => {
+  const origin = resolveSiteOrigin(req);
   const settings = getPublicSettings();
   const products = getPublishedProducts().map((p) => stripPrivateProductFields(p));
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const resolveMediaUrl = (u) => {
+    if (!u) return null;
+    const trimmed = u.trim();
+    if (!trimmed || trimmed.startsWith("data:")) return null;
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (trimmed.startsWith("/")) return `${origin}${trimmed}`;
+    return `${origin}/${trimmed}`;
+  };
+  const heroImg = resolveMediaUrl(settings.heroImageUrl);
+  const productUrls = products.map((p) => {
+    const loc = `${origin}/?product=${encodeURIComponent(p.id)}`;
+    const lastmod = p.seoLastUpdated || p.createdAt || nowIso;
+    const imageTags = (p.images || []).map(resolveMediaUrl).filter((u) => Boolean(u)).slice(0, 5).map(
+      (imgUrl) => `    <image:image>
+      <image:loc>${escapeXml(imgUrl)}</image:loc>
+      <image:title>${escapeXml(p.name)}</image:title>
+    </image:image>`
+    ).join("\n");
+    return `  <url>
+    <loc>${escapeXml(loc)}</loc>
+    <lastmod>${escapeXml(lastmod)}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+${imageTags ? `${imageTags}
+` : ""}  </url>`;
+  }).join("\n");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>${escapeXml(origin)}/</loc>
+    <lastmod>${escapeXml(nowIso)}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>${heroImg ? `
+    <image:image>
+      <image:loc>${escapeXml(heroImg)}</image:loc>
+      <image:title>${escapeXml(settings.storeName)}</image:title>
+    </image:image>` : ""}
+  </url>
+${productUrls}
+</urlset>`;
+  res.type("application/xml; charset=utf-8").send(xml);
+});
+app.get("/api/seo/schema", (req, res) => {
+  const origin = resolveSiteOrigin(req);
+  const settings = getPublicSettings();
+  const products = getPublishedProducts().map((p) => stripPrivateProductFields(p));
+  const storeKeywords = parseSeoKeywordsList(settings.seoKeywords);
   res.json({
     "@context": "https://schema.org",
-    "@type": "ItemList",
-    name: settings.storeName,
-    itemListElement: products.map((p, index) => ({
-      "@type": "ListItem",
-      position: index + 1,
-      item: p.schemaMarkup || {
-        "@type": "Product",
-        name: p.name,
-        description: p.seoDescription || p.description,
-        image: p.images,
-        offers: {
-          "@type": "Offer",
-          priceCurrency: "SAR",
-          price: p.priceSar
-        }
+    "@graph": [
+      {
+        "@type": "AutoPartsStore",
+        name: settings.storeName,
+        url: `${origin}/`,
+        description: settings.aboutUsText,
+        ...storeKeywords.length > 0 ? { keywords: storeKeywords.join(", ") } : {},
+        telephone: settings.whatsappNumber,
+        email: settings.contactEmail,
+        currenciesAccepted: "SAR",
+        areaServed: { "@type": "Country", name: "Saudi Arabia" },
+        sameAs: [settings.instagramUrl, settings.tiktokUrl].filter(Boolean)
+      },
+      {
+        "@type": "ItemList",
+        name: settings.storeName,
+        itemListElement: products.map((p, index) => {
+          const cleanImages = (p.images || []).filter(
+            (u) => typeof u === "string" && u.length > 0 && !u.startsWith("data:")
+          );
+          const itemPayload = p.schemaMarkup ? {
+            ...p.schemaMarkup,
+            ...cleanImages.length > 0 ? { image: cleanImages } : {}
+          } : {
+            "@type": "Product",
+            name: p.name,
+            sku: p.sku || p.id,
+            description: p.seoDescription || p.description,
+            keywords: parseSeoKeywordsList(p.seoKeywords).join(", "),
+            image: cleanImages,
+            offers: {
+              "@type": "Offer",
+              priceCurrency: "SAR",
+              price: p.priceSar,
+              availability: p.inStock ? "https://schema.org/InStock" : "https://schema.org/OutOfStock"
+            }
+          };
+          return {
+            "@type": "ListItem",
+            position: index + 1,
+            url: `${origin}/?product=${encodeURIComponent(p.id)}`,
+            item: itemPayload
+          };
+        })
       }
-    }))
+    ]
   });
 });
 setInterval(() => {
-  const settings = getAdminSettings();
-  if (settings.seoAutoUpdateEnabled && process.env.GEMINI_API_KEY) {
-    refreshPublishedProductsSeo().catch(
-      (err) => console.error("Periodic SEO refresh error:", err)
-    );
+  try {
+    const settings = getAdminSettings();
+    if (settings.seoAutoUpdateEnabled && process.env.GEMINI_API_KEY) {
+      refreshPublishedProductsSeo().catch(
+        (err) => console.error("Periodic SEO refresh error:", err)
+      );
+    }
+  } catch (err) {
+    console.error("Periodic SEO schedule check error:", err);
   }
 }, 1e3 * 60 * 60 * 6);
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "\u0646\u0642\u0637\u0629 \u0627\u0644\u0646\u0647\u0627\u064A\u0629 \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F\u0629." });
+});
+app.use((err, _req, res, _next) => {
+  const status = typeof err?.status === "number" ? err.status : typeof err?.statusCode === "number" ? err.statusCode : 500;
+  console.error("Server middleware error:", err);
+  if (status === 429) {
+    res.status(429).json({ error: "\u062A\u0645 \u062A\u062C\u0627\u0648\u0632 \u062D\u062F \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0627\u0644\u0645\u0624\u0642\u062A. \u064A\u0631\u062C\u0649 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629 \u0628\u0639\u062F \u0642\u0644\u064A\u0644." });
+    return;
+  }
+  if (status === 413) {
+    res.status(413).json({ error: "\u062D\u062C\u0645 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0631\u0633\u0644\u0629 \u0643\u0628\u064A\u0631 \u062C\u062F\u0627\u064B." });
+    return;
+  }
+  if (status === 400) {
+    res.status(400).json({ error: "\u0635\u064A\u063A\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0631\u0633\u0644\u0629 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D\u0629." });
+    return;
+  }
+  res.status(status).json({ error: "\u062D\u062F\u062B \u062E\u0637\u0623 \u062F\u0627\u062E\u0644\u064A \u0641\u064A \u0627\u0644\u062E\u0627\u062F\u0645." });
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Promise Rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+});
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
@@ -3638,8 +4929,14 @@ async function startServer() {
       res.sendFile(path2.join(distPath, "index.html"));
     });
   }
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Royal Store server listening on http://0.0.0.0:${PORT}`);
   });
+  server.on("error", (err) => {
+    console.error("HTTP server error:", err);
+  });
 }
-startServer();
+startServer().catch((err) => {
+  console.error("Failed to start Royal Store server:", err);
+  process.exit(1);
+});

@@ -57,6 +57,7 @@ import type {
   CurrencyCode,
   CustomerProfile,
   GeneratedAdsCampaign,
+  GroupChatMessage,
   Order,
   OrderStatus,
   OwnerAlert,
@@ -72,6 +73,10 @@ import type {
 } from '../types';
 import { GoogleDriveWorkspace } from './GoogleDriveWorkspace';
 import { GoogleSignInButton } from './GoogleSignInButton';
+import {
+  DEFAULT_GROUP_CHAT_MESSAGES,
+  DEFAULT_GROUP_CHAT_TITLE,
+} from './GroupChatSection';
 import { ProductImageStudioModal } from './ProductImageStudioModal';
 import { ResilientImage } from './ResilientImage';
 import { SquareImageCropModal } from './SquareImageCropModal';
@@ -190,6 +195,9 @@ function createFallbackAdminSettings(): StoreSettings {
     charityPopupEnabled: true,
     seoAutoUpdateEnabled: true,
     seoKeywords: [],
+    groupChatEnabled: true,
+    groupChatTitle: DEFAULT_GROUP_CHAT_TITLE,
+    groupChatMessages: DEFAULT_GROUP_CHAT_MESSAGES,
     ownerPersonalWhatsapp: '',
     ownerWhatsappWebhookUrl: '',
     autoWhatsappAlertsEnabled: false,
@@ -6034,6 +6042,212 @@ export function AdminDashboard({
                             placeholder="زاجل (Zajil)&#10;سبل - البريد السعودي (SPL)&#10;أرامكس (Aramex)"
                             className="w-full p-3 rounded-xl bg-[#16161B] border border-white/15 text-xs"
                           />
+                        </div>
+                      </div>
+
+                      {/* Homepage Animated Group Chat Editor */}
+                      <div className="p-4 rounded-xl border border-[#D4AF37]/30 bg-[#0D0D10] space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 text-sm font-bold text-[#E5C158]">
+                            <MessageCircle className="w-4 h-4" />
+                            <span>المحادثة الجماعية المتحركة في الرئيسية (تجارب الملاك والخبراء)</span>
+                          </div>
+                          <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settings.groupChatEnabled !== false}
+                              onChange={(e) =>
+                                setSettings({
+                                  ...settings,
+                                  groupChatEnabled: e.target.checked,
+                                })
+                              }
+                            />
+                            <span>عرض قسم المحادثة الجماعية في الصفحة الرئيسية</span>
+                          </label>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-[#C5BFB2] mb-1">
+                            عنوان قسم المحادثة الجماعية
+                          </label>
+                          <input
+                            type="text"
+                            value={settings.groupChatTitle ?? DEFAULT_GROUP_CHAT_TITLE}
+                            onChange={(e) =>
+                              setSettings({
+                                ...settings,
+                                groupChatTitle: e.target.value,
+                              })
+                            }
+                            placeholder={DEFAULT_GROUP_CHAT_TITLE}
+                            className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
+                          />
+                        </div>
+
+                        <div className="space-y-3">
+                          {(settings.groupChatMessages && settings.groupChatMessages.length > 0
+                            ? settings.groupChatMessages
+                            : DEFAULT_GROUP_CHAT_MESSAGES
+                          ).map((msg, idx) => {
+                            const currentList =
+                              settings.groupChatMessages && settings.groupChatMessages.length > 0
+                                ? settings.groupChatMessages
+                                : DEFAULT_GROUP_CHAT_MESSAGES;
+                            const updateItem = (patch: Partial<GroupChatMessage>) => {
+                              const next = currentList.map((item, i) =>
+                                i === idx ? { ...item, ...patch } : item
+                              );
+                              setSettings({ ...settings, groupChatMessages: next });
+                            };
+                            const removeItem = () => {
+                              const next = currentList.filter((_, i) => i !== idx);
+                              setSettings({ ...settings, groupChatMessages: next });
+                            };
+
+                            return (
+                              <div
+                                key={msg.id || idx}
+                                className="p-3 rounded-xl border border-white/10 bg-[#141419] space-y-2.5"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-xs font-bold text-[#E5C158]">
+                                    الرسالة #{idx + 1}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={removeItem}
+                                    disabled={currentList.length <= 1}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-400/25 text-[11px] text-red-300 disabled:opacity-40"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    <span>حذف</span>
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                                  <div>
+                                    <label className="block text-[11px] text-[#9E988C] mb-1">
+                                      الاسم المعروض
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={msg.senderName}
+                                      onChange={(e) => updateItem({ senderName: e.target.value })}
+                                      placeholder="مثال: خالد (صاحب هوندا)"
+                                      className="w-full h-9 px-3 rounded-lg bg-[#1A1A20] border border-white/15 text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-[#9E988C] mb-1">
+                                      الصفة / اللقب
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={msg.roleTag || ''}
+                                      onChange={(e) => updateItem({ roleTag: e.target.value })}
+                                      placeholder="مثال: مالك سيارة / مهندس فحص"
+                                      className="w-full h-9 px-3 rounded-lg bg-[#1A1A20] border border-white/15 text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-[#9E988C] mb-1">
+                                      نمط اللون والشارة
+                                    </label>
+                                    <select
+                                      value={msg.accent || 'owner_car'}
+                                      onChange={(e) =>
+                                        updateItem({
+                                          accent: e.target.value as GroupChatMessage['accent'],
+                                        })
+                                      }
+                                      className="w-full h-9 px-3 rounded-lg bg-[#1A1A20] border border-white/15 text-xs"
+                                    >
+                                      <option value="owner_car">مالك سيارة</option>
+                                      <option value="engineer">مهندس فحص وتشخيص</option>
+                                      <option value="master">معلم وخبير تركيب</option>
+                                      <option value="manager">المدير (تاج ذهبي)</option>
+                                    </select>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[11px] text-[#9E988C] mb-1">
+                                    نص الرسالة
+                                  </label>
+                                  <textarea
+                                    rows={2}
+                                    value={msg.message}
+                                    onChange={(e) => updateItem({ message: e.target.value })}
+                                    className="w-full p-2.5 rounded-lg bg-[#1A1A20] border border-white/15 text-xs leading-relaxed"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const current =
+                                  settings.groupChatMessages && settings.groupChatMessages.length > 0
+                                    ? settings.groupChatMessages
+                                    : DEFAULT_GROUP_CHAT_MESSAGES;
+                                setSettings({
+                                  ...settings,
+                                  groupChatMessages: [
+                                    ...current,
+                                    {
+                                      id: `gc-${Date.now()}`,
+                                      senderName: 'عميل جديد',
+                                      roleTag: 'مالك سيارة',
+                                      accent: 'owner_car',
+                                      message: '',
+                                    },
+                                  ],
+                                });
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#D4AF37]/40 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-xs font-bold text-[#E5C158]"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>إضافة رسالة جديدة</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSettings({
+                                  ...settings,
+                                  groupChatTitle: DEFAULT_GROUP_CHAT_TITLE,
+                                  groupChatMessages: DEFAULT_GROUP_CHAT_MESSAGES.map((m) => ({
+                                    ...m,
+                                  })),
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#C5BFB2]"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>استعادة الحوار الافتراضي</span>
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={savingSettings}
+                            onClick={() =>
+                              void persistSettingsObject(
+                                settings,
+                                'تم حفظ وتحديث المحادثة الجماعية في الصفحة الرئيسية بنجاح.'
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8941F] text-black text-xs font-black hover:brightness-110 disabled:opacity-60"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>حفظ تعديلات المحادثة فوراً</span>
+                          </button>
                         </div>
                       </div>
 

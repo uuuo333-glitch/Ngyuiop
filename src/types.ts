@@ -74,6 +74,14 @@ export interface SidebarVideoItem {
   url: string;
 }
 
+export interface GroupChatMessage {
+  id: string;
+  senderName: string;
+  roleTag?: string;
+  message: string;
+  accent?: 'owner_car' | 'engineer' | 'master' | 'manager';
+}
+
 export interface StoreSettings {
   storeName: string;
   storeTagline: string;
@@ -168,6 +176,10 @@ export interface StoreSettings {
   seoAutoUpdateEnabled: boolean;
   seoKeywords?: string[];
   seoLastAutoRun?: string;
+  // Homepage Animated Group Chat Showcase
+  groupChatEnabled?: boolean;
+  groupChatTitle?: string;
+  groupChatMessages?: GroupChatMessage[];
   // Owner-only private WhatsApp AI Assistant, Password Recovery, Promo Codes & 2FA settings
   promoDiscountCodes?: PromoDiscountCode[];
   ownerPersonalWhatsapp: string;

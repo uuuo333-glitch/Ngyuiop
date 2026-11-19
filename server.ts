@@ -1,4 +1,5 @@
 import 'dotenv/config';
+process.env.VITE_CONFIG_NATIVE_IGNORE_WARNING ??= 'true';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';

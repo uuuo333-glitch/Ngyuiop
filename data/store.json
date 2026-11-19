@@ -122,6 +122,9 @@
     "contactEmail": "uuuo333@gmail.com",
     "paypalBusinessEmail": "payments@taj-catalytic.example",
     "paypalMeUrl": "https://www.paypal.me/yousefAlmohamad931",
+    "paypalClientId": "",
+    "paypalButtonsEnabled": true,
+    "paypalCardEnabled": true,
     "bankTransferEnabled": true,
     "bankName": "مصرف الراجحي",
     "bankAccountHolder": "مصنع التاج الذهبي لدبات التلوث",
@@ -145,6 +148,7 @@
     "coinValueSar": 0.1,
     "dailyCheckinCoins": 25,
     "coinsPer100SarPurchase": 50,
+    "coinsPerProductShare": 15,
     "charityPopupEnabled": true,
     "charityPopupTitle": "تصدق ولو بالقليل.. واجعل تجارتك مباركة",
     "charityPopupVerse": "﴿ مَّثَلُ الَّذِينَ يُنفِقُونَ أَمْوَالَهُمْ فِي سَبِيلِ اللَّهِ كَمَثَلِ حَبَّةٍ أَنبَتَتْ سَبْعَ سَنَابِلَ فِي كُلِّ سُنبُلَةٍ مِّائَةُ حَبَّةٍ ۗ وَاللَّهُ يُضَاعِفُ لِمَن يَشَاءُ ﴾ [البقرة: 261]",
@@ -458,7 +462,9 @@
       "goldenCoins": 0,
       "coupons": [],
       "passwordHash": "96cb81b2f4dd63d7bf057345eb5450d5:dd655b4638f5529e511973dca3315db953f357658185016e15b3563a78c93e3b8f2a57d84e32189a0881f09333feb3215b014b850ebb59db938478771716fd45",
-      "createdAt": "2026-11-18T10:28:33.600Z"
+      "createdAt": "2026-11-18T10:28:33.600Z",
+      "loyaltyHistory": [],
+      "sharedProductsHistory": {}
     }
   ],
   "orders": [],
@@ -471,13 +477,23 @@
     }
   ],
   "analytics": {
-    "totalVisits": 0,
-    "uniqueVisitorTokens": [],
+    "totalVisits": 1,
+    "uniqueVisitorTokens": [
+      "v-mwn8b37s-rmfqgz"
+    ],
     "searchQueries": [],
-    "updatedAt": "2026-11-16T10:06:09.786Z"
+    "updatedAt": "2026-11-19T11:32:28.270Z"
   },
   "adminTwoFactorEnabled": false,
   "reviews": [],
   "adminResetCodeHash": "13d20440a505f006a9e4cde37700a3cd:50825ff37ce02d61d003646535b1539c2d2615d12f087c4f00e735b126a9f348ba755a96085cffdde720e070e5ac509aa06f7049fe1ecc2da01d9f3cb3b88961",
-  "adminResetExpiresAt": 1794999975786
+  "adminResetExpiresAt": 1794999975786,
+  "ownerWallet": {
+    "balanceSar": 0,
+    "totalDepositedSar": 0,
+    "totalSpentSar": 0,
+    "transferredOrderIds": [],
+    "transactions": [],
+    "updatedAt": "2026-11-19T11:32:28.194Z"
+  }
 }

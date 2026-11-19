@@ -9,6 +9,11 @@ import { CompareModal } from './components/CompareModal';
 import { CustomFabricationModal } from './components/CustomFabricationModal';
 import { CustomerAuthModal } from './components/CustomerAuthModal';
 import { Footer } from './components/Footer';
+import {
+  DEFAULT_GROUP_CHAT_MESSAGES,
+  DEFAULT_GROUP_CHAT_TITLE,
+  GroupChatSection,
+} from './components/GroupChatSection';
 import { HeaderBars } from './components/HeaderBars';
 import { LandingHero } from './components/LandingHero';
 import { ProductCard } from './components/ProductCard';
@@ -189,6 +194,9 @@ const INITIAL_PUBLIC_SETTINGS: PublicSettings = {
     },
   ],
   seoAutoUpdateEnabled: true,
+  groupChatEnabled: true,
+  groupChatTitle: DEFAULT_GROUP_CHAT_TITLE,
+  groupChatMessages: DEFAULT_GROUP_CHAT_MESSAGES,
 };
 
 function readCachedStorefront(): {
@@ -1054,6 +1062,7 @@ export default function App() {
           </div>
         </main>
 
+        <GroupChatSection settings={settings} />
         <ShippingCarriersLogos settings={settings} />
         <CharitySection settings={settings} />
         <Footer settings={settings} lang={lang} onOpenAdmin={() => setAdminOpen(true)} />
