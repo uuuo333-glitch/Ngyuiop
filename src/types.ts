@@ -150,6 +150,7 @@ export interface StoreSettings {
   coinValueSar?: number;
   dailyCheckinCoins?: number;
   coinsPer100SarPurchase?: number;
+  coinsPerProductShare?: number;
   // Ehsan & Charity Popup + Organizations
   charityPopupEnabled?: boolean;
   charityPopupTitle?: string;
@@ -222,6 +223,14 @@ export interface LoyaltyCoupon {
   createdAt: string;
 }
 
+export interface LoyaltyHistoryItem {
+  id: string;
+  type: 'purchase' | 'share' | 'daily' | 'redeem';
+  points: number;
+  description: string;
+  createdAt: string;
+}
+
 export interface CustomerProfile {
   id: string;
   name: string;
@@ -234,6 +243,8 @@ export interface CustomerProfile {
   goldenCoins?: number;
   lastDailyClaimDate?: string;
   coupons?: LoyaltyCoupon[];
+  loyaltyHistory?: LoyaltyHistoryItem[];
+  sharedProductsCount?: number;
   createdAt: string;
 }
 

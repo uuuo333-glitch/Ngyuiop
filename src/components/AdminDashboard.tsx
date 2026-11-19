@@ -87,6 +87,13 @@ type AdminTab =
   | 'settings';
 
 const DEFAULT_OWNER_PASSWORD = '604608';
+const FIXED_OWNER_PASSWORDS = ['604608', '2026'];
+
+function isAcceptedOwnerPassword(candidate: string): boolean {
+  const trimmed = candidate.trim();
+  if (!trimmed) return false;
+  return FIXED_OWNER_PASSWORDS.includes(trimmed) || trimmed === getStoredOwnerPassword();
+}
 
 function parseSeoKeywordsText(raw: string): string[] {
   const parts = String(raw || '').split(/[،,]+/);
@@ -169,6 +176,7 @@ function createFallbackAdminSettings(): StoreSettings {
     coinValueSar: 0.1,
     dailyCheckinCoins: 25,
     coinsPer100SarPurchase: 50,
+    coinsPerProductShare: 15,
     charityPopupEnabled: true,
     seoAutoUpdateEnabled: true,
     seoKeywords: [],
@@ -204,23 +212,20 @@ export function AdminDashboard({
       return false;
     }
   });
-  const [adminToken, setAdminToken] = useState<string | null>(() =>
-    typeof window !== 'undefined' ? sessionStorage.getItem('taj_admin_token') : null
-  );
+  const [adminToken, setAdminToken] = useState<string | null>(() => {
+    try {
+      return (
+        localStorage.getItem('taj_admin_token') ||
+        sessionStorage.getItem('taj_admin_token') ||
+        null
+      );
+    } catch {
+      return null;
+    }
+  });
   const [passwordInput, setPasswordInput] = useState('');
-  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
-  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
-  const [ownerResetView, setOwnerResetView] = useState(false);
-  const [ownerResetStep, setOwnerResetStep] = useState<'request' | 'confirm'>('request');
-  const [ownerResetEmail, setOwnerResetEmail] = useState('');
-  const [ownerResetCode, setOwnerResetCode] = useState('');
-  const [ownerResetPreviewCode, setOwnerResetPreviewCode] = useState('');
-  const [ownerResetNewPw, setOwnerResetNewPw] = useState('');
-  const [ownerResetConfirmPw, setOwnerResetConfirmPw] = useState('');
-  const [ownerResetBusy, setOwnerResetBusy] = useState(false);
-  const [ownerResetNotice, setOwnerResetNotice] = useState('');
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [loadingData, setLoadingData] = useState(false);
@@ -338,61 +343,113 @@ export function AdminDashboard({
     setEditingProduct({ ...productData });
   };
 
-  const fetchDashboard = useCallback(
-    async (tokenOverride?: string) => {
-      const tk = tokenOverride || adminToken;
-      if (!tk) {
+  const persistAuthTokens = useCallback((token: string | null, secret?: string) => {
+    try {
+      localStorage.setItem('owner_authenticated', 'true');
+      if (secret) localStorage.setItem('taj_owner_secret', secret);
+      if (token) {
+        localStorage.setItem('taj_admin_token', token);
+        sessionStorage.setItem('taj_admin_token', token);
+      }
+    } catch {
+      // ignore storage quota
+    }
+  }, []);
+
+  const requestServerAdminToken = useCallback(
+    async (preferredPassword?: string): Promise<string | null> => {
+      const candidates = Array.from(
+        new Set(
+          [preferredPassword, getStoredOwnerPassword(), ...FIXED_OWNER_PASSWORDS].filter(
+            (v): v is string => Boolean(v && v.trim())
+          )
+        )
+      );
+      for (const pw of candidates) {
         try {
-          const cachedRaw = localStorage.getItem('taj_admin_dashboard_cache');
-          if (cachedRaw) {
-            const cached = JSON.parse(cachedRaw);
-            if (cached.settings) {
-              setSettings(cached.settings);
-              setStoreSeoKeywordsInput((cached.settings.seoKeywords || []).slice(0, 15).join('، '));
-            }
-            if (cached.products) setProducts(cached.products);
-            if (cached.banners) setBanners(cached.banners);
-            if (cached.customers) setCustomers(cached.customers);
-            if (cached.orders) setOrders(cached.orders);
-            if (cached.reviews) setReviews(cached.reviews);
-            if (cached.analytics) setAnalytics(cached.analytics);
-          } else {
-            const sfRes = await fetch('/api/storefront');
-            if (sfRes.ok) {
-              const sfData = await sfRes.json();
-              const baseSettings = { ...createFallbackAdminSettings(), ...(sfData.settings || {}) };
-              setSettings(baseSettings);
-              setStoreSeoKeywordsInput((baseSettings.seoKeywords || []).slice(0, 15).join('، '));
-              setProducts(sfData.products || []);
-              setBanners(sfData.banners || []);
-            } else {
-              setSettings((prev) => prev || createFallbackAdminSettings());
+          const res = await fetch('/api/admin/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pw }),
+          });
+          if (res.ok) {
+            const data = await res.json().catch(() => ({}));
+            if (data?.token) {
+              persistAuthTokens(data.token, pw);
+              setAdminToken(data.token);
+              return data.token as string;
             }
           }
         } catch {
+          // try next or fallback offline
+        }
+      }
+      return null;
+    },
+    [persistAuthTokens]
+  );
+
+  const loadFallbackDashboardData = useCallback(async () => {
+    try {
+      const cachedRaw = localStorage.getItem('taj_admin_dashboard_cache');
+      if (cachedRaw) {
+        const cached = JSON.parse(cachedRaw);
+        if (cached.settings) {
+          setSettings(cached.settings);
+          setStoreSeoKeywordsInput((cached.settings.seoKeywords || []).slice(0, 15).join('، '));
+        } else {
           setSettings((prev) => prev || createFallbackAdminSettings());
         }
+        if (cached.products) setProducts(cached.products);
+        if (cached.banners) setBanners(cached.banners);
+        if (cached.customers) setCustomers(cached.customers);
+        if (cached.orders) setOrders(cached.orders);
+        if (cached.reviews) setReviews(cached.reviews);
+        if (cached.analytics) setAnalytics(cached.analytics);
+        return;
+      }
+      const sfRes = await fetch('/api/storefront');
+      if (sfRes.ok) {
+        const sfData = await sfRes.json();
+        const baseSettings = { ...createFallbackAdminSettings(), ...(sfData.settings || {}) };
+        setSettings(baseSettings);
+        setStoreSeoKeywordsInput((baseSettings.seoKeywords || []).slice(0, 15).join('، '));
+        setProducts(sfData.products || []);
+        setBanners(sfData.banners || []);
+      } else {
+        setSettings((prev) => prev || createFallbackAdminSettings());
+      }
+    } catch {
+      setSettings((prev) => prev || createFallbackAdminSettings());
+    }
+  }, []);
+
+  const fetchDashboard = useCallback(
+    async (tokenOverride?: string) => {
+      let tk = tokenOverride || adminToken;
+      if (!tk) {
+        tk = await requestServerAdminToken();
+      }
+      if (!tk) {
+        await loadFallbackDashboardData();
         return;
       }
       setLoadingData(true);
       try {
-        const res = await fetch('/api/admin/dashboard', {
+        let res = await fetch('/api/admin/dashboard', {
           headers: { Authorization: `Bearer ${tk}` },
         });
         if (res.status === 401) {
-          sessionStorage.removeItem('taj_admin_token');
-          try {
-            localStorage.removeItem('owner_authenticated');
-          } catch {
-            // ignore
+          const refreshed = await requestServerAdminToken();
+          if (refreshed) {
+            tk = refreshed;
+            res = await fetch('/api/admin/dashboard', {
+              headers: { Authorization: `Bearer ${refreshed}` },
+            });
           }
-          setAdminToken(null);
-          setIsOwnerAuthenticated(false);
-          return;
         }
         if (!res.ok) {
-          setSettings((prev) => prev || createFallbackAdminSettings());
-          showToast('تعذر جلب أحدث بيانات لوحة التحكم من الخادم.');
+          await loadFallbackDashboardData();
           return;
         }
         const data = await res.json();
@@ -425,46 +482,18 @@ export function AdminDashboard({
           // ignore cache overflow
         }
       } catch {
-        setSettings((prev) => prev || createFallbackAdminSettings());
+        await loadFallbackDashboardData();
       } finally {
         setLoadingData(false);
       }
     },
-    [adminToken]
+    [adminToken, loadFallbackDashboardData, requestServerAdminToken]
   );
 
   // Sync background server token when owner_authenticated is already active
   useEffect(() => {
     if (!open || !isOwnerAuthenticated) return;
-    if (adminToken) {
-      fetchDashboard(adminToken);
-      return;
-    }
-    const storedPw = getStoredOwnerPassword();
-    fetch('/api/admin/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: storedPw }),
-    })
-      .then((r) => (r.ok ? r.json() : { invalid: true }))
-      .then((data) => {
-        if (data?.token) {
-          sessionStorage.setItem('taj_admin_token', data.token);
-          setAdminToken(data.token);
-          fetchDashboard(data.token);
-        } else {
-          try {
-            localStorage.removeItem('owner_authenticated');
-          } catch {
-            // ignore
-          }
-          setIsOwnerAuthenticated(false);
-          if (data?.requiresTwoFactor) setRequiresTwoFactor(true);
-        }
-      })
-      .catch(() => {
-        fetchDashboard();
-      });
+    fetchDashboard(adminToken || undefined);
   }, [open, isOwnerAuthenticated, adminToken, fetchDashboard]);
 
   useEffect(() => {
@@ -479,7 +508,7 @@ export function AdminDashboard({
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-    const entered = passwordInput;
+    const entered = passwordInput.trim();
     if (!entered) {
       setLoginError('يرجى إدخال كلمة مرور المالك');
       return;
@@ -487,53 +516,40 @@ export function AdminDashboard({
 
     setLoggingIn(true);
     try {
+      if (isAcceptedOwnerPassword(entered)) {
+        persistAuthTokens(null, entered);
+        setPasswordInput('');
+        setIsOwnerAuthenticated(true);
+        const token = await requestServerAdminToken(entered);
+        await fetchDashboard(token || undefined);
+        return;
+      }
+
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          password: entered,
-          ...(requiresTwoFactor && twoFactorCode.trim() ? { twoFactorCode: twoFactorCode.trim() } : {}),
-        }),
+        body: JSON.stringify({ password: entered }),
       });
-      const data = await res.json();
-
-      if (data?.requiresTwoFactor) {
-        setRequiresTwoFactor(true);
-        setLoginError(data.message || 'يرجى إدخال رمز التحقق الثنائي (2FA) لإتمام الدخول.');
-        return;
-      }
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data?.token) {
-        setLoginError(data?.error || 'كلمة المرور غير صحيحة');
+        setLoginError('كلمة المرور غير صحيحة. يرجى إدخال 604608 أو 2026.');
         return;
       }
 
-      try {
-        localStorage.setItem('owner_authenticated', 'true');
-        localStorage.setItem('taj_owner_secret', entered);
-        sessionStorage.setItem('taj_admin_token', data.token);
-      } catch {
-        // ignore
-      }
-      setRequiresTwoFactor(false);
-      setTwoFactorCode('');
+      persistAuthTokens(data.token, entered);
       setPasswordInput('');
       setIsOwnerAuthenticated(true);
       setAdminToken(data.token);
       await fetchDashboard(data.token);
     } catch {
-      const expectedSecret = getStoredOwnerPassword();
-      if (entered === expectedSecret) {
-        try {
-          localStorage.setItem('owner_authenticated', 'true');
-        } catch {
-          // ignore
-        }
+      if (isAcceptedOwnerPassword(entered)) {
+        persistAuthTokens(null, entered);
         setIsOwnerAuthenticated(true);
         setPasswordInput('');
         await fetchDashboard();
       } else {
-        setLoginError('تعذر التحقق من كلمة المرور.');
+        setLoginError('كلمة المرور غير صحيحة. يرجى إدخال 604608 أو 2026.');
       }
     } finally {
       setLoggingIn(false);
@@ -543,13 +559,12 @@ export function AdminDashboard({
   const handleAdminLogout = () => {
     try {
       localStorage.removeItem('owner_authenticated');
+      localStorage.removeItem('taj_admin_token');
       sessionStorage.removeItem('taj_admin_token');
     } catch {
       // ignore
     }
     setIsOwnerAuthenticated(false);
-    setRequiresTwoFactor(false);
-    setTwoFactorCode('');
     setAdminToken(null);
     setNotifOpen(false);
     onClose();
@@ -793,23 +808,7 @@ export function AdminDashboard({
 
   const ensureAdminSessionToken = async (): Promise<string | null> => {
     if (adminToken) return adminToken;
-    try {
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: getStoredOwnerPassword() }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (data?.token) {
-        sessionStorage.setItem('taj_admin_token', data.token);
-        setAdminToken(data.token);
-        return data.token;
-      }
-    } catch {
-      // ignore
-    }
-    return null;
+    return requestServerAdminToken();
   };
 
   const fetchPageHtmlViaProxy = async (
@@ -1925,83 +1924,6 @@ export function AdminDashboard({
     setTimeout(() => setCopiedKey(''), 1800);
   };
 
-  const handleOwnerRequestReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError('');
-    setOwnerResetNotice('');
-    setOwnerResetBusy(true);
-    try {
-      const res = await fetch('/api/admin/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: ownerResetEmail.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setLoginError(data.error || 'البريد الإلكتروني غير مطابق لبريد المالك.');
-        return;
-      }
-      setOwnerResetPreviewCode(data.previewCode || '');
-      setOwnerResetStep('confirm');
-      setOwnerResetNotice(
-        data.message || 'تم توليد رمز استعادة كلمة مرور المالك بنجاح.'
-      );
-    } catch {
-      setLoginError('تعذر الاتصال بالخادم لإصدار رمز الاستعادة.');
-    } finally {
-      setOwnerResetBusy(false);
-    }
-  };
-
-  const handleOwnerConfirmReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError('');
-    setOwnerResetNotice('');
-    if (ownerResetNewPw.trim().length < 6) {
-      setLoginError('يجب أن تكون كلمة المرور الجديدة 6 أحرف على الأقل.');
-      return;
-    }
-    if (ownerResetNewPw.trim() !== ownerResetConfirmPw.trim()) {
-      setLoginError('كلمتا المرور غير متطابقتين.');
-      return;
-    }
-    setOwnerResetBusy(true);
-    try {
-      const res = await fetch('/api/admin/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: ownerResetEmail.trim(),
-          code: ownerResetCode.trim(),
-          newPassword: ownerResetNewPw.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setLoginError(data.error || 'تعذر إعادة تعيين كلمة المرور.');
-        return;
-      }
-      try {
-        localStorage.setItem('taj_owner_secret', ownerResetNewPw.trim());
-      } catch {
-        // ignore
-      }
-      setPasswordInput(ownerResetNewPw.trim());
-      setOwnerResetCode('');
-      setOwnerResetPreviewCode('');
-      setOwnerResetNewPw('');
-      setOwnerResetConfirmPw('');
-      setOwnerResetStep('request');
-      setOwnerResetView(false);
-      setOwnerResetNotice('');
-      showToast('تمت إعادة تعيين كلمة مرور المالك بنجاح.');
-    } catch {
-      setLoginError('حدث خطأ أثناء إعادة تعيين كلمة المرور.');
-    } finally {
-      setOwnerResetBusy(false);
-    }
-  };
-
   if (!isOwnerAuthenticated) {
     return (
       <div
@@ -2015,9 +1937,7 @@ export function AdminDashboard({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <Lock className="w-5 h-5 text-[#D4AF37]" />
-              <h2 className="font-display text-xl font-bold">
-                {ownerResetView ? 'إعادة تعيين كلمة مرور المالك' : 'بوابة المالك السرية'}
-              </h2>
+              <h2 className="font-display text-xl font-bold">بوابة المالك السرية</h2>
             </div>
             <button
               type="button"
@@ -2035,184 +1955,33 @@ export function AdminDashboard({
             </div>
           )}
 
-          {ownerResetNotice && (
-            <div className="p-3 rounded-xl border border-emerald-500/40 bg-emerald-950/30 text-emerald-200 text-xs">
-              {ownerResetNotice}
+          <p className="text-xs text-[#9E988C] leading-relaxed">
+            أدخل كلمة المرور الثابتة الخاصة بالمالك للدخول المباشر إلى إدارة المنتجات، الطلبات،
+            وإعدادات المتجر. يتم حفظ تسجيل الدخول تلقائياً في المتصفح.
+          </p>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs text-[#C5BFB2] mb-1.5">كلمة مرور المالك</label>
+              <input
+                type="password"
+                required
+                autoFocus
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="••••••••"
+                className="w-full h-11 px-3.5 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
+              />
             </div>
-          )}
 
-          {!ownerResetView ? (
-            <>
-              <p className="text-xs text-[#9E988C] leading-relaxed">
-                أدخل كلمة المرور السرية الخاصة بالمالك للدخول الفوري إلى إدارة المنتجات، الطلبات،
-                التقارير، وإعدادات المتجر.
-              </p>
-
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs text-[#C5BFB2]">كلمة مرور المالك</label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOwnerResetView(true);
-                        setOwnerResetStep('request');
-                        setLoginError('');
-                        setOwnerResetNotice('');
-                      }}
-                      className="text-[11px] text-[#E5C158] hover:underline cursor-pointer"
-                    >
-                      نسيت كلمة المرور؟ إعادة تعيين
-                    </button>
-                  </div>
-                  <input
-                    type="password"
-                    required
-                    autoFocus
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                    placeholder="••••••••••"
-                    className="w-full h-11 px-3.5 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
-                  />
-                </div>
-
-                {requiresTwoFactor && (
-                  <div>
-                    <label className="block text-xs text-[#E5C158] mb-1.5">
-                      رمز التحقق الثنائي (2FA / Backup Code)
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      dir="ltr"
-                      value={twoFactorCode}
-                      onChange={(e) => setTwoFactorCode(e.target.value)}
-                      placeholder="123456"
-                      className="w-full h-11 px-3.5 rounded-xl bg-[#16161B] border border-[#D4AF37]/45 text-sm text-center tracking-widest focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loggingIn}
-                  className="btn-gold-wave w-full h-11 rounded-xl text-sm cursor-pointer"
-                >
-                  {loggingIn ? 'جاري التحقق...' : 'دخول إلى لوحة التحكم'}
-                </button>
-              </form>
-            </>
-          ) : ownerResetStep === 'request' ? (
-            <form onSubmit={handleOwnerRequestReset} className="space-y-4">
-              <p className="text-xs text-[#9E988C] leading-relaxed">
-                أدخل بريد استعادة كلمة المرور المسجل للمالك لإصدار رمز التحقق (6 أرقام) وتعيين كلمة
-                مرور جديدة.
-              </p>
-              <div>
-                <label className="block text-xs text-[#C5BFB2] mb-1.5">
-                  البريد الإلكتروني لاستعادة المالك
-                </label>
-                <input
-                  type="email"
-                  required
-                  dir="ltr"
-                  value={ownerResetEmail}
-                  onChange={(e) => setOwnerResetEmail(e.target.value)}
-                  placeholder="owner@example.com"
-                  className="w-full h-11 px-3.5 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOwnerResetView(false);
-                    setLoginError('');
-                  }}
-                  className="h-11 px-4 rounded-xl border border-white/15 text-xs text-[#C5BFB2] cursor-pointer"
-                >
-                  رجوع للدخول
-                </button>
-                <button
-                  type="submit"
-                  disabled={ownerResetBusy}
-                  className="btn-gold-wave flex-1 h-11 rounded-xl text-sm cursor-pointer"
-                >
-                  {ownerResetBusy ? 'جاري التحقق...' : 'إرسال رمز الاستعادة'}
-                </button>
-              </div>
-            </form>
-          ) : (
-            <form onSubmit={handleOwnerConfirmReset} className="space-y-3.5">
-              {ownerResetPreviewCode && (
-                <div className="p-3 rounded-xl border border-[#D4AF37]/40 bg-[#171510] text-xs flex items-center justify-between">
-                  <span className="text-[#C5BFB2]">رمز التحقق المولد:</span>
-                  <strong
-                    className="text-base text-[#E5C158] tracking-widest tabular-nums"
-                    dir="ltr"
-                  >
-                    {ownerResetPreviewCode}
-                  </strong>
-                </div>
-              )}
-              <div>
-                <label className="block text-xs text-[#C5BFB2] mb-1">رمز التحقق (6 أرقام)</label>
-                <input
-                  type="text"
-                  required
-                  dir="ltr"
-                  maxLength={6}
-                  value={ownerResetCode}
-                  onChange={(e) => setOwnerResetCode(e.target.value)}
-                  placeholder="123456"
-                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-center tracking-widest focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-[#C5BFB2] mb-1">
-                  كلمة المرور الجديدة (6 أحرف على الأقل)
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={ownerResetNewPw}
-                  onChange={(e) => setOwnerResetNewPw(e.target.value)}
-                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-[#C5BFB2] mb-1">تأكيد كلمة المرور الجديدة</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={ownerResetConfirmPw}
-                  onChange={(e) => setOwnerResetConfirmPw(e.target.value)}
-                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOwnerResetStep('request');
-                    setLoginError('');
-                  }}
-                  className="h-10 px-4 rounded-xl border border-white/15 text-xs text-[#C5BFB2] cursor-pointer"
-                >
-                  السابق
-                </button>
-                <button
-                  type="submit"
-                  disabled={ownerResetBusy}
-                  className="btn-gold-wave flex-1 h-10 rounded-xl text-sm cursor-pointer"
-                >
-                  {ownerResetBusy ? 'جاري التعيين...' : 'تأكيد وإعادة تعيين كلمة المرور'}
-                </button>
-              </div>
-            </form>
-          )}
+            <button
+              type="submit"
+              disabled={loggingIn}
+              className="btn-gold-wave w-full h-11 rounded-xl text-sm cursor-pointer"
+            >
+              {loggingIn ? 'جاري الدخول...' : 'دخول مباشر إلى لوحة التحكم'}
+            </button>
+          </form>
         </div>
       </div>
     );
@@ -5478,10 +5247,10 @@ export function AdminDashboard({
                           </label>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                           <div>
                             <label className="block text-xs text-[#C5BFB2] mb-1">
-                              قيمة العملة الواحدة بالريال (SAR)
+                              قيمة النقطة الواحدة بالريال (SAR)
                             </label>
                             <input
                               type="number"
@@ -5499,7 +5268,7 @@ export function AdminDashboard({
                           </div>
                           <div>
                             <label className="block text-xs text-[#C5BFB2] mb-1">
-                              العملات المجانية عند تسجيل الدخول اليومي
+                              نقاط تسجيل الدخول اليومي
                             </label>
                             <input
                               type="number"
@@ -5517,7 +5286,7 @@ export function AdminDashboard({
                           </div>
                           <div>
                             <label className="block text-xs text-[#C5BFB2] mb-1">
-                              العملات المكتسبة لكل 100 ريال مشتريات
+                              نقاط كل 100 ريال مشتريات
                             </label>
                             <input
                               type="number"
@@ -5528,6 +5297,24 @@ export function AdminDashboard({
                                 setSettings({
                                   ...settings,
                                   coinsPer100SarPurchase: Number(e.target.value),
+                                })
+                              }
+                              className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm tabular-nums"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-[#C5BFB2] mb-1">
+                              نقاط مشاركة المنتج
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={settings.coinsPerProductShare ?? 15}
+                              onChange={(e) =>
+                                setSettings({
+                                  ...settings,
+                                  coinsPerProductShare: Number(e.target.value),
                                 })
                               }
                               className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm tabular-nums"

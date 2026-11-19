@@ -37,6 +37,8 @@ interface CartDrawerProps {
   lang?: StoreLanguage;
   customer: CustomerProfile | null;
   customerToken: string | null;
+  pendingCouponCode?: string | null;
+  onConsumePendingCoupon?: () => void;
   onClose: () => void;
   onUpdateQty: (productId: string, delta: number) => void;
   onRemoveItem: (productId: string) => void;
@@ -52,6 +54,8 @@ export function CartDrawer({
   lang = 'ar',
   customer,
   customerToken,
+  pendingCouponCode,
+  onConsumePendingCoupon,
   onClose,
   onUpdateQty,
   onRemoveItem,
@@ -105,6 +109,16 @@ export function CartDrawer({
       setBankSenderName((prev) => prev || customer.name);
     }
   }, [customer]);
+
+  useEffect(() => {
+    if (open && pendingCouponCode) {
+      setStep('cart');
+      setAppliedPromo(null);
+      setRedeemMode('coupon');
+      setCouponCode(pendingCouponCode);
+      onConsumePendingCoupon?.();
+    }
+  }, [open, pendingCouponCode, onConsumePendingCoupon]);
 
   if (!open) return null;
 
@@ -530,18 +544,19 @@ export function CartDrawer({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 font-bold text-[#F5E1A4]">
                           <Coins className="w-4 h-4 text-[#D4AF37]" />
-                          <span>العملات الذهبية وكوبونات الخصم</span>
+                          <span>نقاط الولاء وكوبونات الخصم الفوري</span>
                         </div>
                         {customer && (
                           <span className="text-[#E5C158] tabular-nums">
-                            رصيدك: {availableCoins.toLocaleString('ar-SA')} عملة
+                            رصيدك: {availableCoins.toLocaleString('ar-SA')} نقطة (
+                            {(availableCoins * coinValueSar).toFixed(2)} ر.س)
                           </span>
                         )}
                       </div>
 
                       {!customer ? (
                         <div className="text-[11px] text-[#C5BFB2]">
-                          سجّل دخولك في «حساب العميل» لكسب عملات ذهبية تلقائياً مع كل طلب واستبدالها بخصم فوري بالريال السعودي.
+                          سجّل دخولك في «حساب العميل» لكسب نقاط ولاء عن كل عملية شراء ومشاركة منتج، وتحويلها إلى كود خصم فوري للسلة.
                         </div>
                       ) : (
                         <div className="space-y-2.5">
@@ -549,6 +564,7 @@ export function CartDrawer({
                             <button
                               type="button"
                               onClick={() => {
+                                setAppliedPromo(null);
                                 setRedeemMode('coins');
                                 setCoinsToRedeem(maxUsableCoins);
                               }}
@@ -559,18 +575,24 @@ export function CartDrawer({
                                   : 'border-white/15 bg-[#16161B] text-[#E5C158]'
                               }`}
                             >
-                              استبدال العملات بخصم
+                              استبدال النقاط مباشرة
                             </button>
                             <button
                               type="button"
-                              onClick={() => setRedeemMode('coupon')}
+                              onClick={() => {
+                                setAppliedPromo(null);
+                                setRedeemMode('coupon');
+                                if (!couponCode && unusedCoupons.length > 0) {
+                                  setCouponCode(unusedCoupons[0].code);
+                                }
+                              }}
                               className={`flex-1 h-8 px-2 rounded-lg border text-[11px] font-bold transition-colors cursor-pointer ${
                                 redeemMode === 'coupon'
                                   ? 'border-[#D4AF37] bg-[#D4AF37] text-[#09090B]'
                                   : 'border-white/15 bg-[#16161B] text-[#E5C158]'
                               }`}
                             >
-                              استخدام كوبون خصم
+                              استخدام كود خصم الولاء {unusedCoupons.length > 0 ? `(${unusedCoupons.length})` : ''}
                             </button>
                             {redeemMode !== 'none' && (
                               <button
@@ -590,7 +612,7 @@ export function CartDrawer({
                           {redeemMode === 'coins' && (
                             <div className="space-y-1.5">
                               <div className="flex items-center justify-between text-[11px] text-[#C5BFB2]">
-                                <span>عدد العملات للاستبدال (الحد الأقصى {maxUsableCoins}):</span>
+                                <span>عدد النقاط للاستبدال (الحد الأقصى {maxUsableCoins}):</span>
                                 <span className="text-emerald-300 font-bold tabular-nums">
                                   خصم {discountSar.toLocaleString('ar-SA')} ر.س
                                 </span>
@@ -637,9 +659,18 @@ export function CartDrawer({
                                   ))}
                                 </div>
                               )}
+                              {matchedCoupon && (
+                                <div className="flex items-center gap-1.5 text-[11px] text-emerald-300 font-medium">
+                                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                  <span>
+                                    تم تطبيق كود خصم الولاء {matchedCoupon.code} بقيمة -
+                                    {Math.min(subtotalSar, matchedCoupon.discountSar).toLocaleString('ar-SA')} ر.س!
+                                  </span>
+                                </div>
+                              )}
                               {couponCode.trim() && !matchedCoupon && (
                                 <div className="text-[11px] text-amber-300">
-                                  الكوبون غير موجود ضمن كوبوناتك المتاحة.
+                                  الكود غير موجود ضمن أكواد الولاء المتاحة في حسابك.
                                 </div>
                               )}
                             </div>
@@ -647,7 +678,7 @@ export function CartDrawer({
 
                           {estimatedCoinsEarned > 0 && (
                             <div className="text-[11px] text-emerald-300">
-                              ستكسب +{estimatedCoinsEarned.toLocaleString('ar-SA')} عملة ذهبية عند إتمام الطلب!
+                              ستكسب +{estimatedCoinsEarned.toLocaleString('ar-SA')} نقطة ولاء عند إتمام الطلب!
                             </div>
                           )}
                         </div>

@@ -153,6 +153,7 @@ const INITIAL_PUBLIC_SETTINGS: PublicSettings = {
   coinValueSar: 0.1,
   dailyCheckinCoins: 25,
   coinsPer100SarPurchase: 50,
+  coinsPerProductShare: 15,
   charityPopupEnabled: true,
   charityPopupTitle: 'تصدق ولو بالقليل.. واجعل تجارتك مباركة',
   charityPopupVerse:
@@ -267,6 +268,7 @@ export default function App() {
   });
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [customerModalTab, setCustomerModalTab] = useState<'account' | 'wishlist'>('account');
+  const [pendingCouponCode, setPendingCouponCode] = useState<string | null>(null);
   const [adminOpen, setAdminOpen] = useState(false);
   const [cartNotice, setCartNotice] = useState('');
   const [bgMediaError, setBgMediaError] = useState(false);
@@ -415,6 +417,76 @@ export default function App() {
       })
       .catch(() => {});
   }, [customerToken]);
+
+  // Listen to product sharing events and award loyalty points
+  useEffect(() => {
+    const onProductShared = (ev: Event) => {
+      if (settings.loyaltyEnabled === false) return;
+      const customEv = ev as CustomEvent<{
+        productId?: string;
+        productTitle?: string;
+        channel?: string;
+      }>;
+      const detail = customEv.detail || {};
+
+      if (!customer || !customerToken) {
+        const shareAward = settings.coinsPerProductShare ?? 15;
+        setCartNotice(
+          lang === 'en'
+            ? `Shared! Sign in to earn +${shareAward} loyalty points per product share.`
+            : `تمت المشاركة! سجّل دخولك في حساب العميل لكسب +${shareAward} نقطة ولاء عن كل مشاركة.`
+        );
+        setTimeout(() => setCartNotice(''), 3500);
+        return;
+      }
+
+      fetch('/api/customers/share-reward', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${customerToken}`,
+        },
+        body: JSON.stringify({
+          productId: detail.productId,
+          productTitle: detail.productTitle,
+          channel: detail.channel,
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) return;
+          if (data.customer) {
+            setCustomer(data.customer as CustomerProfile);
+            localStorage.setItem('taj_customer_profile', JSON.stringify(data.customer));
+          }
+          if (data.awardedCoins > 0) {
+            setCartNotice(
+              lang === 'en'
+                ? `+${data.awardedCoins} loyalty points earned for sharing!`
+                : `تمت إضافة +${data.awardedCoins} نقطة ولاء لحسابك مقابل مشاركة المنتج!`
+            );
+            setTimeout(() => setCartNotice(''), 3500);
+          } else if (data.alreadySharedToday) {
+            setCartNotice(
+              lang === 'en'
+                ? 'Product shared! Today’s share points for this item were already credited.'
+                : 'تمت مشاركة المنتج! تم احتساب نقاط مشاركة هذا المنتج اليوم مسبقاً.'
+            );
+            setTimeout(() => setCartNotice(''), 3000);
+          }
+        })
+        .catch(() => {});
+    };
+
+    window.addEventListener('taj-product-shared', onProductShared);
+    return () => window.removeEventListener('taj-product-shared', onProductShared);
+  }, [
+    customer,
+    customerToken,
+    lang,
+    settings.loyaltyEnabled,
+    settings.coinsPerProductShare,
+  ]);
 
   useEffect(() => {
     setBgMediaError(false);
@@ -1078,6 +1150,8 @@ export default function App() {
           lang={lang}
           customer={customer}
           customerToken={customerToken}
+          pendingCouponCode={pendingCouponCode}
+          onConsumePendingCoupon={() => setPendingCouponCode(null)}
           onClose={() => setCartOpen(false)}
           onUpdateQty={handleUpdateQty}
           onRemoveItem={handleRemoveItem}
@@ -1097,6 +1171,11 @@ export default function App() {
           onToggleWishlist={handleToggleWishlist}
           onAddToCart={handleAddToCart}
           onSelectProduct={(p) => setSelectedProduct(p)}
+          onUseCouponInCart={(code) => {
+            setPendingCouponCode(code);
+            setCustomerModalOpen(false);
+            setCartOpen(true);
+          }}
           onClose={() => setCustomerModalOpen(false)}
           onAuthSuccess={handleCustomerAuthSuccess}
           onCustomerUpdated={handleCustomerUpdated}

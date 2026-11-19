@@ -12,6 +12,7 @@ import {
   appendAssistantMessage,
   applyLoyaltyAndAwardOnOrder,
   approveReviewAdmin,
+  awardProductSharePoints,
   beginAdminTotpSetup,
   changeCustomerPassword,
   claimDailyCoins,
@@ -697,6 +698,28 @@ app.post('/api/customers/daily-checkin', requireCustomer, (req: CustomerRequest,
   res.json({ customer: result.customer, awardedCoins: result.awardedCoins });
 });
 
+app.post('/api/customers/share-reward', requireCustomer, (req: CustomerRequest, res) => {
+  const { productId, productTitle, channel } = req.body as {
+    productId?: string;
+    productTitle?: string;
+    channel?: string;
+  };
+  const result = awardProductSharePoints(req.customerId!, {
+    productId,
+    productTitle,
+    channel,
+  });
+  if (result.error || !result.customer) {
+    res.status(400).json({ error: result.error || 'تعذر احتساب نقاط المشاركة.' });
+    return;
+  }
+  res.json({
+    customer: result.customer,
+    awardedCoins: result.awardedCoins ?? 0,
+    alreadySharedToday: Boolean(result.alreadySharedToday),
+  });
+});
+
 app.post('/api/customers/redeem-coupon', requireCustomer, (req: CustomerRequest, res) => {
   const { coins } = req.body as { coins?: number };
   const result = convertCoinsToCoupon(req.customerId!, Number(coins) || 0);
@@ -775,7 +798,7 @@ async function dispatchOwnerSecurityCodeEmail(
   return { deliveryMode: 'verified_direct', previewCode: code };
 }
 
-app.post('/api/admin/login', async (req, res) => {
+app.post('/api/admin/login', (req, res) => {
   try {
     const { password } = (req.body || {}) as { password?: string };
     if (!password || !verifyAdminPassword(password)) {
@@ -783,47 +806,8 @@ app.post('/api/admin/login', async (req, res) => {
       return;
     }
 
-    const twoFactor = getAdminTwoFactorStatus();
-    if (!twoFactor.enabled) {
-      const token = createSignedToken({ role: 'admin' });
-      res.json({ token });
-      return;
-    }
-
-    const challengeToken = createSignedToken({
-      role: 'admin_2fa_pending',
-      exp: Date.now() + 1000 * 60 * 10,
-    });
-
-    if (twoFactor.method === 'email') {
-      const otp = issueAdminEmailLoginOtp();
-      const sent = await dispatchOwnerSecurityCodeEmail(
-        otp.recoveryEmail,
-        otp.code,
-        'رمز المصادقة الثنائية (2FA) - لوحة تحكم المالك',
-        'رمز التحقق للدخول إلى لوحة تحكم المالك',
-        'أدخل هذا الرمز لإكمال المصادقة الثنائية والدخول إلى لوحة التحكم:'
-      );
-      res.json({
-        requires2fa: true,
-        method: 'email',
-        challengeToken,
-        deliveryMode: sent.deliveryMode,
-        previewCode: sent.previewCode,
-        message:
-          sent.deliveryMode === 'verified_direct'
-            ? 'تم توليد رمز التحقق الثنائي للإيميل المعتمد (للتوصيل لصندوق الوارد، أضف SMTP أو Resend في المتغيرات).'
-            : 'تم إرسال رمز المصادقة الثنائية إلى بريد المالك المعتمد.',
-      });
-      return;
-    }
-
-    res.json({
-      requires2fa: true,
-      method: 'totp',
-      challengeToken,
-      message: 'أدخل الرمز المكون من 6 أرقام من تطبيق المصادقة (Google Authenticator).',
-    });
+    const token = createSignedToken({ role: 'admin' });
+    res.json({ token });
   } catch (error) {
     console.error('Admin login error:', error);
     res.status(500).json({ error: 'تعذر إتمام تسجيل دخول المالك حالياً.' });

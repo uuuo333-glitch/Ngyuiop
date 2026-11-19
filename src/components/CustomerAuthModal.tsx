@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { User as FirebaseUser } from 'firebase/auth';
 import {
   AlertCircle,
+  Award,
   Check,
   Cloud,
   Coins,
@@ -11,13 +12,16 @@ import {
   EyeOff,
   Gift,
   Heart,
+  History,
   LogOut,
   Package,
   Search,
   Settings,
+  Share2,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
+  Tag,
   Ticket,
   Trash2,
   Upload,
@@ -62,6 +66,7 @@ interface CustomerAuthModalProps {
   onToggleWishlist?: (productId: string) => void;
   onAddToCart?: (product: PublicProduct) => void;
   onSelectProduct?: (product: PublicProduct) => void;
+  onUseCouponInCart?: (code: string) => void;
   onClose: () => void;
   onAuthSuccess: (customer: CustomerProfile, token: string) => void;
   onCustomerUpdated?: (customer: CustomerProfile) => void;
@@ -80,6 +85,7 @@ export function CustomerAuthModal({
   onToggleWishlist,
   onAddToCart,
   onSelectProduct,
+  onUseCouponInCart,
   onClose,
   onAuthSuccess,
   onCustomerUpdated,
@@ -116,6 +122,10 @@ export function CustomerAuthModal({
   const [claimingDaily, setClaimingDaily] = useState(false);
   const [convertingCoupon, setConvertingCoupon] = useState(false);
   const [copiedCoupon, setCopiedCoupon] = useState('');
+  const [lastCreatedCoupon, setLastCreatedCoupon] = useState<{
+    code: string;
+    discountSar: number;
+  } | null>(null);
 
   const [googleUser, setGoogleUser] = useState<FirebaseUser | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
@@ -566,7 +576,13 @@ export function CustomerAuthModal({
         return;
       }
       onCustomerUpdated?.(data.customer);
-      setMessage(`تم إنشاء كوبون الخصم ${data.coupon.code} بقيمة ${data.coupon.discountSar} ر.س بنجاح!`);
+      setLastCreatedCoupon({
+        code: data.coupon.code,
+        discountSar: data.coupon.discountSar,
+      });
+      setMessage(
+        `تم إنشاء كود الخصم الفوري ${data.coupon.code} بقيمة ${data.coupon.discountSar} ر.س بنجاح!`
+      );
     } catch {
       setError('خطأ في الاتصال بالخادم.');
     } finally {
@@ -1054,35 +1070,68 @@ export function CustomerAuthModal({
 
             {dashboardTab === 'overview' && (
               <div className="space-y-4">
-                {/* Golden Coins Loyalty Card */}
-                {settings?.loyaltyEnabled !== false && (
-                  <div className="p-4 rounded-2xl border border-[#D4AF37]/50 bg-gradient-to-br from-[#1B160B] via-[#11100C] to-[#0B0B0D] space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-xl border border-[#D4AF37]/60 bg-[#D4AF37]/15 flex items-center justify-center shrink-0">
-                          <Coins className="w-6 h-6 text-[#F5E1A4]" />
-                        </div>
-                        <div>
-                          <div className="text-xs text-[#C5BFB2]">رصيد العملات الذهبية</div>
-                          <div className="text-xl font-bold text-[#F5E1A4] tabular-nums">
-                            {(customer.goldenCoins ?? 0).toLocaleString('ar-SA')} عملة ذهبية
-                          </div>
-                          <div className="text-[11px] text-[#E5C158]/80 tabular-nums">
-                            تعادل خصم{' '}
-                            {(
-                              (customer.goldenCoins ?? 0) * (settings?.coinValueSar ?? 0.1)
-                            ).toFixed(2)}{' '}
-                            ر.س
-                          </div>
-                        </div>
-                      </div>
+                {/* Interactive Loyalty Points Card */}
+                {settings?.loyaltyEnabled !== false &&
+                  (() => {
+                    const currentCoins = customer.goldenCoins ?? 0;
+                    const coinSar = settings?.coinValueSar ?? 0.1;
+                    const coinsSarValue = Number((currentCoins * coinSar).toFixed(2));
+                    const tierInfo =
+                      currentCoins >= 500
+                        ? { label: 'عضو ملكي VIP', nextTarget: 1000, prevTarget: 500 }
+                        : currentCoins >= 200
+                          ? { label: 'عضو ذهبي', nextTarget: 500, prevTarget: 200 }
+                          : currentCoins >= 50
+                            ? { label: 'عضو فضي', nextTarget: 200, prevTarget: 50 }
+                            : { label: 'عضو برونزي', nextTarget: 50, prevTarget: 0 };
+                    const progressPercent = Math.min(
+                      100,
+                      Math.max(
+                        6,
+                        Math.round(
+                          ((currentCoins - tierInfo.prevTarget) /
+                            Math.max(1, tierInfo.nextTarget - tierInfo.prevTarget)) *
+                            100
+                        )
+                      )
+                    );
+                    const remainingToNext = Math.max(0, tierInfo.nextTarget - currentCoins);
+                    const today = new Date().toLocaleDateString('en-CA', {
+                      timeZone: 'Asia/Riyadh',
+                    });
+                    const alreadyClaimed = customer.lastDailyClaimDate === today;
+                    const presetAmounts = [25, 50, 100, 200];
+                    const numericConvert = Math.max(0, Math.floor(Number(coinsToConvert) || 0));
+                    const historyItems = customer.loyaltyHistory || [];
 
-                      {(() => {
-                        const today = new Date().toLocaleDateString('en-CA', {
-                          timeZone: 'Asia/Riyadh',
-                        });
-                        const alreadyClaimed = customer.lastDailyClaimDate === today;
-                        return (
+                    return (
+                      <div className="p-4 sm:p-5 rounded-2xl border border-[#D4AF37]/50 bg-gradient-to-br from-[#1B160B] via-[#11100C] to-[#0B0B0D] space-y-4">
+                        {/* Header & Points Balance */}
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-xl border border-[#D4AF37]/60 bg-[#D4AF37]/15 flex items-center justify-center shrink-0">
+                              <Coins className="w-6 h-6 text-[#F5E1A4]" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-[#C5BFB2]">
+                                  رصيد نقاط الولاء التفاعلي
+                                </span>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[10px] font-bold text-[#F5E1A4]">
+                                  <Award className="w-3 h-3 text-[#D4AF37]" />
+                                  {tierInfo.label}
+                                </span>
+                              </div>
+                              <div className="text-2xl font-bold text-[#F5E1A4] tabular-nums mt-0.5">
+                                {currentCoins.toLocaleString('ar-SA')}{' '}
+                                <span className="text-sm font-medium text-[#E5C158]">نقطة</span>
+                              </div>
+                              <div className="text-[11px] text-emerald-300/90 tabular-nums">
+                                تعادل خصم فوري بقيمة {coinsSarValue.toFixed(2)} ر.س في السلة
+                              </div>
+                            </div>
+                          </div>
+
                           <button
                             type="button"
                             disabled={claimingDaily || alreadyClaimed}
@@ -1099,90 +1148,318 @@ export function CustomerAuthModal({
                                 ? 'تم استلام مكافأة اليوم'
                                 : claimingDaily
                                   ? 'جاري الإضافة...'
-                                  : `تسجيل الدخول اليومي (+${settings?.dailyCheckinCoins ?? 25})`}
+                                  : `دخول يومي (+${settings?.dailyCheckinCoins ?? 25} نقطة)`}
                             </span>
                           </button>
-                        );
-                      })()}
-                    </div>
+                        </div>
 
-                    {/* Convert Golden Coins to Discount Coupon */}
-                    <form
-                      onSubmit={handleConvertCoupon}
-                      className="pt-3 border-t border-white/10 space-y-2"
-                    >
-                      <div className="text-xs text-[#C5BFB2] flex items-center gap-1.5">
-                        <Ticket className="w-3.5 h-3.5 text-[#E5C158]" />
-                        <span>تحويل العملات الذهبية إلى كوبون خصم (الحد الأدنى 5 عملات)</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <input
-                          type="number"
-                          min={5}
-                          max={Math.max(5, customer.goldenCoins ?? 0)}
-                          value={coinsToConvert}
-                          onChange={(e) => setCoinsToConvert(e.target.value)}
-                          className="w-28 h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 text-xs tabular-nums focus:outline-none focus:border-[#D4AF37]"
-                        />
-                        <button
-                          type="submit"
-                          disabled={convertingCoupon || (customer.goldenCoins ?? 0) < 5}
-                          className="flex-1 h-9 px-3 rounded-lg border border-[#D4AF37]/50 bg-[#171510] hover:border-[#D4AF37] text-xs font-bold text-[#E5C158] disabled:opacity-45 cursor-pointer"
-                        >
-                          {convertingCoupon
-                            ? 'جاري الإنشاء...'
-                            : `تحويل لـ ${(
-                                (Number(coinsToConvert) || 0) * (settings?.coinValueSar ?? 0.1)
-                              ).toFixed(2)} ر.س خصم`}
-                        </button>
-                      </div>
-                    </form>
-
-                    {/* Active Coupons List */}
-                    {(customer.coupons || []).length > 0 && (
-                      <div className="space-y-1.5 pt-1">
-                        <div className="text-[11px] text-[#9E988C]">كوبوناتك المحفوظة:</div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-28 overflow-y-auto">
-                          {(customer.coupons || []).map((cp) => (
+                        {/* Interactive Tier Progress Bar */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px] text-[#C5BFB2]">
+                            <span>التقدم نحو المستوى التالي ({tierInfo.nextTarget} نقطة)</span>
+                            <span className="text-[#E5C158] font-bold tabular-nums">
+                              {remainingToNext === 0
+                                ? 'وصلت لأعلى مستوى!'
+                                : `متبقي ${remainingToNext} نقطة`}
+                            </span>
+                          </div>
+                          <div className="w-full h-2.5 rounded-full bg-black/50 border border-white/10 overflow-hidden">
                             <div
-                              key={cp.code}
-                              className={`px-2.5 py-1.5 rounded-lg border text-[11px] flex items-center justify-between gap-2 ${
-                                cp.isUsed
-                                  ? 'border-white/5 bg-black/40 text-[#847E73] line-through'
-                                  : 'border-[#D4AF37]/40 bg-[#14120E] text-[#F5E1A4]'
-                              }`}
+                              className="h-full rounded-full bg-gradient-to-r from-[#B8860B] via-[#D4AF37] to-[#F5E1A4] transition-all duration-500"
+                              style={{ width: `${progressPercent}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* How to Earn Points Interactive Cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                          <div className="p-2.5 rounded-xl border border-emerald-500/25 bg-emerald-950/15 space-y-1">
+                            <div className="flex items-center justify-between text-[11px] font-bold text-emerald-300">
+                              <span className="flex items-center gap-1">
+                                <ShoppingBag className="w-3.5 h-3.5" />
+                                المشتريات
+                              </span>
+                              <span className="tabular-nums">
+                                +{settings?.coinsPer100SarPurchase ?? 50} نقطة
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-[#C5BFB2]">
+                              عن كل 100 ر.س مشتريات تُضاف تلقائياً لحسابك
+                            </p>
+                          </div>
+
+                          <div className="p-2.5 rounded-xl border border-sky-500/25 bg-sky-950/15 space-y-1">
+                            <div className="flex items-center justify-between text-[11px] font-bold text-sky-300">
+                              <span className="flex items-center gap-1">
+                                <Share2 className="w-3.5 h-3.5" />
+                                مشاركة المنتجات
+                              </span>
+                              <span className="tabular-nums">
+                                +{settings?.coinsPerProductShare ?? 15} نقطة
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="text-[10px] text-[#C5BFB2]">
+                                عن كل منتج تشاركه يومياً
+                              </p>
+                              <button
+                                type="button"
+                                onClick={onClose}
+                                className="text-[10px] font-bold text-sky-300 hover:underline shrink-0 cursor-pointer"
+                              >
+                                شارك منتجاً
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="p-2.5 rounded-xl border border-[#D4AF37]/25 bg-[#1B170B] space-y-1">
+                            <div className="flex items-center justify-between text-[11px] font-bold text-[#F5E1A4]">
+                              <span className="flex items-center gap-1">
+                                <Gift className="w-3.5 h-3.5 text-[#D4AF37]" />
+                                الدخول اليومي
+                              </span>
+                              <span className="tabular-nums">
+                                +{settings?.dailyCheckinCoins ?? 25} نقطة
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-[#C5BFB2]">
+                              مكافأة مجانية متجددة كل 24 ساعة
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Convert Points to Instant Discount Code */}
+                        <form
+                          onSubmit={handleConvertCoupon}
+                          className="pt-3 border-t border-white/10 space-y-2.5"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#C5BFB2]">
+                            <div className="flex items-center gap-1.5 font-bold text-[#F5E1A4]">
+                              <Ticket className="w-4 h-4 text-[#E5C158]" />
+                              <span>تحويل النقاط إلى كود خصم فوري للسلة (الحد الأدنى 5 نقاط)</span>
+                            </div>
+                            <span className="text-[11px] text-[#E5C158] tabular-nums">
+                              = {(numericConvert * coinSar).toFixed(2)} ر.س خصم
+                            </span>
+                          </div>
+
+                          {/* Quick Preset Chips */}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {presetAmounts.map((amt) => (
+                              <button
+                                key={amt}
+                                type="button"
+                                disabled={currentCoins < amt}
+                                onClick={() => setCoinsToConvert(String(amt))}
+                                className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors cursor-pointer disabled:opacity-35 ${
+                                  Number(coinsToConvert) === amt
+                                    ? 'border-[#D4AF37] bg-[#D4AF37] text-[#09090B]'
+                                    : 'border-white/15 bg-[#16161B] text-[#E5C158] hover:border-[#D4AF37]/60'
+                                }`}
+                              >
+                                {amt} نقطة ({(amt * coinSar).toFixed(1)} ر.س)
+                              </button>
+                            ))}
+                            {currentCoins >= 5 && (
+                              <button
+                                type="button"
+                                onClick={() => setCoinsToConvert(String(currentCoins))}
+                                className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors cursor-pointer ${
+                                  Number(coinsToConvert) === currentCoins
+                                    ? 'border-[#D4AF37] bg-[#D4AF37] text-[#09090B]'
+                                    : 'border-[#D4AF37]/40 bg-[#1B170B] text-[#F5E1A4] hover:border-[#D4AF37]'
+                                }`}
+                              >
+                                كل الرصيد ({currentCoins})
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              min={5}
+                              max={Math.max(5, currentCoins)}
+                              value={coinsToConvert}
+                              onChange={(e) => setCoinsToConvert(e.target.value)}
+                              className="w-28 h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs tabular-nums focus:outline-none focus:border-[#D4AF37]"
+                            />
+                            <button
+                              type="submit"
+                              disabled={
+                                convertingCoupon ||
+                                currentCoins < 5 ||
+                                numericConvert < 5 ||
+                                numericConvert > currentCoins
+                              }
+                              className="flex-1 h-10 px-3 rounded-xl btn-gold-wave text-xs font-bold disabled:opacity-45 cursor-pointer"
                             >
-                              <div>
-                                <span className="font-bold tabular-nums" dir="ltr">
-                                  {cp.code}
+                              {convertingCoupon
+                                ? 'جاري إصدار كود الخصم...'
+                                : `إنشاء كود خصم فوري (${(numericConvert * coinSar).toFixed(2)} ر.س)`}
+                            </button>
+                          </div>
+
+                          {lastCreatedCoupon && (
+                            <div className="p-2.5 rounded-xl border border-emerald-500/40 bg-emerald-950/30 flex flex-wrap items-center justify-between gap-2 text-xs">
+                              <div className="text-emerald-200">
+                                تم إصدار كودك الفوري:{' '}
+                                <span className="font-bold text-white tabular-nums" dir="ltr">
+                                  {lastCreatedCoupon.code}
                                 </span>{' '}
-                                <span>({cp.discountSar} ر.س)</span>
+                                (بقيمة {lastCreatedCoupon.discountSar} ر.س)
                               </div>
-                              {!cp.isUsed && (
+                              <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    navigator.clipboard.writeText(cp.code);
-                                    setCopiedCoupon(cp.code);
+                                    navigator.clipboard.writeText(lastCreatedCoupon.code);
+                                    setCopiedCoupon(lastCreatedCoupon.code);
                                     setTimeout(() => setCopiedCoupon(''), 1800);
                                   }}
-                                  className="text-[#E5C158] hover:text-white cursor-pointer"
-                                  aria-label="نسخ الكوبون"
+                                  className="h-7 px-2.5 rounded-lg border border-white/20 bg-black/40 text-[11px] text-white flex items-center gap-1 cursor-pointer"
                                 >
-                                  {copiedCoupon === cp.code ? (
-                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                  ) : (
-                                    <Copy className="w-3.5 h-3.5" />
-                                  )}
+                                  <Copy className="w-3 h-3" />
+                                  <span>{copiedCoupon === lastCreatedCoupon.code ? 'تم النسخ' : 'نسخ'}</span>
                                 </button>
-                              )}
+                                {onUseCouponInCart && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onUseCouponInCart(lastCreatedCoupon.code)}
+                                    className="h-7 px-2.5 rounded-lg bg-emerald-500 text-[#09090B] text-[11px] font-bold hover:brightness-110 cursor-pointer"
+                                  >
+                                    استخدام في السلة الآن
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          ))}
+                          )}
+                        </form>
+
+                        {/* Active & Saved Coupons List */}
+                        {(customer.coupons || []).length > 0 && (
+                          <div className="space-y-2 pt-2 border-t border-white/10">
+                            <div className="flex items-center justify-between text-[11px] text-[#C5BFB2]">
+                              <span className="flex items-center gap-1 font-bold text-[#E5C158]">
+                                <Tag className="w-3.5 h-3.5" />
+                                أكواد الخصم الفورية الخاصة بك ({(customer.coupons || []).filter((c) => !c.isUsed).length} متاح)
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto">
+                              {(customer.coupons || []).map((cp) => (
+                                <div
+                                  key={cp.code}
+                                  className={`px-2.5 py-2 rounded-xl border text-[11px] flex items-center justify-between gap-2 ${
+                                    cp.isUsed
+                                      ? 'border-white/5 bg-black/40 text-[#847E73] line-through'
+                                      : 'border-[#D4AF37]/45 bg-[#14120E] text-[#F5E1A4]'
+                                  }`}
+                                >
+                                  <div className="min-w-0">
+                                    <div className="font-bold tabular-nums truncate" dir="ltr">
+                                      {cp.code}
+                                    </div>
+                                    <div className="text-[10px] text-[#E5C158]">
+                                      خصم {cp.discountSar} ر.س {cp.isUsed ? '· تم استخدامه' : '· جاهز للسلة'}
+                                    </div>
+                                  </div>
+                                  {!cp.isUsed && (
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(cp.code);
+                                          setCopiedCoupon(cp.code);
+                                          setTimeout(() => setCopiedCoupon(''), 1800);
+                                        }}
+                                        className="h-7 w-7 rounded-lg border border-white/15 bg-black/40 flex items-center justify-center text-[#E5C158] hover:text-white cursor-pointer"
+                                        aria-label="نسخ الكوبون"
+                                      >
+                                        {copiedCoupon === cp.code ? (
+                                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                        ) : (
+                                          <Copy className="w-3.5 h-3.5" />
+                                        )}
+                                      </button>
+                                      {onUseCouponInCart && (
+                                        <button
+                                          type="button"
+                                          onClick={() => onUseCouponInCart(cp.code)}
+                                          className="h-7 px-2 rounded-lg bg-[#D4AF37] text-[#09090B] text-[10px] font-bold hover:brightness-110 cursor-pointer"
+                                        >
+                                          تطبيق بالسلة
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Interactive Loyalty Points Activity Log */}
+                        <div className="space-y-2 pt-2 border-t border-white/10">
+                          <div className="flex items-center justify-between text-[11px] text-[#C5BFB2]">
+                            <span className="flex items-center gap-1 font-bold text-[#E5C158]">
+                              <History className="w-3.5 h-3.5" />
+                              سجل حركات نقاط الولاء
+                            </span>
+                            {(customer.sharedProductsCount ?? 0) > 0 && (
+                              <span className="text-[10px] text-sky-300 tabular-nums">
+                                منتجات تمت مشاركتها: {customer.sharedProductsCount}
+                              </span>
+                            )}
+                          </div>
+                          {historyItems.length === 0 ? (
+                            <div className="p-2.5 rounded-xl border border-white/10 bg-black/30 text-[11px] text-[#9E988C]">
+                              لا توجد حركات نقاط بعد. اطلب من المتجر أو شارك أي منتج أو استلم مكافأة الدخول اليومي لبدء جمع النقاط!
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                              {historyItems.slice(0, 10).map((item) => (
+                                <div
+                                  key={item.id}
+                                  className="px-2.5 py-1.5 rounded-lg border border-white/10 bg-[#141418] flex items-center justify-between gap-2 text-[11px]"
+                                >
+                                  <div className="min-w-0 flex items-center gap-2">
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                                        item.type === 'purchase'
+                                          ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
+                                          : item.type === 'share'
+                                            ? 'bg-sky-950/60 text-sky-300 border border-sky-500/30'
+                                            : item.type === 'daily'
+                                              ? 'bg-[#2A220F] text-[#F5E1A4] border border-[#D4AF37]/30'
+                                              : 'bg-amber-950/60 text-amber-300 border border-amber-500/30'
+                                      }`}
+                                    >
+                                      {item.type === 'purchase'
+                                        ? 'شراء'
+                                        : item.type === 'share'
+                                          ? 'مشاركة'
+                                          : item.type === 'daily'
+                                            ? 'يومي'
+                                            : 'استبدال'}
+                                    </span>
+                                    <span className="text-[#E6E0D3] truncate">{item.description}</span>
+                                  </div>
+                                  <span
+                                    dir="ltr"
+                                    className={`font-bold tabular-nums shrink-0 ${
+                                      item.points >= 0 ? 'text-emerald-300' : 'text-amber-300'
+                                    }`}
+                                  >
+                                    {item.points >= 0 ? `+${item.points}` : item.points}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
-                    )}
-                  </div>
-                )}
+                    );
+                  })()}
 
                 {/* Google Drive Sync Strip */}
                 <div className="p-3 rounded-xl border border-white/10 bg-[#15151A] flex flex-wrap items-center justify-between gap-2.5">

@@ -30,11 +30,25 @@ export function ShareButton({
   const whatsappShareHref = `https://wa.me/?text=${encodeURIComponent(`${shareMessage}\n${shareUrl}`)}`;
   const xShareHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareMessage)}&url=${encodeURIComponent(shareUrl)}`;
 
+  const emitShareEvent = (channel: 'native' | 'copy' | 'whatsapp' | 'x') => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(
+      new CustomEvent('taj-product-shared', {
+        detail: {
+          productId: productId || 'store',
+          productTitle: title,
+          channel,
+        },
+      })
+    );
+  };
+
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
+      emitShareEvent('copy');
       setTimeout(() => setCopied(false), 2000);
     } catch {
       setCopied(false);
@@ -50,6 +64,7 @@ export function ShareButton({
           text: shareMessage,
           url: shareUrl,
         });
+        emitShareEvent('native');
         return;
       } catch {
         // Fallback to inline share popover if user cancels or platform restricts Web Share
@@ -80,7 +95,7 @@ export function ShareButton({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="px-2.5 py-1.5 text-xs text-[#9E988C] border-b border-white/10 mb-1">
-            مشاركة المنتج
+            مشاركة المنتج وكسب نقاط الولاء
           </div>
           <button
             type="button"
@@ -100,7 +115,10 @@ export function ShareButton({
             href={whatsappShareHref}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => setOpen(false)}
+            onClick={() => {
+              emitShareEvent('whatsapp');
+              setOpen(false);
+            }}
             className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-[#F5F2EB] hover:bg-white/5 transition-colors"
           >
             <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
@@ -110,7 +128,10 @@ export function ShareButton({
             href={xShareHref}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => setOpen(false)}
+            onClick={() => {
+              emitShareEvent('x');
+              setOpen(false);
+            }}
             className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-[#F5F2EB] hover:bg-white/5 transition-colors"
           >
             <Share2 className="w-3.5 h-3.5 text-[#D4AF37]" />
