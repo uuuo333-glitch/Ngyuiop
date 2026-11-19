@@ -1,0 +1,244 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --royal-bg: #09090b;
+    --royal-surface: #121216;
+    --royal-gold: #d4af37;
+    --royal-gold-soft: #f1d37a;
+    --royal-text: #f5f2eb;
+    --royal-muted: #9e988c;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    font-family: "Tajawal", system-ui, -apple-system, sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: "El Messiri", "Tajawal", serif;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes marquee-rtl {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes marquee-ltr {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.animate-marquee-rtl {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: marquee-rtl var(--marquee-duration, 28s) linear infinite;
+}
+
+.animate-marquee-ltr {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: marquee-ltr var(--marquee-duration, 22s) linear infinite;
+}
+
+.animate-marquee-rtl:hover,
+.animate-marquee-ltr:hover {
+  animation-play-state: paused;
+}
+
+@keyframes gold-wave-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.btn-gold-wave {
+  position: relative;
+  overflow: hidden;
+  background-image: linear-gradient(
+    115deg,
+    #9e7614 0%,
+    var(--royal-gold, #d4af37) 25%,
+    #f9e28b 48%,
+    #e09f24 70%,
+    var(--royal-gold, #d4af37) 88%,
+    #b08519 100%
+  );
+  background-size: 260% 260%;
+  color: #09090b;
+  font-weight: 700;
+  animation: gold-wave-flow 5.5s ease-in-out infinite;
+  box-shadow: 0 8px 28px -8px color-mix(in srgb, var(--royal-gold, #d4af37) 55%, transparent);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.btn-gold-wave::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 80%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+.btn-gold-wave:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 32px -6px color-mix(in srgb, var(--royal-gold, #f1d37a) 60%, transparent);
+}
+
+.btn-gold-wave:hover::after {
+  transform: translateX(120%);
+}
+
+/* Standard Clean Button Variant controlled by Owner */
+[data-button-style="standard"] .btn-gold-wave {
+  background-image: none;
+  background-color: var(--royal-gold, #d4af37);
+  color: #09090b;
+  animation: none;
+  box-shadow: 0 4px 14px -4px rgba(0, 0, 0, 0.45);
+}
+
+[data-button-style="standard"] .btn-gold-wave::after {
+  display: none;
+}
+
+/* Exhaust System Titanium Twin-Pipe Variant controlled by Owner */
+[data-button-style="exhaust_twin"] .btn-gold-wave {
+  background-image: linear-gradient(
+    180deg,
+    #2f333c 0%,
+    #181a20 48%,
+    #101216 52%,
+    #232730 100%
+  );
+  background-size: 100% 100%;
+  color: #f8fafc;
+  border: 1.5px solid var(--royal-gold, #d4af37);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -2px 0 rgba(56, 189, 248, 0.35),
+    0 8px 24px -8px rgba(56, 189, 248, 0.45);
+  animation: none;
+}
+
+[data-button-style="exhaust_twin"] .btn-gold-wave:hover {
+  border-color: #38bdf8;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -2px 0 var(--royal-gold, #d4af37),
+    0 10px 28px -6px rgba(56, 189, 248, 0.55);
+}
+
+/* Exhaust System Turbo Catalytic Flame Variant controlled by Owner */
+[data-button-style="exhaust_flame"] .btn-gold-wave {
+  background-image: linear-gradient(
+    120deg,
+    #1b1b20 0%,
+    #2e2820 35%,
+    var(--royal-gold, #d4af37) 52%,
+    #ea580c 66%,
+    #1b1b20 100%
+  );
+  background-size: 240% 240%;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+  border: 1.5px solid var(--royal-gold, #d4af37);
+  box-shadow:
+    inset 0 0 12px rgba(234, 88, 12, 0.25),
+    0 8px 26px -6px color-mix(in srgb, var(--royal-gold, #d4af37) 55%, transparent);
+  animation: gold-wave-flow 6.5s ease-in-out infinite;
+}
+
+@keyframes bg-kenburns {
+  0% {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  50% {
+    transform: scale(1.1) translate3d(-1.5%, -1%, 0);
+  }
+  100% {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+}
+
+@keyframes bg-float {
+  0% {
+    transform: scale(1.04) translate3d(0, 0, 0);
+  }
+  50% {
+    transform: scale(1.07) translate3d(0, -14px, 0);
+  }
+  100% {
+    transform: scale(1.04) translate3d(0, 0, 0);
+  }
+}
+
+@keyframes bg-pulse {
+  0%,
+  100% {
+    transform: scale(1.02);
+    filter: brightness(0.95);
+  }
+  50% {
+    transform: scale(1.06);
+    filter: brightness(1.1);
+  }
+}
+
+.animate-bg-kenburns {
+  animation: bg-kenburns 18s ease-in-out infinite;
+  will-change: transform;
+}
+
+.animate-bg-float {
+  animation: bg-float 11s ease-in-out infinite;
+  will-change: transform;
+}
+
+.animate-bg-pulse {
+  animation: bg-pulse 8s ease-in-out infinite;
+  will-change: transform, filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee-rtl,
+  .animate-marquee-ltr,
+  .btn-gold-wave,
+  .animate-bg-kenburns,
+  .animate-bg-float,
+  .animate-bg-pulse {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}

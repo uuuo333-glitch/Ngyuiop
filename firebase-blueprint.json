@@ -1,0 +1,337 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Public display metadata for an authenticated user (non-PII).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID matching the document ID."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "User display name."
+        },
+        "photoURL": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Optional profile avatar URL."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation server timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp."
+        }
+      },
+      "required": ["uid", "displayName", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "User Private PII",
+      "description": "Isolated PII document storing email, phone, and shipping address for a user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner UID."
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "User email address."
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "User phone number."
+        },
+        "nationalAddress": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Saudi National Address short code."
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Detailed shipping address."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp."
+        }
+      },
+      "required": ["uid", "updatedAt"]
+    },
+    "WishlistItem": {
+      "title": "Wishlist Item",
+      "description": "Cloud-synced favorite product saved by a customer.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner UID matching parent user document."
+        },
+        "productId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Catalog product ID."
+        },
+        "productName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Saved product name."
+        },
+        "priceSar": {
+          "type": "number",
+          "description": "Product price in SAR."
+        },
+        "imageUrl": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Primary product image URL."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation server timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp."
+        }
+      },
+      "required": ["userId", "productId", "productName", "priceSar", "createdAt", "updatedAt"]
+    },
+    "DriveBackupRecord": {
+      "title": "Google Drive Backup Record",
+      "description": "Index record linking an uploaded backup, catalog export, or PDF guide to Google Drive.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner UID who uploaded the file to Google Drive."
+        },
+        "driveFileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Google Drive file ID."
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "File name on Google Drive."
+        },
+        "mimeType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 150,
+          "description": "MIME type of the Drive file."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["store_backup", "product_media", "install_guide", "invoice"],
+          "description": "Logical store category for the Drive asset."
+        },
+        "webViewLink": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Direct Google Drive web view URL."
+        },
+        "sizeBytes": {
+          "type": "number",
+          "description": "File size in bytes."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "archived"],
+          "description": "Lifecycle status of the backup record."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation server timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp."
+        }
+      },
+      "required": [
+        "ownerUid",
+        "driveFileId",
+        "fileName",
+        "mimeType",
+        "category",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "StoreProduct": {
+      "title": "Store Product",
+      "description": "Catalog product saved by the store owner in Firestore (without private sourcing cost/URL fields).",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner Firebase UID."
+        },
+        "productId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Product ID matching document ID."
+        },
+        "sku": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Optional SKU code."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "description": "Arabic product title."
+        },
+        "nameEn": {
+          "type": "string",
+          "maxLength": 240,
+          "description": "Optional English product title."
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Store category."
+        },
+        "priceSar": {
+          "type": "number",
+          "description": "Retail price in SAR."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 5000,
+          "description": "Product description in Arabic."
+        },
+        "images": {
+          "type": "array",
+          "description": "Product image URLs (max 12)."
+        },
+        "inStock": {
+          "type": "boolean",
+          "description": "Stock availability flag."
+        },
+        "isPublished": {
+          "type": "boolean",
+          "description": "Whether product is publicly visible."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation server timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update server timestamp."
+        }
+      },
+      "required": [
+        "ownerUid",
+        "productId",
+        "name",
+        "category",
+        "priceSar",
+        "description",
+        "images",
+        "inStock",
+        "isPublished",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminGrant": {
+      "title": "Admin Grant",
+      "description": "Database-backed admin authorization record.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Admin UID."
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 180,
+          "description": "Admin email."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin"],
+          "description": "Role identifier."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Grant timestamp."
+        }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Non-PII profile document for signed-in users."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Owner-only private PII document (email, phone, address)."
+    },
+    "/users/{userId}/wishlists/{productId}": {
+      "schema": { "$ref": "#/entities/WishlistItem" },
+      "description": "User-scoped saved wishlist items synchronized to Firestore."
+    },
+    "/users/{userId}/driveBackups/{backupId}": {
+      "schema": { "$ref": "#/entities/DriveBackupRecord" },
+      "description": "Google Drive file & backup index records linked to the owner user."
+    },
+    "/users/{userId}/products/{productId}": {
+      "schema": { "$ref": "#/entities/StoreProduct" },
+      "description": "Owner-scoped imported and edited products stored in Firebase Firestore."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/StoreProduct" },
+      "description": "Public catalog products mirrored by admin."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminGrant" },
+      "description": "Database-backed admin permissions table."
+    }
+  }
+}

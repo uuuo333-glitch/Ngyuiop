@@ -1,0 +1,482 @@
+{
+  "adminPasswordHash": "1d70d2e97d7fe856512f1d82e2f4879b:6d56fb1df1ce4e51e07a1ad92a644d863d2ac823b846b98f6849f52f594a6d656d6352b71f4702649ccb2e2b04f982fc24a8b2e20ca25e4c4417abab0c81105b",
+  "settings": {
+    "storeName": "مصنع التاج الذهبي لدبات التلوث",
+    "storeTagline": "إنتاج دبات التلوث للديزل والبنزين",
+    "storeOpen": true,
+    "storeClosedTitle": "المتجر مغلق مؤقتاً للصيانة والتحديث",
+    "storeClosedMessage": "نعمل حالياً على تحديث المخزون وتجهيز منتجات وعروض جديدة. يمكنكم التواصل معنا مباشرة عبر واتساب لأي استفسار أو طلب عاجل، وسنعود لاستقبال الطلبات قريباً.",
+    "allowLanguageSwitch": true,
+    "defaultLanguage": "ar",
+    "multiCurrencyEnabled": true,
+    "currencyRates": {
+      "SAR": 1,
+      "AED": 0.98,
+      "KWD": 0.082,
+      "QAR": 0.97,
+      "BHD": 0.1,
+      "OMR": 0.103
+    },
+    "priceDisplayMode": "retail",
+    "installmentsEnabled": true,
+    "showImageUrlFields": true,
+    "categories": [
+      {
+        "id": "cat-gasoline",
+        "name": "دبات تلوث البنزين",
+        "description": "محولات حفازة عالية الكفاءة لمحركات البنزين الحديثة",
+        "isActive": true
+      },
+      {
+        "id": "cat-diesel",
+        "name": "دبات تلوث الديزل",
+        "description": "فلاتر جسيمات DPF ومحفزات أكسدة لمنع الدخان الأسود",
+        "isActive": true
+      },
+      {
+        "id": "cat-ceramic",
+        "name": "قلوب وحشوات السيراميك",
+        "description": "قلوب سيراميك بلاتين عالية الكثافة للتصنيع والتجديد",
+        "isActive": true
+      },
+      {
+        "id": "cat-kits",
+        "name": "أطقم العادم والفلنجات",
+        "description": "أطقم تركيب كاملة بالفلنجات والجازكيتات الحرارية",
+        "isActive": true
+      }
+    ],
+    "marqueeEnabled": true,
+    "marqueeText": "إنتاج وطني وتوريد مباشر لدبات التلوث (ديزل وبنزين) بمعايير Euro-6 · ضمان الكفاءة وتجاوز الفحص الدوري · دفع آمن عبر PayPal أو الطلب الفوري عبر واتساب",
+    "marqueeBgColor": "#14120E",
+    "marqueeTextColor": "#E5C158",
+    "marqueeSpeed": 28,
+    "marquee2Enabled": true,
+    "marquee2Text": "متوفر الآن: فلاتر جسيمات الديزل DPF · دبات تلوث بنزين لحام TIG · قلوب سيراميك بلاتين عالية الكثافة · استشارة فنية فورية لاختيار المقاس المناسب",
+    "marquee2BgColor": "#1E180B",
+    "marquee2TextColor": "#F5E1A4",
+    "marquee2Speed": 24,
+    "heroEnabled": true,
+    "heroTitle": "إنتاج دبات التلوث للديزل والبنزين بدقة هندسية فائقة",
+    "heroSubtitle": "نصنع ونوفر أحدث دبات التلوث وفلاتر الجسيمات (DPF) والمحولات الحفازة من الفولاذ المقاوم للصدأ وخلايا البلاتين عالية الكفاءة لتنقية العادم وحماية المحرك.",
+    "heroCtaText": "تصفح المنتجات الآن",
+    "heroBackdropMode": "auto",
+    "heroVideoUrl": "",
+    "heroImageUrl": "/src/assets/images/hero_catalytic_gold_1794821492784.jpg",
+    "heroSlideshowImages": [
+      "/src/assets/images/hero_catalytic_gold_1794821492784.jpg",
+      "/src/assets/images/product_gasoline_cat_1794821493329.jpg",
+      "/src/assets/images/product_diesel_dpf_1794821492144.jpg"
+    ],
+    "heroFeatures": [
+      {
+        "title": "مطابقة لمعايير Euro-6 والفحص الدوري",
+        "description": "كفاءة ترشيح عالية للغازات الضارة تضمن استقرار الحساسات وإطفاء لمبة المحرك."
+      },
+      {
+        "title": "دفع إلكتروني آمن عبر PayPal",
+        "description": "إتمام فوري وموثوق للطلبات مع تحويل دقيق من الريال السعودي."
+      },
+      {
+        "title": "استشارة فنية وطلب مباشر عبر واتساب",
+        "description": "تحديد المقاس المناسب لسيارتك (ديزل أو بنزين) وتأكيد الطلب خلال دقائق."
+      },
+      {
+        "title": "لحام TIG ستانلس ستيل 304 مقاوم للحرارة",
+        "description": "هياكل معدنية سميكة تتحمل درجات الحرارة القصوى وتمنع التآكل والتهريب."
+      }
+    ],
+    "sidebarVideosEnabled": true,
+    "sidebarVideoCount": 4,
+    "sidebarVideos": [
+      {
+        "id": "vid-1",
+        "title": "تصنيع دبات التلوث الذهبية",
+        "url": "/videos/showcase-1.mp4"
+      },
+      {
+        "id": "vid-2",
+        "title": "دبات تلوث البنزين لحام TIG",
+        "url": "/videos/showcase-2.mp4"
+      },
+      {
+        "id": "vid-3",
+        "title": "فلاتر جسيمات الديزل DPF",
+        "url": "/videos/showcase-3.mp4"
+      },
+      {
+        "id": "vid-4",
+        "title": "خلايا السيراميك البلاتينية",
+        "url": "/videos/showcase-4.mp4"
+      }
+    ],
+    "siteBackgroundType": "none",
+    "siteBackgroundUrl": "",
+    "siteBackgroundOpacity": 0.2,
+    "themePreset": "royal_gold",
+    "buttonStyle": "gold_wave",
+    "primaryGoldColor": "#D4AF37",
+    "backgroundColor": "#09090B",
+    "surfaceColor": "#131317",
+    "whatsappNumber": "966504597852",
+    "contactEmail": "uuuo333@gmail.com",
+    "paypalBusinessEmail": "payments@taj-catalytic.example",
+    "paypalMeUrl": "https://www.paypal.me/yousefAlmohamad931",
+    "bankTransferEnabled": true,
+    "bankName": "مصرف الراجحي",
+    "bankAccountHolder": "مصنع التاج الذهبي لدبات التلوث",
+    "bankIban": "SA0000000000000000000000",
+    "bankAccountNumber": "",
+    "sarToUsdRate": 0.2667,
+    "instagramUrl": "https://instagram.com",
+    "tiktokUrl": "https://tiktok.com",
+    "aboutUsText": "منشأة صناعية وتجارية متخصصة في إنتاج وتوريد دبات التلوث لمركبات الديزل والبنزين، وفلاتر البيئة (DPF) وقلوب السيراميك الحفازة في المملكة العربية السعودية والخليج وفق أعلى المواصفات الهندسية.",
+    "showShippingLogos": true,
+    "shippingCarriers": [
+      "زاجل (Zajil)",
+      "سبل - البريد السعودي (SPL)",
+      "أرامكس (Aramex)",
+      "سمسا إكسبرس (SMSA)",
+      "DHL إكسبرس",
+      "ريدبوكس (RedBox)",
+      "J&T إكسبرس"
+    ],
+    "loyaltyEnabled": true,
+    "coinValueSar": 0.1,
+    "dailyCheckinCoins": 25,
+    "coinsPer100SarPurchase": 50,
+    "charityPopupEnabled": true,
+    "charityPopupTitle": "تصدق ولو بالقليل.. واجعل تجارتك مباركة",
+    "charityPopupVerse": "﴿ مَّثَلُ الَّذِينَ يُنفِقُونَ أَمْوَالَهُمْ فِي سَبِيلِ اللَّهِ كَمَثَلِ حَبَّةٍ أَنبَتَتْ سَبْعَ سَنَابِلَ فِي كُلِّ سُنبُلَةٍ مِّائَةُ حَبَّةٍ ۗ وَاللَّهُ يُضَاعِفُ لِمَن يَشَاءُ ﴾ [البقرة: 261]",
+    "charityUrl": "https://ehsan.sa",
+    "charityOrganizations": [
+      {
+        "id": "org-ehsan",
+        "name": "منصة إحسان للعمل الخيري",
+        "description": "المنصة الوطنية الرسمية للتبرعات الخيرية في المملكة العربية السعودية.",
+        "url": "https://ehsan.sa"
+      },
+      {
+        "id": "org-ensan",
+        "name": "جمعية إنسان لرعاية الأيتام",
+        "description": "كفالة الأيتام ورعاية أسرهم التعليمية والصحية والاجتماعية.",
+        "url": "https://ensan.org.sa"
+      },
+      {
+        "id": "org-donations",
+        "name": "منصة تبرع الوطنية",
+        "description": "بوابة دعم الجمعيات الخيرية المعتمدة تحت إشراف الموارد البشرية.",
+        "url": "https://donations.sa"
+      },
+      {
+        "id": "org-shefa",
+        "name": "منصة شفاء للرعاية الصحية",
+        "description": "تقديم العلاج والعمليات الجراحية للمرضى المحتاجين.",
+        "url": "https://shefa.sa"
+      }
+    ],
+    "seoAutoUpdateEnabled": true,
+    "seoLastAutoRun": "2026-11-16T09:35:45.669Z",
+    "promoDiscountCodes": [
+      {
+        "id": "promo-taj5",
+        "code": "TAJ5",
+        "discountType": "percent",
+        "discountValue": 5,
+        "isActive": true,
+        "usageCount": 0,
+        "createdAt": "2026-11-18T10:22:51.833Z"
+      },
+      {
+        "id": "promo-2026",
+        "code": "2026",
+        "discountType": "fixed",
+        "discountValue": 50,
+        "isActive": true,
+        "usageCount": 0,
+        "createdAt": "2026-11-18T10:22:51.833Z"
+      }
+    ],
+    "ownerPersonalWhatsapp": "966500000000",
+    "ownerWhatsappWebhookUrl": "",
+    "autoWhatsappAlertsEnabled": true,
+    "ownerRecoveryEmail": "uuuo333@gmail.com",
+    "ownerTwoFactorEnabled": false,
+    "ownerTwoFactorMethod": "totp"
+  },
+  "products": [
+    {
+      "id": "prod-gasoline-euro6",
+      "name": "دبة تلوث بنزين ستانلس ستيل TIG مع منافذ حساسات مزدوجة",
+      "category": "دبات تلوث البنزين",
+      "priceSar": 1350,
+      "compareAtPriceSar": 1650,
+      "description": "دبة تلوث عالية الكفاءة لمحركات البنزين الحديثة، مصنعة من الفولاذ المقاوم للصدأ 304 بلحام TIG دقيق، مزودة بمنفذي حساسات أكسجين O2 وخلية سيراميك 400 CPSI مشبعة بالبلاتين والبلاديوم.",
+      "images": [
+        "/src/assets/images/product_gasoline_cat_1794821493329.jpg"
+      ],
+      "specs": [
+        {
+          "label": "نوع الوقود",
+          "value": "بنزين (Gasoline) - 4 و 6 و 8 سلندر"
+        },
+        {
+          "label": "المعيار البيئي",
+          "value": "Euro-5 / Euro-6 المعتمد"
+        },
+        {
+          "label": "الهيكل واللحام",
+          "value": "ستانلس ستيل 304 بلحام TIG حراري"
+        },
+        {
+          "label": "كثافة الخلية",
+          "value": "400 خلية لكل بوصة (CPSI)"
+        }
+      ],
+      "inStock": true,
+      "isPublished": true,
+      "seoTitle": "دبة تلوث بنزين ستانلس ستيل Euro-6 | إنتاج التاج الذهبي",
+      "seoDescription": "اطلب دبة تلوث بنزين عالية الكفاءة بمنافذ حساسات مزدوجة ولحام TIG بسعر 1350 ريال سعودي لتجاوز الفحص الدوري وتنقية العادم.",
+      "seoKeywords": [
+        "دبة تلوث بنزين",
+        "دبة رصاص بنزين",
+        "دبات تلوث السعودية",
+        "محول حفاز بنزين"
+      ],
+      "seoLastUpdated": "2026-11-16T09:35:45.669Z",
+      "createdAt": "2026-11-16T09:35:45.669Z"
+    },
+    {
+      "id": "prod-diesel-dpf",
+      "name": "دبة تلوث وفلتر جسيمات ديزل DPF للخدمة الشاقة",
+      "category": "دبات تلوث الديزل",
+      "priceSar": 2850,
+      "compareAtPriceSar": 3400,
+      "description": "منظومة متكاملة لتنقية عادم محركات الديزل (DPF + DOC) للسيارات الرباعية الدفع والشاحنات الخفيفة، تمنع الدخان الأسود وتخفض الانبعاثات مع دعم كامل لحساسات الضغط والحرارة.",
+      "images": [
+        "/src/assets/images/product_diesel_dpf_1794821492144.jpg"
+      ],
+      "specs": [
+        {
+          "label": "نوع الوقود",
+          "value": "ديزل (Diesel Turbo / Common Rail)"
+        },
+        {
+          "label": "النظام",
+          "value": "فلتر جسيمات DPF + محفز أكسدة DOC"
+        },
+        {
+          "label": "مقاومة الحرارة",
+          "value": "حتى 1100 درجة مئوية"
+        },
+        {
+          "label": "التوصيلات",
+          "value": "فلنجات وحساسات ضغط تفاضلي جاهزة"
+        }
+      ],
+      "inStock": true,
+      "isPublished": true,
+      "seoTitle": "دبة تلوث ديزل وفلتر DPF للخدمة الشاقة | بالريال السعودي",
+      "seoDescription": "دبة تلوث ديزل احترافية مع فلتر جسيمات DPF ومنافذ حساسات لمنع الدخان الأسود وتحسين أداء التيربو بسعر 2850 ريال سعودي.",
+      "seoKeywords": [
+        "دبة تلوث ديزل",
+        "فلتر DPF ديزل",
+        "منع دخان الديزل",
+        "دبة بيئة ديزل"
+      ],
+      "seoLastUpdated": "2026-11-16T09:35:45.669Z",
+      "createdAt": "2026-11-16T09:35:45.669Z"
+    },
+    {
+      "id": "prod-ceramic-core",
+      "name": "قلب دبة تلوث سيراميك حفاز (حشوة بلاتين عالية الكثافة)",
+      "category": "قلوب وحشوات السيراميك",
+      "priceSar": 780,
+      "compareAtPriceSar": 950,
+      "description": "قلب سيراميك داخلي بنظام قرص العسل (Honeycomb) مطلي بطبقة معادن ثمينة عالية التركيز (بلاتين، بالاديوم، روديوم) لإعادة تأهيل وتصنيع دبات التلوث للديزل والبنزين بكفاءة المصنع.",
+      "images": [
+        "/src/assets/images/product_ceramic_core_1794821493246.jpg"
+      ],
+      "specs": [
+        {
+          "label": "الاستخدام",
+          "value": "تجميع وتصنيع دبات الديزل والبنزين"
+        },
+        {
+          "label": "الطلاء الحفاز",
+          "value": "بلاتين + بالاديوم + روديوم عالي التركيز"
+        },
+        {
+          "label": "تنوع المقاسات",
+          "value": "متوفر بأقطار 4 / 4.5 / 5 بوصة"
+        },
+        {
+          "label": "تدفق الهواء",
+          "value": "انسيابي يمنع كتمة المحرك"
+        }
+      ],
+      "inStock": true,
+      "isPublished": true,
+      "seoTitle": "قلب دبة تلوث سيراميك حشوة بلاتين | تصنيع دبات البيئة",
+      "seoDescription": "حشوة وقلب دبة تلوث سيراميك أصلي مشبع بالبلاتين لإعادة تصنيع وتجديد دبات الديزل والبنزين بسعر 780 ريال سعودي.",
+      "seoKeywords": [
+        "قلب دبة تلوث",
+        "حشوة دبة الرصاص",
+        "سيراميك دبة التلوث",
+        "رصاص دبة البيئة"
+      ],
+      "seoLastUpdated": "2026-11-16T09:35:45.669Z",
+      "createdAt": "2026-11-16T09:35:45.669Z"
+    },
+    {
+      "id": "prod-universal-kit",
+      "name": "طقم دبة تلوث وكاتم عادم Euro-6 شامل الفلنجات (ديزل وبنزين)",
+      "category": "أطقم العادم والفلنجات",
+      "priceSar": 1890,
+      "description": "طقم إنتاج متكامل يجمع دبة التلوث الرئيسية وكاتم الصوت الخلفي مع جميع الفلنجات المعدنية والجازكيتات الحرارية ومسامير التثبيت للتركيب السريع على مختلف السيارات.",
+      "images": [
+        "/src/assets/images/product_universal_exhaust_1794821493897.jpg"
+      ],
+      "specs": [
+        {
+          "label": "التوافق",
+          "value": "متوافق مع أنظمة البنزين والديزل (2.5 / 3 بوصة)"
+        },
+        {
+          "label": "محتويات الطقم",
+          "value": "دبة تلوث + كاتم + 4 فلنجات + جازكيتات ومسامير"
+        },
+        {
+          "label": "الخامة",
+          "value": "فولاذ مقاوم للصدأ ومطابق لمواصفات OEM"
+        }
+      ],
+      "inStock": true,
+      "isPublished": true,
+      "seoTitle": "طقم دبة تلوث وكاتم Euro-6 مع الفلنجات | بالريال السعودي",
+      "seoDescription": "طقم متكامل لدبة التلوث وكاتم العادم بفلنجات التركيب لسيارات البنزين والديزل بسعر 1890 ريال سعودي.",
+      "seoKeywords": [
+        "طقم دبة تلوث",
+        "فلنجات دبة التلوث",
+        "دبة تلوث عالمية Euro 6"
+      ],
+      "seoLastUpdated": "2026-11-16T09:35:45.669Z",
+      "createdAt": "2026-11-16T09:35:45.669Z"
+    },
+    {
+      "id": "prod-titanium-hybrid",
+      "name": "دبة تلوث هجينة متطورة (الإصدار الذهبي عالي الأداء)",
+      "category": "دبات تلوث البنزين",
+      "priceSar": 2150,
+      "description": "إصدار هندسي فاخر يجمع بين المرونة المقاومة للاهتزاز (Flex Pipe) ومبدد الحرارة الذهبي، مصمم خصيصاً لسيارات الدفع الرباعي والمحركات ذات العزم العالي.",
+      "images": [
+        "/src/assets/images/hero_catalytic_gold_1794821492784.jpg"
+      ],
+      "specs": [
+        {
+          "label": "التصميم",
+          "value": "وصلة مرنة مدمجة + درع حراري ذهبي"
+        },
+        {
+          "label": "السعة المدعومة",
+          "value": "محركات من 2.0 لتر حتى 5.7 لتر"
+        },
+        {
+          "label": "منافذ الحساسات",
+          "value": "منفذان بمسننات قياسية M18x1.5"
+        }
+      ],
+      "inStock": true,
+      "isPublished": true,
+      "seoTitle": "دبة تلوث عالية الأداء بوصلة مرنة | إنتاج التاج الذهبي",
+      "seoDescription": "دبة تلوث مطورة بوصلة مرنة ودرع حراري لسيارات الدفع الرباعي ومحركات العزم العالي بالريال السعودي.",
+      "seoKeywords": [
+        "دبة تلوث رياضية",
+        "دبة تلوث جيب",
+        "دبة تلوث 8 سلندر"
+      ],
+      "seoLastUpdated": "2026-11-16T09:35:45.669Z",
+      "createdAt": "2026-11-16T09:35:45.669Z"
+    },
+    {
+      "id": "draft-secret-sample",
+      "name": "مسودة خاصة: دبة تلوث شاحنات ديزل ثقيلة Euro-6 (مخفي)",
+      "category": "دبات تلوث الديزل",
+      "priceSar": 4200,
+      "description": "منتج تم سحبه وحفظه كمسودة سرية للمراجعة والتعديل قبل النشر للمتجر. لا يظهر للعملاء نهائياً حتى يتم تفعيل خيار النشر.",
+      "images": [
+        "/src/assets/images/product_diesel_dpf_1794821492144.jpg"
+      ],
+      "specs": [
+        {
+          "label": "الحالة",
+          "value": "مسودة قيد المراجعة من المالك"
+        }
+      ],
+      "inStock": true,
+      "isPublished": false,
+      "isScrapedDraft": true,
+      "sourceUrl": "https://private-supplier-catalog.example/item/heavy-diesel-dpf-euro6",
+      "originalExtractedPrice": "$780 USD",
+      "createdAt": "2026-11-16T09:35:45.669Z"
+    }
+  ],
+  "banners": [
+    {
+      "id": "banner-royal-launch",
+      "title": "خصومات الإنتاج المباشر لدبات التلوث 2026",
+      "subtitle": "إنتاج محلي فائق الجودة لسيارات الديزل والبنزين مع ضمان اجتياز الفحص الدوري",
+      "ctaText": "استعرض دبات التلوث",
+      "discountLabel": "إنتاج المصنع",
+      "accentColor": "#D4AF37",
+      "isActive": true,
+      "googleAdsHeadlines": [
+        "دبات تلوث ديزل وبنزين أصلية",
+        "إنتاج مباشر بضمان الفحص الدوري",
+        "فلاتر بيئة DPF بالريال السعودي"
+      ],
+      "googleAdsDescriptions": [
+        "تخلص من لمبة المحرك والدخان الأسود بأعلى جودة تصنيع وبسعر المصنع المباشر."
+      ],
+      "googleAdsKeywords": [
+        "دبات التلوث",
+        "دبة تلوث ديزل",
+        "دبة تلوث بنزين",
+        "فلتر DPF"
+      ],
+      "createdAt": "2026-11-16T09:35:45.669Z"
+    }
+  ],
+  "customers": [
+    {
+      "id": "cust-8c2ee33b",
+      "name": "اختبار عميل",
+      "phone": "0599887766",
+      "nationalAddress": "",
+      "address": "الرياض - حي العليا",
+      "goldenCoins": 0,
+      "coupons": [],
+      "passwordHash": "96cb81b2f4dd63d7bf057345eb5450d5:dd655b4638f5529e511973dca3315db953f357658185016e15b3563a78c93e3b8f2a57d84e32189a0881f09333feb3215b014b850ebb59db938478771716fd45",
+      "createdAt": "2026-11-18T10:28:33.600Z"
+    }
+  ],
+  "orders": [],
+  "assistantMessages": [
+    {
+      "id": "msg-welcome",
+      "role": "assistant",
+      "text": "مرحباً بك يا مالك المتجر! أنا مساعدك الشخصي بالذكاء الاصطناعي. أستطيع تنبيهك على حالة المنتجات والطلبات، إضافة منتجات جديدة بالذكاء الاصطناعي، تعديل الأسعار أو النشر فوراً، وتجهيز تقارير التحديثات لإرسالها إلى واتسابك الخاص.",
+      "createdAt": "2026-11-16T10:05:57.871Z"
+    }
+  ],
+  "analytics": {
+    "totalVisits": 0,
+    "uniqueVisitorTokens": [],
+    "searchQueries": [],
+    "updatedAt": "2026-11-16T10:06:09.786Z"
+  },
+  "adminTwoFactorEnabled": false,
+  "reviews": [],
+  "adminResetCodeHash": "13d20440a505f006a9e4cde37700a3cd:50825ff37ce02d61d003646535b1539c2d2615d12f087c4f00e735b126a9f348ba755a96085cffdde720e070e5ac509aa06f7049fe1ecc2da01d9f3cb3b88961",
+  "adminResetExpiresAt": 1794999975786
+}

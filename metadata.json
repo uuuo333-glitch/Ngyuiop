@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Remix متجر قطع غيار السيارات دبات التلوث ٨٨٨٨",
+  "description": "متجر ومصنع متخصص في إنتاج وتوريد دبات التلوث وفلاتر البيئة لسيارات الديزل والبنزين بالمعايير العالمية وبالريال السعودي.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
