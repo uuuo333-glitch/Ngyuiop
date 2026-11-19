@@ -15,6 +15,7 @@ import {
   awardProductSharePoints,
   beginAdminTotpSetup,
   changeCustomerPassword,
+  chargeOwnerWalletForCartOrder,
   claimDailyCoins,
   confirmAdminPasswordReset,
   confirmAdminTotpSetup,
@@ -27,6 +28,7 @@ import {
   deleteBanner,
   deleteProduct,
   deleteReviewAdmin,
+  depositToOwnerWalletAdmin,
   disableAdminTwoFactor,
   enableAdminEmailTwoFactor,
   getActiveBanners,
@@ -44,12 +46,14 @@ import {
   getOrdersForCustomer,
   getOwnerAlertsAndDigest,
   getOwnerAnalyticsAdmin,
+  getOwnerWalletSummaryAdmin,
   getProductByIdAdmin,
   getPublicSettings,
   getPublishedProducts,
   issueAdminEmailLoginOtp,
   loginCustomer,
   notifyOwnerWebhookIfConfigured,
+  purchaseWithOwnerWalletAdmin,
   recordSearchQuery,
   recordStoreVisit,
   regenerateAdminBackupCodes,
@@ -59,6 +63,7 @@ import {
   saveUploadedBuffer,
   saveUploadedMedia,
   stripPrivateProductFields,
+  transferSalesRevenueToWalletAdmin,
   updateAdminPassword,
   updateBanner,
   updateCustomerProfile,
@@ -312,12 +317,36 @@ app.post('/api/orders', async (req: CustomerRequest, res) => {
       customerAddress?: string;
       shippingCompany?: string;
       items?: { productId: string; quantity: number }[];
-      paymentMethod?: 'paypal' | 'bank_transfer' | 'whatsapp';
+      paymentMethod?: 'paypal' | 'bank_transfer' | 'whatsapp' | 'owner_wallet';
       paypalTransactionId?: string;
       bankTransferRef?: string;
       redeemCoins?: number;
       couponCode?: string;
     };
+
+    const resolvedMethod: 'paypal' | 'bank_transfer' | 'whatsapp' | 'owner_wallet' =
+      paymentMethod === 'paypal'
+        ? 'paypal'
+        : paymentMethod === 'bank_transfer'
+          ? 'bank_transfer'
+          : paymentMethod === 'owner_wallet'
+            ? 'owner_wallet'
+            : 'whatsapp';
+
+    if (resolvedMethod === 'owner_wallet') {
+      const ownerTokenHeader = req.headers['x-owner-token'];
+      const ownerToken =
+        typeof ownerTokenHeader === 'string' ? ownerTokenHeader.trim() : '';
+      const verifiedOwner = ownerToken
+        ? verifySignedToken<{ role?: string }>(ownerToken)
+        : null;
+      if (!verifiedOwner || verifiedOwner.role !== 'admin') {
+        res.status(401).json({
+          error: 'الدفع عبر محفظة المالك متاح للمالك فقط بعد تسجيل الدخول في لوحة التحكم.',
+        });
+        return;
+      }
+    }
 
     if (!customerName?.trim() || !customerPhone?.trim() || !customerAddress?.trim()) {
       res.status(400).json({ error: 'يرجى تعبئة الاسم ورقم الجوال والعنوان بالكامل.' });
@@ -385,12 +414,17 @@ app.post('/api/orders', async (req: CustomerRequest, res) => {
     const finalTotalSar = Number(Math.max(0, totalSar - loyaltyRes.discountSar).toFixed(2));
     const totalUsd = Number((finalTotalSar * settings.sarToUsdRate).toFixed(2));
 
-    const resolvedMethod: 'paypal' | 'bank_transfer' | 'whatsapp' =
-      paymentMethod === 'paypal'
-        ? 'paypal'
-        : paymentMethod === 'bank_transfer'
-          ? 'bank_transfer'
-          : 'whatsapp';
+    if (resolvedMethod === 'owner_wallet') {
+      const walletRes = chargeOwnerWalletForCartOrder({
+        orderId,
+        amountSar: finalTotalSar,
+        itemSummary: resolvedItems.map((i) => `${i.name} × ${i.quantity}`).join('، '),
+      });
+      if (walletRes.error) {
+        res.status(400).json({ error: walletRes.error });
+        return;
+      }
+    }
 
     const order = createOrder({
       id: orderId,
@@ -411,8 +445,15 @@ app.post('/api/orders', async (req: CustomerRequest, res) => {
       paymentMethod: resolvedMethod,
       paypalTransactionId: resolvedMethod === 'paypal' ? paypalTransactionId : undefined,
       bankTransferRef:
-        resolvedMethod === 'bank_transfer' ? bankTransferRef?.trim() || undefined : undefined,
-      status: resolvedMethod === 'paypal' ? 'تم التأكيد' : 'قيد المراجعة',
+        resolvedMethod === 'bank_transfer'
+          ? bankTransferRef?.trim() || undefined
+          : resolvedMethod === 'owner_wallet'
+            ? 'مدفوع عبر محفظة المالك'
+            : undefined,
+      status:
+        resolvedMethod === 'paypal' || resolvedMethod === 'owner_wallet'
+          ? 'تم التأكيد'
+          : 'قيد المراجعة',
       createdAt: new Date().toISOString(),
     });
 
@@ -996,6 +1037,7 @@ app.post('/api/admin/2fa/regenerate-backup-codes', requireAdmin, (_req, res) => 
 
 app.get('/api/admin/dashboard', requireAdmin, (_req, res) => {
   const { alerts, whatsappDigestText } = getOwnerAlertsAndDigest();
+  const walletSummary = getOwnerWalletSummaryAdmin();
   res.json({
     settings: getAdminSettings(),
     twoFactorStatus: getAdminTwoFactorStatus(),
@@ -1008,7 +1050,79 @@ app.get('/api/admin/dashboard', requireAdmin, (_req, res) => {
     whatsappDigestText,
     assistantMessages: getAssistantMessages(),
     analytics: getOwnerAnalyticsAdmin(),
+    ownerWallet: walletSummary,
   });
+});
+
+app.get('/api/admin/wallet', requireAdmin, (_req, res) => {
+  res.json(getOwnerWalletSummaryAdmin());
+});
+
+app.post('/api/admin/wallet/deposit', requireAdmin, (req, res) => {
+  const { amountSar, note, reference } = req.body as {
+    amountSar?: number;
+    note?: string;
+    reference?: string;
+  };
+  const result = depositToOwnerWalletAdmin({
+    amountSar: Number(amountSar) || 0,
+    note,
+    reference,
+  });
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(result);
+});
+
+app.post('/api/admin/wallet/transfer-sales', requireAdmin, (_req, res) => {
+  const result = transferSalesRevenueToWalletAdmin();
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(result);
+});
+
+app.post('/api/admin/wallet/purchase', requireAdmin, (req, res) => {
+  const {
+    mode,
+    productId,
+    quantity,
+    priceBasis,
+    title,
+    category,
+    amountSar,
+    reference,
+    recordStoreOrder,
+  } = req.body as {
+    mode?: 'product' | 'external';
+    productId?: string;
+    quantity?: number;
+    priceBasis?: 'cost' | 'wholesale' | 'retail';
+    title?: string;
+    category?: string;
+    amountSar?: number;
+    reference?: string;
+    recordStoreOrder?: boolean;
+  };
+  const result = purchaseWithOwnerWalletAdmin({
+    mode: mode === 'product' ? 'product' : 'external',
+    productId,
+    quantity,
+    priceBasis,
+    title,
+    category,
+    amountSar,
+    reference,
+    recordStoreOrder,
+  });
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(result);
 });
 
 app.put('/api/admin/reviews/:id', requireAdmin, (req, res) => {

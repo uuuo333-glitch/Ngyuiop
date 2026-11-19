@@ -9,6 +9,8 @@ import type {
   Order,
   OrderStatus,
   OwnerAlert,
+  OwnerWallet,
+  OwnerWalletTransaction,
   Product,
   ProductReview,
   PromoBanner,
@@ -52,6 +54,7 @@ interface DatabaseSchema {
   reviews?: ProductReview[];
   customers: StoredCustomer[];
   orders: Order[];
+  ownerWallet?: OwnerWallet;
   assistantMessages?: AssistantMessage[];
   analytics?: StoredAnalytics;
 }
@@ -300,6 +303,9 @@ function defaultSettings(): StoreSettings {
     contactEmail: 'uuuo333@gmail.com',
     paypalBusinessEmail: 'payments@taj-catalytic.example',
     paypalMeUrl: 'https://www.paypal.me/yousefAlmohamad931',
+    paypalClientId: '',
+    paypalButtonsEnabled: true,
+    paypalCardEnabled: true,
     bankTransferEnabled: true,
     bankName: 'مصرف الراجحي',
     bankAccountHolder: 'مصنع التاج الذهبي لدبات التلوث',
@@ -614,6 +620,15 @@ function ensureDb(): DatabaseSchema {
     if (!parsed.settings.paypalMeUrl) {
       parsed.settings.paypalMeUrl = 'https://www.paypal.me/yousefAlmohamad931';
     }
+    if (typeof parsed.settings.paypalClientId !== 'string') {
+      parsed.settings.paypalClientId = '';
+    }
+    if (typeof parsed.settings.paypalButtonsEnabled !== 'boolean') {
+      parsed.settings.paypalButtonsEnabled = true;
+    }
+    if (typeof parsed.settings.paypalCardEnabled !== 'boolean') {
+      parsed.settings.paypalCardEnabled = true;
+    }
     if (!parsed.settings.ownerRecoveryEmail) {
       parsed.settings.ownerRecoveryEmail = 'uuuo333@gmail.com';
     }
@@ -657,6 +672,35 @@ function ensureDb(): DatabaseSchema {
           ? c.sharedProductsHistory
           : {},
     }));
+    if (!parsed.ownerWallet || typeof parsed.ownerWallet !== 'object') {
+      parsed.ownerWallet = {
+        balanceSar: 0,
+        totalDepositedSar: 0,
+        totalSpentSar: 0,
+        transferredOrderIds: [],
+        transactions: [],
+        updatedAt: new Date().toISOString(),
+      };
+    } else {
+      parsed.ownerWallet = {
+        balanceSar: Number.isFinite(Number(parsed.ownerWallet.balanceSar))
+          ? Math.max(0, Number(parsed.ownerWallet.balanceSar))
+          : 0,
+        totalDepositedSar: Number.isFinite(Number(parsed.ownerWallet.totalDepositedSar))
+          ? Math.max(0, Number(parsed.ownerWallet.totalDepositedSar))
+          : 0,
+        totalSpentSar: Number.isFinite(Number(parsed.ownerWallet.totalSpentSar))
+          ? Math.max(0, Number(parsed.ownerWallet.totalSpentSar))
+          : 0,
+        transferredOrderIds: Array.isArray(parsed.ownerWallet.transferredOrderIds)
+          ? parsed.ownerWallet.transferredOrderIds
+          : [],
+        transactions: Array.isArray(parsed.ownerWallet.transactions)
+          ? parsed.ownerWallet.transactions
+          : [],
+        updatedAt: parsed.ownerWallet.updatedAt || new Date().toISOString(),
+      };
+    }
     if (!Array.isArray(parsed.assistantMessages)) {
       parsed.assistantMessages = buildInitialSeed().assistantMessages;
     }
@@ -1915,6 +1959,323 @@ export function addProductReview(input: {
   db.reviews = [review, ...(db.reviews || [])];
   saveDb(db);
   return review;
+}
+
+// ==========================================
+// OWNER WALLET & PURCHASING
+// ==========================================
+
+function ensureWalletRef(db: DatabaseSchema): OwnerWallet {
+  if (!db.ownerWallet) {
+    db.ownerWallet = {
+      balanceSar: 0,
+      totalDepositedSar: 0,
+      totalSpentSar: 0,
+      transferredOrderIds: [],
+      transactions: [],
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  return db.ownerWallet;
+}
+
+export function getOwnerWalletSummaryAdmin(): {
+  wallet: OwnerWallet;
+  availableSalesTransferSar: number;
+  availableOrdersCount: number;
+} {
+  const db = ensureDb();
+  const wallet = ensureWalletRef(db);
+  const transferredSet = new Set(wallet.transferredOrderIds || []);
+  const eligibleOrders = db.orders.filter(
+    (o) =>
+      o.status !== 'ملغي' &&
+      o.paymentMethod !== 'owner_wallet' &&
+      !transferredSet.has(o.id)
+  );
+  const availableSalesTransferSar = Number(
+    eligibleOrders.reduce((sum, o) => sum + (Number(o.totalSar) || 0), 0).toFixed(2)
+  );
+  return {
+    wallet: {
+      ...wallet,
+      transactions: [...(wallet.transactions || [])],
+      transferredOrderIds: [...(wallet.transferredOrderIds || [])],
+    },
+    availableSalesTransferSar,
+    availableOrdersCount: eligibleOrders.length,
+  };
+}
+
+export function depositToOwnerWalletAdmin(params: {
+  amountSar: number;
+  note?: string;
+  reference?: string;
+}): {
+  wallet?: OwnerWallet;
+  transaction?: OwnerWalletTransaction;
+  availableSalesTransferSar?: number;
+  availableOrdersCount?: number;
+  error?: string;
+} {
+  const amount = Number(Number(params.amountSar).toFixed(2));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { error: 'يرجى إدخال مبلغ إيداع صحيح أكبر من صفر بالريال السعودي.' };
+  }
+  const db = ensureDb();
+  const wallet = ensureWalletRef(db);
+  const nextBalance = Number((wallet.balanceSar + amount).toFixed(2));
+  const now = new Date().toISOString();
+  const tx: OwnerWalletTransaction = {
+    id: `WAL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    type: 'deposit',
+    amountSar: amount,
+    balanceAfterSar: nextBalance,
+    title: params.note?.trim() || 'إيداع وشحن رصيد محفظة المالك',
+    category: 'تغذية المحفظة',
+    reference: params.reference?.trim() || undefined,
+    createdAt: now,
+  };
+  wallet.balanceSar = nextBalance;
+  wallet.totalDepositedSar = Number((wallet.totalDepositedSar + amount).toFixed(2));
+  wallet.transactions = [tx, ...(wallet.transactions || [])].slice(0, 100);
+  wallet.updatedAt = now;
+  db.ownerWallet = wallet;
+  saveDb(db);
+
+  const summary = getOwnerWalletSummaryAdmin();
+  return {
+    wallet: summary.wallet,
+    transaction: tx,
+    availableSalesTransferSar: summary.availableSalesTransferSar,
+    availableOrdersCount: summary.availableOrdersCount,
+  };
+}
+
+export function transferSalesRevenueToWalletAdmin(): {
+  wallet?: OwnerWallet;
+  transferredSar?: number;
+  ordersCount?: number;
+  transaction?: OwnerWalletTransaction;
+  availableSalesTransferSar?: number;
+  availableOrdersCount?: number;
+  error?: string;
+} {
+  const db = ensureDb();
+  const wallet = ensureWalletRef(db);
+  const transferredSet = new Set(wallet.transferredOrderIds || []);
+  const eligibleOrders = db.orders.filter(
+    (o) =>
+      o.status !== 'ملغي' &&
+      o.paymentMethod !== 'owner_wallet' &&
+      !transferredSet.has(o.id)
+  );
+  const transferAmount = Number(
+    eligibleOrders.reduce((sum, o) => sum + (Number(o.totalSar) || 0), 0).toFixed(2)
+  );
+  if (eligibleOrders.length === 0 || transferAmount <= 0) {
+    return { error: 'لا توجد إيرادات طلبات جديدة غير مرحّلة إلى المحفظة حالياً.' };
+  }
+  const nextBalance = Number((wallet.balanceSar + transferAmount).toFixed(2));
+  const now = new Date().toISOString();
+  const tx: OwnerWalletTransaction = {
+    id: `WAL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    type: 'sales_transfer',
+    amountSar: transferAmount,
+    balanceAfterSar: nextBalance,
+    title: `ترحيل إيرادات ${eligibleOrders.length} طلب من مبيعات المتجر`,
+    category: 'إيرادات المبيعات',
+    reference: eligibleOrders
+      .slice(0, 5)
+      .map((o) => o.id)
+      .join('، '),
+    createdAt: now,
+  };
+  wallet.balanceSar = nextBalance;
+  wallet.totalDepositedSar = Number((wallet.totalDepositedSar + transferAmount).toFixed(2));
+  wallet.transferredOrderIds = [
+    ...(wallet.transferredOrderIds || []),
+    ...eligibleOrders.map((o) => o.id),
+  ];
+  wallet.transactions = [tx, ...(wallet.transactions || [])].slice(0, 100);
+  wallet.updatedAt = now;
+  db.ownerWallet = wallet;
+  saveDb(db);
+
+  const summary = getOwnerWalletSummaryAdmin();
+  return {
+    wallet: summary.wallet,
+    transferredSar: transferAmount,
+    ordersCount: eligibleOrders.length,
+    transaction: tx,
+    availableSalesTransferSar: summary.availableSalesTransferSar,
+    availableOrdersCount: summary.availableOrdersCount,
+  };
+}
+
+export function purchaseWithOwnerWalletAdmin(params: {
+  mode: 'product' | 'external';
+  productId?: string;
+  quantity?: number;
+  priceBasis?: 'cost' | 'wholesale' | 'retail';
+  title?: string;
+  category?: string;
+  amountSar?: number;
+  reference?: string;
+  recordStoreOrder?: boolean;
+}): {
+  wallet?: OwnerWallet;
+  transaction?: OwnerWalletTransaction;
+  order?: Order;
+  availableSalesTransferSar?: number;
+  availableOrdersCount?: number;
+  error?: string;
+} {
+  const db = ensureDb();
+  const wallet = ensureWalletRef(db);
+  const now = new Date().toISOString();
+
+  let finalAmount = 0;
+  let txTitle = '';
+  let txCategory = params.category?.trim() || 'مشتريات المالك';
+  let purchasedProduct: Product | undefined;
+  let qty = 1;
+
+  if (params.mode === 'product') {
+    purchasedProduct = db.products.find((p) => p.id === params.productId);
+    if (!purchasedProduct) {
+      return { error: 'يرجى اختيار منتج صالح للشراء من المحفظة.' };
+    }
+    qty = Math.max(1, Math.min(999, Math.floor(Number(params.quantity) || 1)));
+    const basis = params.priceBasis || 'wholesale';
+    const unitPrice =
+      basis === 'cost' && typeof purchasedProduct.costPriceSar === 'number' && purchasedProduct.costPriceSar > 0
+        ? purchasedProduct.costPriceSar
+        : basis === 'wholesale' &&
+            typeof purchasedProduct.wholesalePriceSar === 'number' &&
+            purchasedProduct.wholesalePriceSar > 0
+          ? purchasedProduct.wholesalePriceSar
+          : purchasedProduct.priceSar;
+    finalAmount = Number((unitPrice * qty).toFixed(2));
+    txTitle = `شراء ${purchasedProduct.name} (×${qty})`;
+    txCategory = params.category?.trim() || 'شراء منتج من المتجر';
+  } else {
+    finalAmount = Number(Number(params.amountSar || 0).toFixed(2));
+    txTitle = params.title?.trim() || '';
+    if (!txTitle) {
+      return { error: 'يرجى إدخال وصف عملية الشراء أو اسم المورد.' };
+    }
+  }
+
+  if (!Number.isFinite(finalAmount) || finalAmount <= 0) {
+    return { error: 'يرجى إدخال مبلغ شراء صحيح أكبر من صفر.' };
+  }
+
+  if (wallet.balanceSar < finalAmount) {
+    const missing = Number((finalAmount - wallet.balanceSar).toFixed(2));
+    return {
+      error: `رصيد محفظة المالك (${wallet.balanceSar.toLocaleString('ar-SA')} ر.س) غير كافٍ لإتمام الشراء. ينقصك ${missing.toLocaleString('ar-SA')} ر.س.`,
+    };
+  }
+
+  const nextBalance = Number((wallet.balanceSar - finalAmount).toFixed(2));
+  let createdOrder: Order | undefined;
+
+  if (params.mode === 'product' && purchasedProduct && params.recordStoreOrder !== false) {
+    const unitSar = Number((finalAmount / qty).toFixed(2));
+    const orderId = `ORD-${crypto.randomInt(10000, 99999)}`;
+    createdOrder = {
+      id: orderId,
+      customerName: 'شراء مباشر — محفظة المالك',
+      customerPhone: db.settings.whatsappNumber || '0500000000',
+      customerAddress: 'طلب داخلي مدفوع من محفظة المالك',
+      items: [
+        {
+          productId: purchasedProduct.id,
+          name: purchasedProduct.name,
+          priceSar: unitSar,
+          quantity: qty,
+          image: (purchasedProduct.images || [])[0] || '',
+        },
+      ],
+      subtotalSar: finalAmount,
+      totalSar: finalAmount,
+      totalUsd: Number((finalAmount * (db.settings.sarToUsdRate || 0.2667)).toFixed(2)),
+      paymentMethod: 'owner_wallet',
+      bankTransferRef: params.reference?.trim() || 'مدفوع من محفظة المالك',
+      status: 'تم التأكيد',
+      createdAt: now,
+    };
+    db.orders.unshift(createdOrder);
+  }
+
+  const tx: OwnerWalletTransaction = {
+    id: `WAL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    type: 'purchase',
+    amountSar: -finalAmount,
+    balanceAfterSar: nextBalance,
+    title: txTitle,
+    category: txCategory,
+    reference: params.reference?.trim() || undefined,
+    orderId: createdOrder?.id,
+    productId: purchasedProduct?.id,
+    quantity: purchasedProduct ? qty : undefined,
+    createdAt: now,
+  };
+
+  wallet.balanceSar = nextBalance;
+  wallet.totalSpentSar = Number((wallet.totalSpentSar + finalAmount).toFixed(2));
+  wallet.transactions = [tx, ...(wallet.transactions || [])].slice(0, 100);
+  wallet.updatedAt = now;
+  db.ownerWallet = wallet;
+  saveDb(db);
+
+  const summary = getOwnerWalletSummaryAdmin();
+  return {
+    wallet: summary.wallet,
+    transaction: tx,
+    order: createdOrder,
+    availableSalesTransferSar: summary.availableSalesTransferSar,
+    availableOrdersCount: summary.availableOrdersCount,
+  };
+}
+
+export function chargeOwnerWalletForCartOrder(params: {
+  orderId: string;
+  amountSar: number;
+  itemSummary: string;
+}): { wallet?: OwnerWallet; error?: string } {
+  const db = ensureDb();
+  const wallet = ensureWalletRef(db);
+  const amount = Number(Number(params.amountSar).toFixed(2));
+  if (amount <= 0) {
+    return { wallet };
+  }
+  if (wallet.balanceSar < amount) {
+    const missing = Number((amount - wallet.balanceSar).toFixed(2));
+    return {
+      error: `رصيد محفظة المالك (${wallet.balanceSar.toLocaleString('ar-SA')} ر.س) غير كافٍ. ينقصك ${missing.toLocaleString('ar-SA')} ر.س.`,
+    };
+  }
+  const now = new Date().toISOString();
+  const nextBalance = Number((wallet.balanceSar - amount).toFixed(2));
+  const tx: OwnerWalletTransaction = {
+    id: `WAL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    type: 'purchase',
+    amountSar: -amount,
+    balanceAfterSar: nextBalance,
+    title: `شراء عبر السلة — ${params.itemSummary || params.orderId}`,
+    category: 'شراء من المتجر (السلة)',
+    orderId: params.orderId,
+    createdAt: now,
+  };
+  wallet.balanceSar = nextBalance;
+  wallet.totalSpentSar = Number((wallet.totalSpentSar + amount).toFixed(2));
+  wallet.transactions = [tx, ...(wallet.transactions || [])].slice(0, 100);
+  wallet.updatedAt = now;
+  db.ownerWallet = wallet;
+  saveDb(db);
+  return { wallet };
 }
 
 export function getAllReviewsAdmin(): ProductReview[] {

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
   AlertTriangle,
+  ArrowDownToLine,
+  ArrowUpRight,
   BarChart3,
   Bell,
   Bot,
@@ -10,6 +12,7 @@ import {
   Cloud,
   Coins,
   Copy,
+  CreditCard,
   Database,
   Download,
   ExternalLink,
@@ -34,6 +37,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  ShoppingBag,
   Sparkles,
   Star,
   Tags,
@@ -42,6 +46,7 @@ import {
   Truck,
   Upload,
   Users,
+  Wallet,
   Wand2,
   X,
 } from 'lucide-react';
@@ -55,6 +60,7 @@ import type {
   Order,
   OrderStatus,
   OwnerAlert,
+  OwnerWallet,
   Product,
   ProductReview,
   ProductSpec,
@@ -78,6 +84,7 @@ interface AdminDashboardProps {
 
 type AdminTab =
   | 'overview'
+  | 'wallet'
   | 'assistant'
   | 'products'
   | 'scraper'
@@ -161,6 +168,9 @@ function createFallbackAdminSettings(): StoreSettings {
     contactEmail: '',
     paypalBusinessEmail: '',
     paypalMeUrl: '',
+    paypalClientId: '',
+    paypalButtonsEnabled: true,
+    paypalCardEnabled: true,
     bankTransferEnabled: true,
     bankName: '',
     bankAccountHolder: '',
@@ -242,6 +252,28 @@ export function AdminDashboard({
   const [whatsappDigestText, setWhatsappDigestText] = useState('');
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
   const [analytics, setAnalytics] = useState<SiteAnalytics | null>(null);
+
+  // Owner Wallet & Purchasing
+  const [ownerWallet, setOwnerWallet] = useState<OwnerWallet | null>(null);
+  const [availableSalesTransferSar, setAvailableSalesTransferSar] = useState(0);
+  const [availableOrdersCount, setAvailableOrdersCount] = useState(0);
+  const [walletDepositAmount, setWalletDepositAmount] = useState('1000');
+  const [walletDepositNote, setWalletDepositNote] = useState('');
+  const [walletDepositBusy, setWalletDepositBusy] = useState(false);
+  const [walletTransferBusy, setWalletTransferBusy] = useState(false);
+  const [walletPurchaseMode, setWalletPurchaseMode] = useState<'product' | 'external'>('product');
+  const [walletSelectedProductId, setWalletSelectedProductId] = useState('');
+  const [walletPurchaseQty, setWalletPurchaseQty] = useState(1);
+  const [walletPriceBasis, setWalletPriceBasis] = useState<'cost' | 'wholesale' | 'retail'>(
+    'wholesale'
+  );
+  const [walletRecordOrder, setWalletRecordOrder] = useState(true);
+  const [walletExtTitle, setWalletExtTitle] = useState('');
+  const [walletExtCategory, setWalletExtCategory] = useState('توريد بضاعة ومخزون');
+  const [walletExtAmount, setWalletExtAmount] = useState('');
+  const [walletPurchaseRef, setWalletPurchaseRef] = useState('');
+  const [walletPurchaseBusy, setWalletPurchaseBusy] = useState(false);
+  const [walletTxFilter, setWalletTxFilter] = useState<'all' | 'in' | 'out'>('all');
 
   // Assistant Chat
   const [assistantInput, setAssistantInput] = useState('');
@@ -465,6 +497,14 @@ export function AdminDashboard({
         setWhatsappDigestText(data.whatsappDigestText || '');
         setAssistantMessages(data.assistantMessages || []);
         setAnalytics(data.analytics || null);
+        if (data.ownerWallet?.wallet) {
+          setOwnerWallet(data.ownerWallet.wallet);
+          setAvailableSalesTransferSar(data.ownerWallet.availableSalesTransferSar || 0);
+          setAvailableOrdersCount(data.ownerWallet.availableOrdersCount || 0);
+        }
+        if ((data.products || []).length > 0) {
+          setWalletSelectedProductId((prev) => prev || data.products[0].id);
+        }
         try {
           localStorage.setItem(
             'taj_admin_dashboard_cache',
@@ -1291,6 +1331,136 @@ export function AdminDashboard({
     }
   };
 
+  const handleWalletDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    let tk = adminToken;
+    if (!tk) tk = await requestServerAdminToken();
+    if (!tk) return;
+    const amt = Number(walletDepositAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      showToast('يرجى إدخال مبلغ إيداع صحيح أكبر من صفر.');
+      return;
+    }
+    setWalletDepositBusy(true);
+    try {
+      const res = await fetch('/api/admin/wallet/deposit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tk}`,
+        },
+        body: JSON.stringify({
+          amountSar: amt,
+          note: walletDepositNote.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'تعذر شحن المحفظة.');
+        return;
+      }
+      if (data.wallet) setOwnerWallet(data.wallet);
+      if (typeof data.availableSalesTransferSar === 'number') {
+        setAvailableSalesTransferSar(data.availableSalesTransferSar);
+      }
+      if (typeof data.availableOrdersCount === 'number') {
+        setAvailableOrdersCount(data.availableOrdersCount);
+      }
+      setWalletDepositNote('');
+      showToast(`تم شحن محفظة المالك بمبلغ +${amt.toLocaleString('ar-SA')} ر.س بنجاح.`);
+    } catch {
+      showToast('تعذر الاتصال بالخادم لإيداع الرصيد.');
+    } finally {
+      setWalletDepositBusy(false);
+    }
+  };
+
+  const handleWalletTransferSales = async () => {
+    let tk = adminToken;
+    if (!tk) tk = await requestServerAdminToken();
+    if (!tk) return;
+    setWalletTransferBusy(true);
+    try {
+      const res = await fetch('/api/admin/wallet/transfer-sales', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tk}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'لا توجد مبيعات متاحة للترحيل حالياً.');
+        return;
+      }
+      if (data.wallet) setOwnerWallet(data.wallet);
+      setAvailableSalesTransferSar(data.availableSalesTransferSar ?? 0);
+      setAvailableOrdersCount(data.availableOrdersCount ?? 0);
+      showToast(
+        `تم ترحيل +${Number(data.transferredSar || 0).toLocaleString('ar-SA')} ر.س من مبيعات المتجر إلى المحفظة.`
+      );
+    } catch {
+      showToast('تعذر ترحيل المبيعات حالياً.');
+    } finally {
+      setWalletTransferBusy(false);
+    }
+  };
+
+  const handleWalletPurchase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    let tk = adminToken;
+    if (!tk) tk = await requestServerAdminToken();
+    if (!tk) return;
+    setWalletPurchaseBusy(true);
+    try {
+      const res = await fetch('/api/admin/wallet/purchase', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tk}`,
+        },
+        body: JSON.stringify(
+          walletPurchaseMode === 'product'
+            ? {
+                mode: 'product',
+                productId: walletSelectedProductId || products[0]?.id,
+                quantity: walletPurchaseQty,
+                priceBasis: walletPriceBasis,
+                reference: walletPurchaseRef.trim() || undefined,
+                recordStoreOrder: walletRecordOrder,
+              }
+            : {
+                mode: 'external',
+                title: walletExtTitle.trim(),
+                category: walletExtCategory,
+                amountSar: Number(walletExtAmount) || 0,
+                reference: walletPurchaseRef.trim() || undefined,
+              }
+        ),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'تعذر إتمام عملية الشراء من المحفظة.');
+        return;
+      }
+      if (data.wallet) setOwnerWallet(data.wallet);
+      if (data.order) {
+        setOrders((prev) => [data.order as Order, ...prev]);
+      }
+      if (typeof data.availableSalesTransferSar === 'number') {
+        setAvailableSalesTransferSar(data.availableSalesTransferSar);
+      }
+      if (typeof data.availableOrdersCount === 'number') {
+        setAvailableOrdersCount(data.availableOrdersCount);
+      }
+      setWalletExtTitle('');
+      setWalletExtAmount('');
+      setWalletPurchaseRef('');
+      showToast('تم إتمام عملية الشراء وخصم المبلغ من محفظة المالك بنجاح!');
+    } catch {
+      showToast('تعذر الاتصال بالخادم لإتمام الشراء.');
+    } finally {
+      setWalletPurchaseBusy(false);
+    }
+  };
+
   const handleAdjustCustomerCoins = async (customerId: string, rawAmount: string) => {
     if (!adminToken) return;
     const parsed = Math.max(0, Math.round(Number(rawAmount)));
@@ -2106,6 +2276,7 @@ export function AdminDashboard({
         <aside className="lg:w-64 border-b lg:border-b-0 lg:border-e border-white/10 bg-[#0D0D10] p-3 flex lg:flex-col gap-1.5 overflow-x-auto shrink-0">
           {[
             { id: 'overview', label: 'الطلبات والعملاء', icon: LayoutDashboard },
+            { id: 'wallet', label: 'محفظة المالك والشراء', icon: Wallet },
             {
               id: 'assistant',
               label: `المساعد الذكي والواتساب (${alerts.length})`,
@@ -2478,7 +2649,9 @@ export function AdminDashboard({
                                         ? 'PayPal'
                                         : order.paymentMethod === 'bank_transfer'
                                           ? 'تحويل بنكي'
-                                          : 'واتساب'}
+                                          : order.paymentMethod === 'owner_wallet'
+                                            ? 'محفظة المالك'
+                                            : 'واتساب'}
                                     </div>
                                     {order.bankTransferRef && (
                                       <div className="text-[11px] text-[#E5C158]">
@@ -2674,6 +2847,573 @@ export function AdminDashboard({
                   </section>
                 </div>
               )}
+
+              {/* TAB 1.5: OWNER WALLET & PURCHASING */}
+              {activeTab === 'wallet' &&
+                (() => {
+                  const walletBalance = ownerWallet?.balanceSar ?? 0;
+                  const walletDeposited = ownerWallet?.totalDepositedSar ?? 0;
+                  const walletSpent = ownerWallet?.totalSpentSar ?? 0;
+                  const sarToUsd = settings?.sarToUsdRate || 0.2667;
+                  const walletUsd = Number((walletBalance * sarToUsd).toFixed(2));
+                  const selectedProd =
+                    products.find((p) => p.id === walletSelectedProductId) || products[0];
+                  const selectedUnitPrice = selectedProd
+                    ? walletPriceBasis === 'cost' &&
+                      typeof selectedProd.costPriceSar === 'number' &&
+                      selectedProd.costPriceSar > 0
+                      ? selectedProd.costPriceSar
+                      : walletPriceBasis === 'wholesale' &&
+                          typeof selectedProd.wholesalePriceSar === 'number' &&
+                          selectedProd.wholesalePriceSar > 0
+                        ? selectedProd.wholesalePriceSar
+                        : selectedProd.priceSar
+                    : 0;
+                  const estimatedProductTotal = Number(
+                    (selectedUnitPrice * Math.max(1, walletPurchaseQty)).toFixed(2)
+                  );
+                  const activePurchaseTotal =
+                    walletPurchaseMode === 'product'
+                      ? estimatedProductTotal
+                      : Math.max(0, Number(walletExtAmount) || 0);
+                  const insufficientWallet = activePurchaseTotal > walletBalance;
+                  const walletTxs = (ownerWallet?.transactions || []).filter((tx) => {
+                    if (walletTxFilter === 'in') return tx.amountSar >= 0;
+                    if (walletTxFilter === 'out') return tx.amountSar < 0;
+                    return true;
+                  });
+                  const rawPaypalUrl = (settings?.paypalMeUrl || '').trim();
+                  const paypalDirectHref = rawPaypalUrl
+                    ? rawPaypalUrl.startsWith('http')
+                      ? rawPaypalUrl
+                      : `https://${rawPaypalUrl}`
+                    : 'https://www.paypal.com/sa/home';
+
+                  return (
+                    <div className="max-w-6xl space-y-6">
+                      {/* Top Hero Wallet Balance Card + PayPal SA Hub */}
+                      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+                        <div className="xl:col-span-8 p-6 rounded-2xl border border-[#D4AF37]/50 bg-gradient-to-br from-[#1C160A] via-[#12110E] to-[#0B0B0E] space-y-5 shadow-xl">
+                          <div className="flex flex-wrap items-center justify-between gap-4">
+                            <div className="flex items-center gap-3.5">
+                              <div className="w-14 h-14 rounded-2xl border border-[#D4AF37]/60 bg-[#D4AF37]/15 flex items-center justify-center shrink-0">
+                                <Wallet className="w-7 h-7 text-[#F5E1A4]" />
+                              </div>
+                              <div>
+                                <div className="text-xs text-[#C5BFB2]">
+                                  رصيد محفظة المالك المتاح للشراء
+                                </div>
+                                <div className="text-3xl sm:text-4xl font-bold text-[#F5E1A4] tabular-nums mt-0.5">
+                                  {walletBalance.toLocaleString('ar-SA')} ر.س
+                                </div>
+                                <div className="text-xs text-sky-300 tabular-nums mt-0.5">
+                                  يعادل تقريباً ${walletUsd.toLocaleString('en-US')} USD
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => fetchDashboard()}
+                              className="h-9 px-3.5 rounded-xl border border-white/15 bg-[#16161B] hover:border-[#D4AF37]/50 text-xs text-[#E5C158] flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>تحديث المحفظة</span>
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-white/10">
+                            <div className="p-3.5 rounded-xl border border-emerald-500/25 bg-emerald-950/15">
+                              <div className="text-[11px] text-emerald-200/80">
+                                إجمالي الإيداعات والترحيل
+                              </div>
+                              <div className="text-lg font-bold text-emerald-300 tabular-nums mt-0.5">
+                                +{walletDeposited.toLocaleString('ar-SA')} ر.س
+                              </div>
+                            </div>
+                            <div className="p-3.5 rounded-xl border border-amber-500/25 bg-amber-950/15">
+                              <div className="text-[11px] text-amber-200/80">
+                                إجمالي المشتريات والمدفوعات
+                              </div>
+                              <div className="text-lg font-bold text-amber-300 tabular-nums mt-0.5">
+                                -{walletSpent.toLocaleString('ar-SA')} ر.س
+                              </div>
+                            </div>
+                            <div className="p-3.5 rounded-xl border border-[#D4AF37]/30 bg-[#171510]">
+                              <div className="text-[11px] text-[#C5BFB2]">
+                                مبيعات متاحة للترحيل للمحفظة
+                              </div>
+                              <div className="text-lg font-bold text-[#E5C158] tabular-nums mt-0.5">
+                                {availableSalesTransferSar.toLocaleString('ar-SA')} ر.س
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* PayPal SA Direct Purchasing & Funding Integration Card */}
+                        <div className="xl:col-span-4 p-5 rounded-2xl border border-[#0070BA]/45 bg-gradient-to-b from-[#0A1829] to-[#0D1117] flex flex-col justify-between gap-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 text-sm font-bold text-sky-200">
+                                <CreditCard className="w-4 h-4 text-[#38BDF8]" />
+                                <span>بوابة PayPal السعودية</span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-400/30 text-[10px] font-bold text-sky-200">
+                                متصل بالمحفظة
+                              </span>
+                            </div>
+                            <p className="text-xs text-sky-100/80 leading-relaxed">
+                              افتح حسابك على PayPal السعودية لإدارة البطاقات، استلام أرباح PayPal، أو تنفيذ مشترياتك الإلكترونية مباشرة وتسجيلها في سجل المحفظة.
+                            </p>
+                            {settings?.paypalBusinessEmail && (
+                              <div className="text-[11px] text-sky-300/90 truncate" dir="ltr">
+                                {settings.paypalBusinessEmail}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-2">
+                            <a
+                              href="https://www.paypal.com/sa/home"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-full h-10 px-4 rounded-xl bg-[#0070BA] hover:bg-[#005EA6] text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              <span>فتح PayPal السعودية (paypal.com/sa)</span>
+                            </a>
+                            <a
+                              href={paypalDirectHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-full h-9 px-3 rounded-xl border border-sky-400/35 bg-sky-950/35 hover:bg-sky-900/40 text-sky-200 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>فتح رابط PayPal.me الخاص بالمتجر</span>
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Funding Section: Deposit + Transfer Sales Revenue */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        {/* Deposit Funds to Owner Wallet */}
+                        <form
+                          onSubmit={handleWalletDeposit}
+                          className="p-5 rounded-2xl border border-white/10 bg-[#121216] space-y-4"
+                        >
+                          <div className="flex items-center gap-2 text-sm font-bold text-emerald-300">
+                            <ArrowDownToLine className="w-4 h-4" />
+                            <span>تغذية وإيداع رصيد في محفظة المالك</span>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5">
+                            {[500, 1000, 2500, 5000, 10000].map((preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => setWalletDepositAmount(String(preset))}
+                                className={`px-3 py-1.5 rounded-lg border text-xs font-bold tabular-nums cursor-pointer ${
+                                  Number(walletDepositAmount) === preset
+                                    ? 'border-[#D4AF37] bg-[#D4AF37] text-[#09090B]'
+                                    : 'border-white/15 bg-[#16161B] text-[#E5C158] hover:border-[#D4AF37]/50'
+                                }`}
+                              >
+                                +{preset.toLocaleString('ar-SA')} ر.س
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs text-[#C5BFB2] mb-1">
+                                مبلغ الإيداع (SAR)
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                step="any"
+                                required
+                                value={walletDepositAmount}
+                                onChange={(e) => setWalletDepositAmount(e.target.value)}
+                                className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm tabular-nums focus:outline-none focus:border-[#D4AF37]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-[#C5BFB2] mb-1">
+                                المصدر أو الملاحظة (اختياري)
+                              </label>
+                              <input
+                                type="text"
+                                value={walletDepositNote}
+                                onChange={(e) => setWalletDepositNote(e.target.value)}
+                                placeholder="مثال: رصيد PayPal / تغذية بنكية"
+                                className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
+                              />
+                            </div>
+                          </div>
+
+                          <button
+                            type="submit"
+                            disabled={walletDepositBusy}
+                            className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>{walletDepositBusy ? 'جاري الإيداع...' : 'إيداع الرصيد في المحفظة'}</span>
+                          </button>
+                        </form>
+
+                        {/* Transfer Store Sales Revenue */}
+                        <div className="p-5 rounded-2xl border border-[#D4AF37]/30 bg-[#121216] flex flex-col justify-between gap-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-sm font-bold text-[#E5C158]">
+                              <Coins className="w-4 h-4" />
+                              <span>ترحيل إيرادات مبيعات المتجر إلى المحفظة</span>
+                            </div>
+                            <p className="text-xs text-[#C5BFB2] leading-relaxed">
+                              اسحب صافي قيمة الطلبات المؤكدة وغير الملغاة مباشرة إلى رصيد محفظة المالك لتستخدمه في إعادة شراء البضائع أو دفع الموردين دون احتساب أي طلب مرتين.
+                            </p>
+                          </div>
+
+                          <div className="p-3.5 rounded-xl border border-[#D4AF37]/25 bg-[#171510] flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-[11px] text-[#9E988C]">
+                                الطلبات المتاحة للترحيل ({availableOrdersCount} طلب)
+                              </div>
+                              <div className="text-xl font-bold text-[#F5E1A4] tabular-nums">
+                                {availableSalesTransferSar.toLocaleString('ar-SA')} ر.س
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={walletTransferBusy || availableSalesTransferSar <= 0}
+                              onClick={handleWalletTransferSales}
+                              className="btn-gold-wave h-10 px-4 rounded-xl text-xs font-bold shrink-0 cursor-pointer disabled:opacity-45"
+                            >
+                              {walletTransferBusy ? 'جاري الترحيل...' : 'ترحيل للمحفظة الآن'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Purchase Action Studio + Transaction Ledger */}
+                      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+                        {/* Left: Make Purchase with Owner Wallet */}
+                        <form
+                          onSubmit={handleWalletPurchase}
+                          className="xl:col-span-5 p-5 rounded-2xl border border-[#D4AF37]/35 bg-[#121216] space-y-4"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 text-sm font-bold text-[#F5E1A4]">
+                              <ShoppingBag className="w-4 h-4 text-[#D4AF37]" />
+                              <span>إجراء عملية شراء من محفظة المالك</span>
+                            </div>
+                          </div>
+
+                          {/* Purchase Mode Toggle */}
+                          <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-[#16161B] border border-white/10">
+                            <button
+                              type="button"
+                              onClick={() => setWalletPurchaseMode('product')}
+                              className={`h-9 rounded-lg text-xs font-bold cursor-pointer ${
+                                walletPurchaseMode === 'product'
+                                  ? 'bg-[#D4AF37] text-[#09090B]'
+                                  : 'text-[#C5BFB2] hover:text-white'
+                              }`}
+                            >
+                              شراء منتج من المتجر
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setWalletPurchaseMode('external')}
+                              className={`h-9 rounded-lg text-xs font-bold cursor-pointer ${
+                                walletPurchaseMode === 'external'
+                                  ? 'bg-[#D4AF37] text-[#09090B]'
+                                  : 'text-[#C5BFB2] hover:text-white'
+                              }`}
+                            >
+                              شراء خارجي / PayPal / مورد
+                            </button>
+                          </div>
+
+                          {walletPurchaseMode === 'product' ? (
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-xs text-[#C5BFB2] mb-1">
+                                  اختر المنتج المراد شراؤه
+                                </label>
+                                <select
+                                  value={selectedProd?.id || ''}
+                                  onChange={(e) => setWalletSelectedProductId(e.target.value)}
+                                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs focus:outline-none focus:border-[#D4AF37]"
+                                >
+                                  {products.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name} ({p.priceSar} ر.س)
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs text-[#C5BFB2] mb-1">الكمية</label>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={999}
+                                    value={walletPurchaseQty}
+                                    onChange={(e) =>
+                                      setWalletPurchaseQty(
+                                        Math.max(1, Number(e.target.value) || 1)
+                                      )
+                                    }
+                                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm tabular-nums"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-[#C5BFB2] mb-1">
+                                    تسعيرة الشراء
+                                  </label>
+                                  <select
+                                    value={walletPriceBasis}
+                                    onChange={(e) =>
+                                      setWalletPriceBasis(
+                                        e.target.value as 'cost' | 'wholesale' | 'retail'
+                                      )
+                                    }
+                                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs"
+                                  >
+                                    <option value="wholesale">سعر الجملة</option>
+                                    <option value="cost">سعر التكلفة</option>
+                                    <option value="retail">سعر البيع العادي</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              <label className="flex items-center gap-2 text-xs text-[#C5BFB2] cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={walletRecordOrder}
+                                  onChange={(e) => setWalletRecordOrder(e.target.checked)}
+                                />
+                                <span>إصدار فاتورة طلب مؤكدة في جدول الطلبات</span>
+                              </label>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-xs text-[#C5BFB2] mb-1">
+                                  فئة الشراء / المصروف
+                                </label>
+                                <select
+                                  value={walletExtCategory}
+                                  onChange={(e) => setWalletExtCategory(e.target.value)}
+                                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs"
+                                >
+                                  <option value="توريد بضاعة ومخزون">توريد بضاعة ومخزون</option>
+                                  <option value="شراء عبر PayPal">شراء عبر PayPal</option>
+                                  <option value="دفع لمورد أو مصنع">دفع لمورد أو مصنع</option>
+                                  <option value="تسويق وإعلانات جوجل">تسويق وإعلانات جوجل</option>
+                                  <option value="شحن ولوجستيات">شحن ولوجستيات</option>
+                                  <option value="مصاريف تشغيل">مصاريف تشغيل</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs text-[#C5BFB2] mb-1">
+                                  وصف المشتريات أو اسم المورد
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={walletExtTitle}
+                                  onChange={(e) => setWalletExtTitle(e.target.value)}
+                                  placeholder="مثال: شراء 10 دبات تلوث يورو 6 من المورد / دفع PayPal"
+                                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs focus:outline-none focus:border-[#D4AF37]"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs text-[#C5BFB2] mb-1">
+                                  المبلغ بالريال السعودي (SAR)
+                                </label>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  step="any"
+                                  required
+                                  value={walletExtAmount}
+                                  onChange={(e) => setWalletExtAmount(e.target.value)}
+                                  placeholder="مثال: 750"
+                                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm tabular-nums focus:outline-none focus:border-[#D4AF37]"
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="block text-xs text-[#C5BFB2] mb-1">
+                              مرجع الفاتورة أو رقم عملية PayPal (اختياري)
+                            </label>
+                            <input
+                              type="text"
+                              value={walletPurchaseRef}
+                              onChange={(e) => setWalletPurchaseRef(e.target.value)}
+                              placeholder="مثال: INV-402 أو رقم معاملة PayPal"
+                              className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs focus:outline-none focus:border-[#D4AF37]"
+                            />
+                          </div>
+
+                          <div className="p-3 rounded-xl border border-white/10 bg-[#0D0D10] space-y-1 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-[#9E988C]">إجمالي قيمة الشراء:</span>
+                              <span className="font-bold text-[#F5E1A4] tabular-nums">
+                                {activePurchaseTotal.toLocaleString('ar-SA')} ر.س
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-[#9E988C]">الرصيد المتبقي بعد الشراء:</span>
+                              <span
+                                className={`font-bold tabular-nums ${
+                                  insufficientWallet ? 'text-red-400' : 'text-emerald-300'
+                                }`}
+                              >
+                                {insufficientWallet
+                                  ? `رصيد غير كافٍ (ينقص ${(activePurchaseTotal - walletBalance).toLocaleString('ar-SA')} ر.س)`
+                                  : `${Number((walletBalance - activePurchaseTotal).toFixed(2)).toLocaleString('ar-SA')} ر.س`}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="submit"
+                            disabled={
+                              walletPurchaseBusy ||
+                              activePurchaseTotal <= 0 ||
+                              insufficientWallet
+                            }
+                            className="btn-gold-wave w-full h-11 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-45"
+                          >
+                            <ArrowUpRight className="w-4 h-4" />
+                            <span>
+                              {walletPurchaseBusy
+                                ? 'جاري تنفيذ الشراء...'
+                                : `إتمام الشراء وخصم ${activePurchaseTotal.toLocaleString('ar-SA')} ر.س`}
+                            </span>
+                          </button>
+                        </form>
+
+                        {/* Right: Wallet Transaction Ledger */}
+                        <div className="xl:col-span-7 p-5 rounded-2xl border border-white/10 bg-[#121216] space-y-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h3 className="font-bold text-base text-[#F5E1A4]">
+                                سجل عمليات محفظة المالك ({walletTxs.length})
+                              </h3>
+                              <p className="text-xs text-[#9E988C]">
+                                سجل فوري لكل عملية إيداع، ترحيل مبيعات، أو شراء عبر المحفظة
+                              </p>
+                            </div>
+                            <div className="flex gap-1.5">
+                              {[
+                                { id: 'all', label: 'الكل' },
+                                { id: 'in', label: 'الإيداعات (+)' },
+                                { id: 'out', label: 'المشتريات (-)' },
+                              ].map((f) => (
+                                <button
+                                  key={f.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setWalletTxFilter(f.id as 'all' | 'in' | 'out')
+                                  }
+                                  className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold cursor-pointer ${
+                                    walletTxFilter === f.id
+                                      ? 'border-[#D4AF37] bg-[#D4AF37] text-[#09090B]'
+                                      : 'border-white/15 bg-[#16161B] text-[#C5BFB2]'
+                                  }`}
+                                >
+                                  {f.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {walletTxs.length === 0 ? (
+                            <div className="py-12 text-center text-xs text-[#9E988C] border border-dashed border-white/10 rounded-xl">
+                              لا توجد عمليات في محفظة المالك حتى الآن. يمكنك إيداع رصيد أو ترحيل مبيعات المتجر للبدء بالشراء.
+                            </div>
+                          ) : (
+                            <div className="space-y-2.5 max-h-[520px] overflow-y-auto pe-1">
+                              {walletTxs.map((tx) => {
+                                const isPositive = tx.amountSar >= 0;
+                                return (
+                                  <div
+                                    key={tx.id}
+                                    className="p-3.5 rounded-xl border border-white/10 bg-[#0D0D10] flex flex-wrap items-center justify-between gap-3"
+                                  >
+                                    <div className="min-w-0 space-y-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span
+                                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                            tx.type === 'deposit'
+                                              ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
+                                              : tx.type === 'sales_transfer'
+                                                ? 'bg-[#2A220F] text-[#F5E1A4] border border-[#D4AF37]/30'
+                                                : 'bg-amber-950/60 text-amber-300 border border-amber-500/30'
+                                          }`}
+                                        >
+                                          {tx.type === 'deposit'
+                                            ? 'إيداع'
+                                            : tx.type === 'sales_transfer'
+                                              ? 'ترحيل مبيعات'
+                                              : 'شراء من المحفظة'}
+                                        </span>
+                                        <span className="font-bold text-xs text-[#F5F2EB]">
+                                          {tx.title}
+                                        </span>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#9E988C]">
+                                        {tx.category && <span>{tx.category}</span>}
+                                        {tx.orderId && (
+                                          <span className="text-[#E5C158] tabular-nums" dir="ltr">
+                                            · {tx.orderId}
+                                          </span>
+                                        )}
+                                        {tx.reference && <span>· مرجع: {tx.reference}</span>}
+                                        <span>
+                                          · {new Date(tx.createdAt).toLocaleString('ar-SA')}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="text-end shrink-0">
+                                      <div
+                                        dir="ltr"
+                                        className={`text-sm font-bold tabular-nums ${
+                                          isPositive ? 'text-emerald-300' : 'text-amber-300'
+                                        }`}
+                                      >
+                                        {isPositive
+                                          ? `+${tx.amountSar.toLocaleString('ar-SA')}`
+                                          : tx.amountSar.toLocaleString('ar-SA')}{' '}
+                                        ر.س
+                                      </div>
+                                      <div className="text-[10px] text-[#9E988C] tabular-nums">
+                                        الرصيد بعد العملية:{' '}
+                                        {tx.balanceAfterSar.toLocaleString('ar-SA')} ر.س
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
               {/* TAB 2: OWNER PERSONAL AI ASSISTANT & WHATSAPP ALERTS */}
               {activeTab === 'assistant' && settings && (
@@ -5044,35 +5784,6 @@ export function AdminDashboard({
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-[#C5BFB2] mb-1">
-                            رابط الدفع المباشر PayPal.me
-                          </label>
-                          <input
-                            type="url"
-                            dir="ltr"
-                            value={settings.paypalMeUrl || ''}
-                            onChange={(e) =>
-                              setSettings({ ...settings, paypalMeUrl: e.target.value })
-                            }
-                            placeholder="https://www.paypal.me/yousefAlmohamad931"
-                            className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-[#C5BFB2] mb-1">
-                            حساب PayPal التجاري (اختياري)
-                          </label>
-                          <input
-                            type="email"
-                            dir="ltr"
-                            value={settings.paypalBusinessEmail}
-                            onChange={(e) =>
-                              setSettings({ ...settings, paypalBusinessEmail: e.target.value })
-                            }
-                            className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
-                          />
-                        </div>
-                        <div>
                           <label className="block text-xs text-[#C5BFB2] mb-1">رابط إنستقرام</label>
                           <input
                             type="url"
@@ -5095,6 +5806,107 @@ export function AdminDashboard({
                             }
                             className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
                           />
+                        </div>
+                      </div>
+
+                      {/* PayPal Gateway & Credit Cards Settings */}
+                      <div className="p-4 rounded-xl border border-[#0070BA]/40 bg-[#0A1624] space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 text-sm font-bold text-sky-200">
+                            <CreditCard className="w-4 h-4 text-[#38BDF8]" />
+                            <span>بوابة الدفع باي بال (PayPal) والبطاقات الائتمانية</span>
+                          </div>
+                          <span
+                            className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold ${
+                              settings.paypalClientId?.trim()
+                                ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/35'
+                                : 'bg-amber-950/50 text-amber-200 border border-amber-500/35'
+                            }`}
+                          >
+                            {settings.paypalClientId?.trim()
+                              ? 'مربوط عبر Client ID وجاهز في السلة'
+                              : 'وضع PayPal.me (أدخل Client ID لتفعيل الأزرار الذكية)'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs text-sky-100 mb-1 font-bold">
+                              رمز الربط (PayPal Client ID)
+                            </label>
+                            <input
+                              type="text"
+                              dir="ltr"
+                              value={settings.paypalClientId || ''}
+                              onChange={(e) =>
+                                setSettings({ ...settings, paypalClientId: e.target.value })
+                              }
+                              placeholder="AYxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (أو sb للتجربة)"
+                              className="w-full h-10 px-3 rounded-xl bg-[#0D1117] border border-sky-400/35 text-sm text-white focus:outline-none focus:border-[#38BDF8]"
+                            />
+                            <p className="text-[11px] text-sky-200/75 mt-1">
+                              أدخل PayPal Client ID من لوحة مطوري باي بال (أو استخدم sb للتجربة) لتظهر أزرار الدفع بباي بال والبطاقات الائتمانية مباشرة في صفحة السلة وإتمام الطلب.
+                            </p>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-[#C5BFB2] mb-1">
+                              رابط الدفع المباشر PayPal.me
+                            </label>
+                            <input
+                              type="url"
+                              dir="ltr"
+                              value={settings.paypalMeUrl || ''}
+                              onChange={(e) =>
+                                setSettings({ ...settings, paypalMeUrl: e.target.value })
+                              }
+                              placeholder="https://www.paypal.me/yousefAlmohamad931"
+                              className="w-full h-10 px-3 rounded-xl bg-[#0D1117] border border-white/15 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-[#C5BFB2] mb-1">
+                              حساب PayPal التجاري (اختياري)
+                            </label>
+                            <input
+                              type="email"
+                              dir="ltr"
+                              value={settings.paypalBusinessEmail}
+                              onChange={(e) =>
+                                setSettings({ ...settings, paypalBusinessEmail: e.target.value })
+                              }
+                              className="w-full h-10 px-3 rounded-xl bg-[#0D1117] border border-white/15 text-sm"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-4 pt-1">
+                          <label className="flex items-center gap-2 text-xs text-sky-100 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settings.paypalButtonsEnabled !== false}
+                              onChange={(e) =>
+                                setSettings({
+                                  ...settings,
+                                  paypalButtonsEnabled: e.target.checked,
+                                })
+                              }
+                            />
+                            <span>تفعيل أزرار الدفع بباي بال (PayPal) في السلة وإتمام الطلب</span>
+                          </label>
+                          <label className="flex items-center gap-2 text-xs text-sky-100 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settings.paypalCardEnabled !== false}
+                              onChange={(e) =>
+                                setSettings({
+                                  ...settings,
+                                  paypalCardEnabled: e.target.checked,
+                                })
+                              }
+                            />
+                            <span>تفعيل الدفع بالبطاقات الائتمانية (Visa / Mastercard)</span>
+                          </label>
                         </div>
                       </div>
 

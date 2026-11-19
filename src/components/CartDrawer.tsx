@@ -12,6 +12,7 @@ import {
   ShoppingBag,
   Ticket,
   Trash2,
+  Wallet,
   X,
 } from 'lucide-react';
 import type {
@@ -26,6 +27,7 @@ import {
   getEffectivePriceSar,
   type StoreLanguage,
 } from '../i18n';
+import { PayPalSmartButtons } from './PayPalSmartButtons';
 import { ResilientImage } from './ResilientImage';
 import { ShippingCarriersLogos } from './ShippingCarriersLogos';
 
@@ -92,6 +94,8 @@ export function CartDrawer({
   const [whatsappMessage, setWhatsappMessage] = useState('');
   const [copiedMsg, setCopiedMsg] = useState(false);
   const [copiedIban, setCopiedIban] = useState(false);
+  const [ownerTokenValue, setOwnerTokenValue] = useState<string | null>(null);
+  const [ownerWalletBalance, setOwnerWalletBalance] = useState<number | null>(null);
 
   useEffect(() => {
     const carriers = settings.shippingCarriers;
@@ -99,6 +103,39 @@ export function CartDrawer({
       setShippingCompany((prev) => (carriers.includes(prev) ? prev : carriers[0]));
     }
   }, [settings.shippingCarriers]);
+
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const isOwner = localStorage.getItem('owner_authenticated') === 'true';
+      const tk = localStorage.getItem('taj_admin_token');
+      if (!isOwner || !tk) {
+        setOwnerTokenValue(null);
+        setOwnerWalletBalance(null);
+        return;
+      }
+      fetch('/api/admin/wallet', {
+        headers: { Authorization: `Bearer ${tk}` },
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.wallet && typeof data.wallet.balanceSar === 'number') {
+            setOwnerTokenValue(tk);
+            setOwnerWalletBalance(data.wallet.balanceSar);
+          } else {
+            setOwnerTokenValue(null);
+            setOwnerWalletBalance(null);
+          }
+        })
+        .catch(() => {
+          setOwnerTokenValue(null);
+          setOwnerWalletBalance(null);
+        });
+    } catch {
+      setOwnerTokenValue(null);
+      setOwnerWalletBalance(null);
+    }
+  }, [open, step]);
 
   useEffect(() => {
     if (customer) {
@@ -253,7 +290,7 @@ export function CartDrawer({
   };
 
   const submitOrder = async (
-    paymentMethod: 'paypal' | 'bank_transfer' | 'whatsapp',
+    paymentMethod: 'paypal' | 'bank_transfer' | 'whatsapp' | 'owner_wallet',
     extra?: { paypalTxId?: string; bankRef?: string }
   ) => {
     setSubmitting(true);
@@ -262,6 +299,9 @@ export function CartDrawer({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (customerToken) {
         headers.Authorization = `Bearer ${customerToken}`;
+      }
+      if (paymentMethod === 'owner_wallet' && ownerTokenValue) {
+        headers['x-owner-token'] = ownerTokenValue;
       }
       const res = await fetch('/api/orders', {
         method: 'POST',
@@ -359,6 +399,17 @@ export function CartDrawer({
   const handleWhatsappCheckout = async () => {
     if (!validateCustomerForm()) return;
     await submitOrder('whatsapp');
+  };
+
+  const handleOwnerWalletCheckout = async () => {
+    if (!validateCustomerForm()) return;
+    if (ownerWalletBalance !== null && ownerWalletBalance < totalSar) {
+      setError(
+        `رصيد محفظة المالك (${ownerWalletBalance.toLocaleString('ar-SA')} ر.س) أقل من الإجمالي (${totalSar.toLocaleString('ar-SA')} ر.س). اشحن المحفظة من لوحة التحكم أولاً.`
+      );
+      return;
+    }
+    await submitOrder('owner_wallet');
   };
 
   const resetAndClose = () => {
@@ -770,15 +821,26 @@ export function CartDrawer({
               </div>
 
               <div className="space-y-2.5 pt-2">
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={handleOpenPaypal}
-                  className="w-full h-11 px-4 rounded-xl bg-[#0070BA] hover:bg-[#005EA6] text-white text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                >
-                  <CreditCard className="w-4 h-4" />
-                  <span>الدفع عبر PayPal (${totalUsd} USD)</span>
-                </button>
+                {settings.paypalButtonsEnabled !== false && (
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={handleOpenPaypal}
+                    className="w-full min-h-11 py-2.5 px-4 rounded-xl bg-[#0070BA] hover:bg-[#005EA6] text-white text-sm font-bold flex flex-wrap items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <CreditCard className="w-4 h-4 shrink-0" />
+                    <span>
+                      {settings.paypalCardEnabled !== false
+                        ? `الدفع عبر باي بال (PayPal) أو البطاقات الائتمانية ($${totalUsd} USD)`
+                        : `الدفع عبر PayPal ($${totalUsd} USD)`}
+                    </span>
+                    {settings.paypalCardEnabled !== false && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-white/15 px-1.5 py-0.5 rounded">
+                        VISA / Mastercard
+                      </span>
+                    )}
+                  </button>
+                )}
 
                 {settings.bankTransferEnabled !== false && (
                   <button
@@ -789,6 +851,22 @@ export function CartDrawer({
                   >
                     <Landmark className="w-4 h-4" />
                     <span>التحويل البنكي ({totalSar.toLocaleString('ar-SA')} ر.س)</span>
+                  </button>
+                )}
+
+                {ownerTokenValue && ownerWalletBalance !== null && (
+                  <button
+                    type="button"
+                    disabled={submitting || ownerWalletBalance < totalSar}
+                    onClick={handleOwnerWalletCheckout}
+                    className="btn-gold-wave w-full h-11 px-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    <Wallet className="w-4 h-4" />
+                    <span>
+                      {ownerWalletBalance < totalSar
+                        ? `محفظة المالك (غير كافٍ · المتاح ${ownerWalletBalance.toLocaleString('ar-SA')} ر.س)`
+                        : `الشراء والدفع من محفظة المالك (المتاح ${ownerWalletBalance.toLocaleString('ar-SA')} ر.س)`}
+                    </span>
                   </button>
                 )}
 
@@ -814,63 +892,100 @@ export function CartDrawer({
           )}
 
           {step === 'paypal' && (
-            <form onSubmit={handleConfirmPaypal} className="space-y-4">
-              <div className="p-4 rounded-xl border border-[#0070BA]/40 bg-[#0A1624] space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold text-white">PayPal.me الدفع المباشر</span>
-                  <span className="text-xs text-sky-300" dir="ltr">
-                    {normalizedPaypalBase.replace(/^https?:\/\/(www\.)?/, '')}
-                  </span>
+            <div className="space-y-4">
+              {settings.paypalClientId?.trim() && settings.paypalButtonsEnabled !== false && (
+                <div className="p-4 rounded-xl border border-[#0070BA]/50 bg-[#0A1624] space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-white flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-[#38BDF8]" />
+                      <span>بوابة باي بال (PayPal) والبطاقات الائتمانية</span>
+                    </span>
+                    <span className="text-xs text-[#FFC439] font-bold tabular-nums">
+                      ${totalUsd} USD
+                    </span>
+                  </div>
+                  <div className="text-xs text-sky-200/85 flex items-center justify-between">
+                    <span>المبلغ الإجمالي:</span>
+                    <span className="font-bold tabular-nums">
+                      {totalSar.toLocaleString('ar-SA')} ر.س (≈ ${totalUsd} USD)
+                    </span>
+                  </div>
+
+                  <PayPalSmartButtons
+                    clientId={settings.paypalClientId.trim()}
+                    amountUsd={totalUsd}
+                    description={`طلب من ${settings.storeName} (${items.reduce((s, i) => s + i.quantity, 0)} منتجات)`}
+                    cardEnabled={settings.paypalCardEnabled !== false}
+                    onSuccess={({ transactionId }) => {
+                      void submitOrder('paypal', { paypalTxId: transactionId });
+                    }}
+                    onError={(msg) => setError(msg)}
+                  />
                 </div>
-                <div className="text-xs text-sky-200/80">
-                  المبلغ المستحق بالريال السعودي:{' '}
-                  <strong className="tabular-nums">{totalSar.toLocaleString('ar-SA')} ر.س</strong>
+              )}
+
+              <form onSubmit={handleConfirmPaypal} className="space-y-4">
+                <div className="p-4 rounded-xl border border-[#0070BA]/40 bg-[#0A1624] space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-white">
+                      {settings.paypalClientId?.trim() && settings.paypalButtonsEnabled !== false
+                        ? 'أو التحويل المباشر عبر رابط PayPal.me'
+                        : 'PayPal.me الدفع المباشر'}
+                    </span>
+                    <span className="text-xs text-sky-300" dir="ltr">
+                      {normalizedPaypalBase.replace(/^https?:\/\/(www\.)?/, '')}
+                    </span>
+                  </div>
+                  <div className="text-xs text-sky-200/80">
+                    المبلغ المستحق بالريال السعودي:{' '}
+                    <strong className="tabular-nums">{totalSar.toLocaleString('ar-SA')} ر.س</strong>
+                  </div>
+                  <div className="text-lg font-bold text-white tabular-nums">
+                    المبلغ المطلوب تحويله: ${totalUsd} USD
+                  </div>
+                  <a
+                    href={paypalPaymentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full h-11 rounded-xl bg-[#0070BA] hover:bg-[#005EA6] text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>افتح رابط الدفع PayPal.me (${totalUsd})</span>
+                  </a>
                 </div>
-                <div className="text-lg font-bold text-white tabular-nums">
-                  المبلغ المطلوب تحويله: ${totalUsd} USD
+
+                <div>
+                  <label className="block text-xs text-[#C5BFB2] mb-1">
+                    البريد الإلكتروني لحساب PayPal أو رقم مرجع التحويل بعد الدفع
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    dir="ltr"
+                    value={paypalAccount}
+                    onChange={(e) => setPaypalAccount(e.target.value)}
+                    placeholder="buyer@example.com أو رقم العملية"
+                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-[#F5F2EB] text-left focus:outline-none focus:border-[#0070BA]"
+                  />
                 </div>
-                <a
-                  href={paypalPaymentUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full h-11 rounded-xl bg-[#0070BA] hover:bg-[#005EA6] text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors"
+
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full h-11 rounded-xl bg-[#FFC439] hover:bg-[#F5B82E] text-[#09090B] font-bold text-sm transition-colors cursor-pointer"
                 >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>افتح رابط الدفع PayPal.me (${totalUsd})</span>
-                </a>
-              </div>
+                  {submitting ? 'جاري تسجيل الطلب...' : `تأكيد إتمام الدفع عبر PayPal ($${totalUsd})`}
+                </button>
 
-              <div>
-                <label className="block text-xs text-[#C5BFB2] mb-1">
-                  البريد الإلكتروني لحساب PayPal أو رقم مرجع التحويل بعد الدفع
-                </label>
-                <input
-                  type="text"
-                  required
-                  dir="ltr"
-                  value={paypalAccount}
-                  onChange={(e) => setPaypalAccount(e.target.value)}
-                  placeholder="buyer@example.com أو رقم العملية"
-                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-[#F5F2EB] text-left focus:outline-none focus:border-[#0070BA]"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full h-11 rounded-xl bg-[#FFC439] hover:bg-[#F5B82E] text-[#09090B] font-bold text-sm transition-colors cursor-pointer"
-              >
-                {submitting ? 'جاري تسجيل الطلب...' : `تأكيد إتمام الدفع عبر PayPal ($${totalUsd})`}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setStep('checkout')}
-                className="w-full py-2 text-xs text-[#9E988C] hover:text-[#F5F2EB] cursor-pointer"
-              >
-                رجوع لاختيار وسيلة دفع أخرى
-              </button>
-            </form>
+                <button
+                  type="button"
+                  onClick={() => setStep('checkout')}
+                  className="w-full py-2 text-xs text-[#9E988C] hover:text-[#F5F2EB] cursor-pointer"
+                >
+                  رجوع لاختيار وسيلة دفع أخرى
+                </button>
+              </form>
+            </div>
           )}
 
           {step === 'bank' && (
@@ -1095,6 +1210,22 @@ export function CartDrawer({
                 <div className="text-xs text-[#9E988C]">يعادل ≈ ${totalUsd} USD</div>
               </div>
             </div>
+            {settings.paypalButtonsEnabled !== false && (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl border border-[#0070BA]/35 bg-[#0A1624] text-[11px] text-sky-200">
+                <span className="flex items-center gap-1.5 font-bold">
+                  <CreditCard className="w-3.5 h-3.5 text-[#38BDF8]" />
+                  <span>
+                    {settings.paypalCardEnabled !== false
+                      ? 'متاح الدفع بباي بال (PayPal) والبطاقات الائتمانية'
+                      : 'متاح الدفع عبر PayPal'}
+                  </span>
+                </span>
+                <span className="flex items-center gap-1 text-[10px] font-bold text-[#FFC439]">
+                  <span>PayPal</span>
+                  {settings.paypalCardEnabled !== false && <span>· VISA · Mastercard</span>}
+                </span>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => setStep('checkout')}

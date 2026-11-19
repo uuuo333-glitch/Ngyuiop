@@ -134,6 +134,9 @@ export interface StoreSettings {
   contactEmail: string;
   paypalBusinessEmail: string;
   paypalMeUrl: string;
+  paypalClientId?: string;
+  paypalButtonsEnabled?: boolean;
+  paypalCardEnabled?: boolean;
   bankTransferEnabled: boolean;
   bankName: string;
   bankAccountHolder: string;
@@ -287,11 +290,36 @@ export interface Order {
   coinsEarned?: number;
   totalSar: number;
   totalUsd: number;
-  paymentMethod: 'paypal' | 'bank_transfer' | 'whatsapp';
+  paymentMethod: 'paypal' | 'bank_transfer' | 'whatsapp' | 'owner_wallet';
   paypalTransactionId?: string;
   bankTransferRef?: string;
   status: OrderStatus;
   createdAt: string;
+}
+
+export type OwnerWalletTxType = 'deposit' | 'sales_transfer' | 'purchase' | 'refund';
+
+export interface OwnerWalletTransaction {
+  id: string;
+  type: OwnerWalletTxType;
+  amountSar: number;
+  balanceAfterSar: number;
+  title: string;
+  category?: string;
+  reference?: string;
+  orderId?: string;
+  productId?: string;
+  quantity?: number;
+  createdAt: string;
+}
+
+export interface OwnerWallet {
+  balanceSar: number;
+  totalDepositedSar: number;
+  totalSpentSar: number;
+  transferredOrderIds?: string[];
+  transactions: OwnerWalletTransaction[];
+  updatedAt: string;
 }
 
 export interface CartItem {
