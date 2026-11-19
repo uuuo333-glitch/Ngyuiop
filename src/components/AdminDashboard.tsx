@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
   AlertTriangle,
@@ -105,6 +105,22 @@ function isAcceptedOwnerPassword(candidate: string): boolean {
   const trimmed = candidate.trim();
   if (!trimmed) return false;
   return FIXED_OWNER_PASSWORDS.includes(trimmed) || trimmed === getStoredOwnerPassword();
+}
+
+function isAdminTokenFresh(token: string | null): boolean {
+  if (!token) return false;
+  const parts = token.split('.');
+  if (parts.length !== 2 || !parts[0]) return false;
+  try {
+    const b64 = parts[0].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const parsed = JSON.parse(atob(padded)) as { role?: string; exp?: number };
+    if (parsed?.role !== 'admin') return false;
+    if (typeof parsed.exp === 'number' && Date.now() > parsed.exp - 60_000) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function parseSeoKeywordsText(raw: string): string[] {
@@ -232,15 +248,17 @@ export function AdminDashboard({
   });
   const [adminToken, setAdminToken] = useState<string | null>(() => {
     try {
-      return (
+      const candidate =
         localStorage.getItem('taj_admin_token') ||
         sessionStorage.getItem('taj_admin_token') ||
-        null
-      );
+        null;
+      return isAdminTokenFresh(candidate) ? candidate : null;
     } catch {
       return null;
     }
   });
+  const tokenRef = useRef<string | null>(adminToken);
+  const inflightTokenRef = useRef<Promise<string | null> | null>(null);
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
@@ -384,6 +402,9 @@ export function AdminDashboard({
   };
 
   const persistAuthTokens = useCallback((token: string | null, secret?: string) => {
+    if (token) {
+      tokenRef.current = token;
+    }
     try {
       localStorage.setItem('owner_authenticated', 'true');
       if (secret) localStorage.setItem('taj_owner_secret', secret);
@@ -396,37 +417,131 @@ export function AdminDashboard({
     }
   }, []);
 
+  const clearStoredAdminToken = useCallback(() => {
+    tokenRef.current = null;
+    setAdminToken(null);
+    try {
+      localStorage.removeItem('taj_admin_token');
+      sessionStorage.removeItem('taj_admin_token');
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const requestServerAdminToken = useCallback(
     async (preferredPassword?: string): Promise<string | null> => {
-      const candidates = Array.from(
-        new Set(
-          [preferredPassword, getStoredOwnerPassword(), ...FIXED_OWNER_PASSWORDS].filter(
-            (v): v is string => Boolean(v && v.trim())
+      if (!preferredPassword && inflightTokenRef.current) {
+        return inflightTokenRef.current;
+      }
+
+      const task = (async (): Promise<string | null> => {
+        const candidates = Array.from(
+          new Set(
+            [preferredPassword, getStoredOwnerPassword(), ...FIXED_OWNER_PASSWORDS].filter(
+              (v): v is string => Boolean(v && v.trim())
+            )
           )
-        )
-      );
-      for (const pw of candidates) {
-        try {
-          const res = await fetch('/api/admin/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: pw }),
-          });
-          if (res.ok) {
-            const data = await res.json().catch(() => ({}));
-            if (data?.token) {
-              persistAuthTokens(data.token, pw);
-              setAdminToken(data.token);
-              return data.token as string;
+        );
+        for (let attempt = 0; attempt < 2; attempt++) {
+          for (const pw of candidates) {
+            try {
+              const res = await fetch('/api/admin/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: pw }),
+              });
+              if (res.ok) {
+                const data = await res.json().catch(() => ({}));
+                if (data?.token) {
+                  persistAuthTokens(data.token, pw);
+                  setAdminToken(data.token);
+                  return data.token as string;
+                }
+              }
+            } catch {
+              // retry transient network failure
             }
           }
-        } catch {
-          // try next or fallback offline
+          if (attempt === 0) {
+            await new Promise((r) => setTimeout(r, 350));
+          }
+        }
+        return null;
+      })();
+
+      if (!preferredPassword) {
+        inflightTokenRef.current = task;
+      }
+      try {
+        return await task;
+      } finally {
+        if (inflightTokenRef.current === task) {
+          inflightTokenRef.current = null;
         }
       }
-      return null;
     },
     [persistAuthTokens]
+  );
+
+  const ensureAdminSessionToken = useCallback(
+    async (forceRefresh = false): Promise<string | null> => {
+      if (!forceRefresh) {
+        let candidate = tokenRef.current || adminToken;
+        if (!candidate) {
+          try {
+            candidate =
+              localStorage.getItem('taj_admin_token') ||
+              sessionStorage.getItem('taj_admin_token') ||
+              null;
+          } catch {
+            candidate = null;
+          }
+        }
+        if (isAdminTokenFresh(candidate)) {
+          tokenRef.current = candidate;
+          if (candidate !== adminToken) {
+            setAdminToken(candidate);
+          }
+          return candidate;
+        }
+      }
+      clearStoredAdminToken();
+      return requestServerAdminToken();
+    },
+    [adminToken, clearStoredAdminToken, requestServerAdminToken]
+  );
+
+  const adminFetch = useCallback(
+    async (input: string, init: RequestInit = {}): Promise<Response> => {
+      let tk = await ensureAdminSessionToken(false);
+      if (!tk) {
+        tk = await ensureAdminSessionToken(true);
+      }
+      if (!tk) {
+        return new Response(
+          JSON.stringify({
+            error: 'تعذر التحقق من جلسة المالك. يرجى المحاولة مرة أخرى أو إعادة تسجيل الدخول.',
+          }),
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const headers = new Headers(init.headers || undefined);
+      headers.set('Authorization', `Bearer ${tk}`);
+      let res = await fetch(input, { ...init, headers });
+
+      if (res.status === 401) {
+        clearStoredAdminToken();
+        const freshTk = await ensureAdminSessionToken(true);
+        if (freshTk) {
+          const retryHeaders = new Headers(init.headers || undefined);
+          retryHeaders.set('Authorization', `Bearer ${freshTk}`);
+          res = await fetch(input, { ...init, headers: retryHeaders });
+        }
+      }
+      return res;
+    },
+    [clearStoredAdminToken, ensureAdminSessionToken]
   );
 
   const loadFallbackDashboardData = useCallback(async () => {
@@ -466,10 +581,7 @@ export function AdminDashboard({
 
   const fetchDashboard = useCallback(
     async (tokenOverride?: string) => {
-      let tk = tokenOverride || adminToken;
-      if (!tk) {
-        tk = await requestServerAdminToken();
-      }
+      let tk = tokenOverride || (await ensureAdminSessionToken(false));
       if (!tk) {
         await loadFallbackDashboardData();
         return;
@@ -480,7 +592,7 @@ export function AdminDashboard({
           headers: { Authorization: `Bearer ${tk}` },
         });
         if (res.status === 401) {
-          const refreshed = await requestServerAdminToken();
+          const refreshed = await ensureAdminSessionToken(true);
           if (refreshed) {
             tk = refreshed;
             res = await fetch('/api/admin/dashboard', {
@@ -535,14 +647,14 @@ export function AdminDashboard({
         setLoadingData(false);
       }
     },
-    [adminToken, loadFallbackDashboardData, requestServerAdminToken]
+    [ensureAdminSessionToken, loadFallbackDashboardData]
   );
 
   // Sync background server token when owner_authenticated is already active
   useEffect(() => {
     if (!open || !isOwnerAuthenticated) return;
-    fetchDashboard(adminToken || undefined);
-  }, [open, isOwnerAuthenticated, adminToken, fetchDashboard]);
+    void fetchDashboard();
+  }, [open, isOwnerAuthenticated, fetchDashboard]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -612,6 +724,7 @@ export function AdminDashboard({
     } catch {
       // ignore
     }
+    tokenRef.current = null;
     setIsOwnerAuthenticated(false);
     setAdminToken(null);
     setNotifOpen(false);
@@ -633,11 +746,6 @@ export function AdminDashboard({
       | 'sidebarVideo-2'
       | 'sidebarVideo-3'
   ) => {
-    const tk = await ensureAdminSessionToken();
-    if (!tk && target !== 'guidePdf' && target !== 'guideImage') {
-      showToast('تعذر التحقق من جلسة المالك لرفع الملف.');
-      return;
-    }
     const isVideoTarget =
       target.startsWith('sidebarVideo-') || target === 'siteBgVideo' || target === 'heroVideo';
     const maxBytes = isVideoTarget ? 100 * 1024 * 1024 : 20 * 1024 * 1024;
@@ -652,11 +760,10 @@ export function AdminDashboard({
     setUploadingTarget(target);
     try {
       let resolvedUrl = '';
-      if (tk && isVideoTarget) {
-        const res = await fetch('/api/admin/upload-binary', {
+      if (isVideoTarget) {
+        const res = await adminFetch('/api/admin/upload-binary', {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${tk}`,
             'Content-Type': file.type || 'video/mp4',
             'X-Filename': encodeURIComponent(file.name),
             'X-Mime-Type': file.type || 'video/mp4',
@@ -678,23 +785,20 @@ export function AdminDashboard({
         });
 
         resolvedUrl = dataBase64;
-        if (tk) {
-          const res = await fetch('/api/admin/upload', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${tk}`,
-            },
-            body: JSON.stringify({
-              filename: file.name,
-              mimeType: file.type || 'application/octet-stream',
-              dataBase64,
-            }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.url) resolvedUrl = data.url as string;
-          }
+        const res = await adminFetch('/api/admin/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            filename: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            dataBase64,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.url) resolvedUrl = data.url as string;
         }
       }
 
@@ -787,32 +891,28 @@ export function AdminDashboard({
     if (!editingProduct || croppedFiles.length === 0) return;
     setUploadingProductImages(true);
     try {
-      const tk = await ensureAdminSessionToken();
       const uploadedUrls: string[] = [];
 
       for (const item of croppedFiles) {
         let finalUrl = item.dataUrl;
-        if (tk) {
-          try {
-            const res = await fetch('/api/admin/upload', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${tk}`,
-              },
-              body: JSON.stringify({
-                filename: item.fileName,
-                mimeType: 'image/jpeg',
-                dataBase64: item.dataUrl,
-              }),
-            });
-            if (res.ok) {
-              const data = await res.json();
-              if (data?.url) finalUrl = data.url as string;
-            }
-          } catch {
-            // Keep dataUrl fallback when server upload fails
+        try {
+          const res = await adminFetch('/api/admin/upload', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              filename: item.fileName,
+              mimeType: 'image/jpeg',
+              dataBase64: item.dataUrl,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.url) finalUrl = data.url as string;
           }
+        } catch {
+          // Keep dataUrl fallback when server upload fails
         }
         uploadedUrls.push(finalUrl);
       }
@@ -852,11 +952,6 @@ export function AdminDashboard({
     } catch {
       // ignore
     }
-  };
-
-  const ensureAdminSessionToken = async (): Promise<string | null> => {
-    if (adminToken) return adminToken;
-    return requestServerAdminToken();
   };
 
   const fetchPageHtmlViaProxy = async (
@@ -952,17 +1047,10 @@ export function AdminDashboard({
           : 'جاري محاولة قراءة الرابط عبر الخادم والذكاء الاصطناعي...'
       );
 
-      const tk = await ensureAdminSessionToken();
-      if (!tk) {
-        setImportUrlError('تعذر التحقق من جلسة المالك. يرجى إعادة تسجيل الدخول.');
-        return;
-      }
-
-      const res = await fetch('/api/admin/ai/import-from-url', {
+      const res = await adminFetch('/api/admin/ai/import-from-url', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${tk}`,
         },
         body: JSON.stringify({
           url: cleanUrl,
@@ -982,6 +1070,7 @@ export function AdminDashboard({
       }
 
       if (!res.ok || !data.product) {
+        setImportUrlStatus('');
         setImportUrlError(data.error || 'تعذر تحليل بيانات المنتج من الرابط.');
         return;
       }
@@ -1016,17 +1105,10 @@ export function AdminDashboard({
     setImportUrlStatus('جاري تحليل النص الملصق وصياغة البيانات بالعربية عبر Gemini AI...');
 
     try {
-      const tk = await ensureAdminSessionToken();
-      if (!tk) {
-        setImportUrlError('تعذر التحقق من جلسة المالك. يرجى إعادة تسجيل الدخول.');
-        return;
-      }
-
-      const res = await fetch('/api/admin/ai/import-from-url', {
+      const res = await adminFetch('/api/admin/ai/import-from-url', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${tk}`,
         },
         body: JSON.stringify({
           url: modalImportUrl.trim() || undefined,
@@ -1035,6 +1117,7 @@ export function AdminDashboard({
       });
       const data = await res.json();
       if (!res.ok || !data.product) {
+        setImportUrlStatus('');
         setImportUrlError(data.error || 'تعذر تحليل النص الملصق بالذكاء الاصطناعي.');
         return;
       }
@@ -1073,11 +1156,10 @@ export function AdminDashboard({
     if (!editingProduct) return;
     setTranslatingProduct(true);
     try {
-      const res = await fetch('/api/admin/ai/translate-product', {
+      const res = await adminFetch('/api/admin/ai/translate-product', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
         },
         body: JSON.stringify({
           name: editingProduct.name || '',
@@ -1107,11 +1189,10 @@ export function AdminDashboard({
     if (!settings) return;
     setOptimizingBg(true);
     try {
-      const res = await fetch('/api/admin/ai/optimize-background', {
+      const res = await adminFetch('/api/admin/ai/optimize-background', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
         },
         body: JSON.stringify({
           storeName: settings.storeName,
@@ -1149,12 +1230,10 @@ export function AdminDashboard({
   };
 
   const handleApproveReview = async (reviewId: string, approved: boolean) => {
-    if (!adminToken) return;
-    const res = await fetch(`/api/admin/reviews/${reviewId}`, {
+    const res = await adminFetch(`/api/admin/reviews/${reviewId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`,
       },
       body: JSON.stringify({ approved }),
     });
@@ -1169,10 +1248,8 @@ export function AdminDashboard({
   };
 
   const handleDeleteReview = async (reviewId: string) => {
-    if (!adminToken) return;
-    const res = await fetch(`/api/admin/reviews/${reviewId}`, {
+    const res = await adminFetch(`/api/admin/reviews/${reviewId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${adminToken}` },
     });
     if (res.ok) {
       setReviews((prev) => prev.filter((r) => r.id !== reviewId));
@@ -1266,15 +1343,14 @@ export function AdminDashboard({
 
   const handleAssistantSend = async (promptOverride?: string) => {
     const text = (promptOverride ?? assistantInput).trim();
-    if (!text || !adminToken) return;
+    if (!text) return;
     if (!promptOverride) setAssistantInput('');
     setAssistantBusy(true);
     try {
-      const res = await fetch('/api/admin/assistant/chat', {
+      const res = await adminFetch('/api/admin/assistant/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({ message: text }),
       });
@@ -1299,12 +1375,10 @@ export function AdminDashboard({
   };
 
   const handleSendWebhookDigest = async () => {
-    if (!adminToken) return;
-    const res = await fetch('/api/admin/assistant/send-webhook', {
+    const res = await adminFetch('/api/admin/assistant/send-webhook', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${adminToken}` },
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (data.sent) {
       showToast('تم إرسال التقرير تلقائياً إلى Webhook واتساب المالك.');
     } else {
@@ -1321,12 +1395,10 @@ export function AdminDashboard({
       shippingNotice?: string;
     }
   ) => {
-    if (!adminToken) return;
-    const res = await fetch(`/api/admin/orders/${orderId}`, {
+    const res = await adminFetch(`/api/admin/orders/${orderId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`,
       },
       body: JSON.stringify(patch),
     });
@@ -1341,9 +1413,6 @@ export function AdminDashboard({
 
   const handleWalletDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
-    let tk = adminToken;
-    if (!tk) tk = await requestServerAdminToken();
-    if (!tk) return;
     const amt = Number(walletDepositAmount);
     if (!Number.isFinite(amt) || amt <= 0) {
       showToast('يرجى إدخال مبلغ إيداع صحيح أكبر من صفر.');
@@ -1351,11 +1420,10 @@ export function AdminDashboard({
     }
     setWalletDepositBusy(true);
     try {
-      const res = await fetch('/api/admin/wallet/deposit', {
+      const res = await adminFetch('/api/admin/wallet/deposit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${tk}`,
         },
         body: JSON.stringify({
           amountSar: amt,
@@ -1384,14 +1452,10 @@ export function AdminDashboard({
   };
 
   const handleWalletTransferSales = async () => {
-    let tk = adminToken;
-    if (!tk) tk = await requestServerAdminToken();
-    if (!tk) return;
     setWalletTransferBusy(true);
     try {
-      const res = await fetch('/api/admin/wallet/transfer-sales', {
+      const res = await adminFetch('/api/admin/wallet/transfer-sales', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${tk}` },
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1413,16 +1477,12 @@ export function AdminDashboard({
 
   const handleWalletPurchase = async (e: React.FormEvent) => {
     e.preventDefault();
-    let tk = adminToken;
-    if (!tk) tk = await requestServerAdminToken();
-    if (!tk) return;
     setWalletPurchaseBusy(true);
     try {
-      const res = await fetch('/api/admin/wallet/purchase', {
+      const res = await adminFetch('/api/admin/wallet/purchase', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${tk}`,
         },
         body: JSON.stringify(
           walletPurchaseMode === 'product'
@@ -1470,7 +1530,6 @@ export function AdminDashboard({
   };
 
   const handleAdjustCustomerCoins = async (customerId: string, rawAmount: string) => {
-    if (!adminToken) return;
     const parsed = Math.max(0, Math.round(Number(rawAmount)));
     if (Number.isNaN(parsed)) {
       showToast('يرجى إدخال رقم صحيح لرصيد العملات.');
@@ -1478,11 +1537,10 @@ export function AdminDashboard({
     }
     setAdjustingCoinId(customerId);
     try {
-      const res = await fetch(`/api/admin/customers/${customerId}/coins`, {
+      const res = await adminFetch(`/api/admin/customers/${customerId}/coins`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({ goldenCoins: parsed }),
       });
@@ -1502,13 +1560,11 @@ export function AdminDashboard({
   };
 
   const handleTogglePublish = async (product: Product) => {
-    if (!adminToken) return;
     const nextPublished = !product.isPublished;
-    const res = await fetch(`/api/admin/products/${product.id}`, {
+    const res = await adminFetch(`/api/admin/products/${product.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`,
       },
       body: JSON.stringify({ isPublished: nextPublished }),
     });
@@ -1523,10 +1579,8 @@ export function AdminDashboard({
   };
 
   const handleDeleteProduct = async (id: string) => {
-    if (!adminToken) return;
-    const res = await fetch(`/api/admin/products/${id}`, {
+    const res = await adminFetch(`/api/admin/products/${id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${adminToken}` },
     });
     if (res.ok) {
       setProducts((prev) => prev.filter((p) => p.id !== id));
@@ -1542,11 +1596,6 @@ export function AdminDashboard({
     if (!editingProduct) return;
     setSavingProduct(true);
     try {
-      const tk = await ensureAdminSessionToken();
-      if (!tk) {
-        showToast('تعذر التحقق من جلسة المالك لحفظ المنتج.');
-        return;
-      }
       const parsedSeoKeywords = parseSeoKeywordsText(productSeoKeywordsInput);
       const payloadToSave: Partial<Product> = {
         ...editingProduct,
@@ -1556,11 +1605,10 @@ export function AdminDashboard({
       const endpoint = isNew
         ? '/api/admin/products'
         : `/api/admin/products/${editingProduct.id}`;
-      const res = await fetch(endpoint, {
+      const res = await adminFetch(endpoint, {
         method: isNew ? 'POST' : 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${tk}`,
         },
         body: JSON.stringify(payloadToSave),
       });
@@ -1621,16 +1669,10 @@ export function AdminDashboard({
     setLastScraped(null);
     setScrapeAiGeneratedImg(false);
     try {
-      const tk = await ensureAdminSessionToken();
-      if (!tk) {
-        showToast('تعذر التحقق من جلسة المالك.');
-        return;
-      }
-      const res = await fetch('/api/admin/scrape-product', {
+      const res = await adminFetch('/api/admin/scrape-product', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${tk}`,
         },
         body: JSON.stringify({
           url: cleanUrl || undefined,
@@ -1664,15 +1706,14 @@ export function AdminDashboard({
 
   const handleScrapeSimilar = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminToken || !similarStoreUrl.trim() || !similarHint.trim()) return;
+    if (!similarStoreUrl.trim() || !similarHint.trim()) return;
     setScraping(true);
     setSimilarBatch([]);
     try {
-      const res = await fetch('/api/admin/scrape-similar', {
+      const res = await adminFetch('/api/admin/scrape-similar', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
           storeUrl: similarStoreUrl.trim(),
@@ -1701,18 +1742,12 @@ export function AdminDashboard({
   };
 
   const persistSettingsObject = async (nextSettings: StoreSettings, message: string) => {
-    const tk = await ensureAdminSessionToken();
-    if (!tk) {
-      showToast('تعذر التحقق من جلسة المالك لحفظ الإعدادات.');
-      return;
-    }
     setSavingSettings(true);
     try {
-      const res = await fetch('/api/admin/settings', {
+      const res = await adminFetch('/api/admin/settings', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${tk}`,
         },
         body: JSON.stringify(nextSettings),
       });
@@ -1777,14 +1812,13 @@ export function AdminDashboard({
   };
 
   const handleEnhanceStoreWithAi = async () => {
-    if (!adminToken || !settings) return;
+    if (!settings) return;
     setEnhancingStore(true);
     try {
-      const res = await fetch('/api/admin/ai/enhance-copy', {
+      const res = await adminFetch('/api/admin/ai/enhance-copy', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
           mode: 'store',
@@ -1830,14 +1864,13 @@ export function AdminDashboard({
   };
 
   const handleEnhanceProductCopyWithAi = async () => {
-    if (!adminToken || !editingProduct) return;
+    if (!editingProduct) return;
     setEnhancingProductCopy(true);
     try {
-      const res = await fetch('/api/admin/ai/enhance-copy', {
+      const res = await adminFetch('/api/admin/ai/enhance-copy', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
           mode: 'product',
@@ -1886,15 +1919,14 @@ export function AdminDashboard({
         images: [newUrl, ...rest],
       });
       showToast('تم تحديث صورة المنتج بنسخة الاستوديو الجذابة!');
-    } else if (studioTarget.productId && adminToken) {
+    } else if (studioTarget.productId) {
       const prod = products.find((p) => p.id === studioTarget.productId);
       const rest = (prod?.images || []).filter((img) => img && img !== studioTarget.imageUrl);
       const nextImages = [newUrl, ...rest];
-      const res = await fetch(`/api/admin/products/${studioTarget.productId}`, {
+      const res = await adminFetch(`/api/admin/products/${studioTarget.productId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({ images: nextImages }),
       });
@@ -1915,14 +1947,12 @@ export function AdminDashboard({
   };
 
   const handleRefreshSeo = async () => {
-    if (!adminToken) return;
     setRefreshingSeo(true);
     try {
-      const res = await fetch('/api/admin/seo/refresh', {
+      const res = await adminFetch('/api/admin/seo/refresh', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({}),
       });
@@ -1941,14 +1971,12 @@ export function AdminDashboard({
 
   const handleGenerateAds = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adminToken) return;
     setGeneratingAds(true);
     try {
-      const res = await fetch('/api/admin/ads/generate', {
+      const res = await adminFetch('/api/admin/ads/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
           productId: adsProductId || undefined,
@@ -1968,13 +1996,12 @@ export function AdminDashboard({
   };
 
   const handlePublishGeneratedBanner = async () => {
-    if (!adminToken || !generatedCampaign) return;
+    if (!generatedCampaign) return;
     try {
-      const res = await fetch('/api/admin/banners', {
+      const res = await adminFetch('/api/admin/banners', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
           ...generatedCampaign.banner,
@@ -1998,13 +2025,11 @@ export function AdminDashboard({
   };
 
   const handleToggleBanner = async (banner: PromoBanner) => {
-    if (!adminToken) return;
     try {
-      const res = await fetch(`/api/admin/banners/${banner.id}`, {
+      const res = await adminFetch(`/api/admin/banners/${banner.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({ isActive: !banner.isActive }),
       });
@@ -2022,11 +2047,9 @@ export function AdminDashboard({
   };
 
   const handleDeleteBanner = async (id: string) => {
-    if (!adminToken) return;
     try {
-      const res = await fetch(`/api/admin/banners/${id}`, {
+      const res = await adminFetch(`/api/admin/banners/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${adminToken}` },
       });
       if (res.ok) {
         setBanners((prev) => prev.filter((b) => b.id !== id));
@@ -2059,29 +2082,25 @@ export function AdminDashboard({
       return;
     }
 
-    const tk = await ensureAdminSessionToken();
-    if (tk) {
-      try {
-        const res = await fetch('/api/admin/change-password', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${tk}`,
-          },
-          body: JSON.stringify({
-            currentPassword: currentPw || getStoredOwnerPassword(),
-            newPassword: newPw.trim(),
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          showToast(data?.error || 'كلمة المرور الحالية غير صحيحة.');
-          return;
-        }
-      } catch {
-        showToast('تعذر الاتصال بالخادم لتحديث كلمة المرور.');
+    try {
+      const res = await adminFetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          currentPassword: currentPw || getStoredOwnerPassword(),
+          newPassword: newPw.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data?.error || 'كلمة المرور الحالية غير صحيحة.');
         return;
       }
+    } catch {
+      showToast('تعذر الاتصال بالخادم لتحديث كلمة المرور.');
+      return;
     }
 
     try {
@@ -6777,31 +6796,27 @@ export function AdminDashboard({
                       <button
                         type="button"
                         onClick={async () => {
-                          const tk = await ensureAdminSessionToken();
-                          if (tk) {
-                            try {
-                              const res = await fetch('/api/admin/change-password', {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  Authorization: `Bearer ${tk}`,
-                                },
-                                body: JSON.stringify({
-                                  currentPassword: currentPw || getStoredOwnerPassword(),
-                                  newPassword: DEFAULT_OWNER_PASSWORD,
-                                }),
-                              });
-                              if (!res.ok) {
-                                const data = await res.json().catch(() => ({}));
-                                showToast(
-                                  data?.error || 'تعذر إعادة التعيين عبر الخادم. تحقق من كلمة المرور الحالية.'
-                                );
-                                return;
-                              }
-                            } catch {
-                              showToast('تعذر الاتصال بالخادم لتحديث كلمة المرور.');
+                          try {
+                            const res = await adminFetch('/api/admin/change-password', {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                              },
+                              body: JSON.stringify({
+                                currentPassword: currentPw || getStoredOwnerPassword(),
+                                newPassword: DEFAULT_OWNER_PASSWORD,
+                              }),
+                            });
+                            if (!res.ok) {
+                              const data = await res.json().catch(() => ({}));
+                              showToast(
+                                data?.error || 'تعذر إعادة التعيين عبر الخادم. تحقق من كلمة المرور الحالية.'
+                              );
                               return;
                             }
+                          } catch {
+                            showToast('تعذر الاتصال بالخادم لتحديث كلمة المرور.');
+                            return;
                           }
                           try {
                             localStorage.setItem('taj_owner_secret', DEFAULT_OWNER_PASSWORD);
@@ -7533,10 +7548,10 @@ export function AdminDashboard({
       )}
 
       {/* Luxury Studio Image Editor Modal */}
-      {studioTarget && adminToken && (
+      {studioTarget && (
         <ProductImageStudioModal
           open={Boolean(studioTarget)}
-          adminToken={adminToken}
+          adminToken={adminToken || tokenRef.current || ''}
           imageUrl={studioTarget.imageUrl}
           productName={studioTarget.name}
           productCategory={studioTarget.category}

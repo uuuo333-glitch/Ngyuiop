@@ -64,7 +64,10 @@ export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const DB_FILE = path.join(DATA_DIR, 'store.json');
 const SESSION_SECRET =
   process.env.SESSION_SECRET ||
-  crypto.createHash('sha256').update(process.cwd() + '_royal_taj_secret').digest('hex');
+  crypto
+    .createHash('sha256')
+    .update('royal_taj_gold_persistent_session_secret_v2')
+    .digest('hex');
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -83,7 +86,7 @@ export function verifyPassword(password: string, storedHash: string): boolean {
 
 export function createSignedToken(payload: Record<string, unknown>): string {
   const data = Buffer.from(
-    JSON.stringify({ ...payload, exp: Date.now() + 1000 * 60 * 60 * 24 * 7 })
+    JSON.stringify({ ...payload, exp: Date.now() + 1000 * 60 * 60 * 24 * 30 })
   ).toString('base64url');
   const sig = crypto.createHmac('sha256', SESSION_SECRET).update(data).digest('base64url');
   return `${data}.${sig}`;
