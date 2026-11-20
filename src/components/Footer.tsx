@@ -1,4 +1,5 @@
 import { Mail, MessageCircle, Pencil, Phone } from 'lucide-react';
+import { PwaInstallSection } from './PwaInstallSection';
 import type { PublicSettings } from '../types';
 
 import type { StoreLanguage } from '../i18n';
@@ -145,6 +146,8 @@ export function Footer({
           </div>
         </div>
       </div>
+
+      <PwaInstallSection />
 
       <div className="border-t border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-24 md:pb-4 flex flex-wrap items-center justify-between gap-3 text-xs text-[#847E73]">
