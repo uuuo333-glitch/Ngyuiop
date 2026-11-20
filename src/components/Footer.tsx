@@ -147,7 +147,7 @@ export function Footer({
       </div>
 
       <div className="border-t border-white/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-3 text-xs text-[#847E73]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-24 md:pb-4 flex flex-wrap items-center justify-between gap-3 text-xs text-[#847E73]">
           <span>
             © {new Date().getFullYear()} {settings.storeName}. جميع الحقوق محفوظة.
           </span>

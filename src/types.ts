@@ -22,6 +22,7 @@ export interface Product {
   description: string;
   descriptionEn?: string;
   images: string[];
+  sizes?: string[];
   specs: ProductSpec[];
   inStock: boolean;
   isPublished: boolean;
@@ -85,6 +86,7 @@ export interface GroupChatMessage {
 export interface StoreSettings {
   storeName: string;
   storeTagline: string;
+  storeLogoUrl?: string;
   categories: StoreCategory[];
   // Top Marquee Bar 1
   marqueeEnabled: boolean;
@@ -133,11 +135,26 @@ export interface StoreSettings {
   installmentsEnabled?: boolean;
   showImageUrlFields?: boolean;
   // Theme & Commerce
-  themePreset?: 'royal_gold' | 'titanium_exhaust' | 'carbon_amber' | 'stainless_silver' | 'custom';
+  themePreset?:
+    | 'royal_gold'
+    | 'titanium_exhaust'
+    | 'carbon_amber'
+    | 'stainless_silver'
+    | 'classic_gold'
+    | 'dark_metallic'
+    | 'light_modern'
+    | 'sport_red'
+    | 'custom';
   buttonStyle?: 'gold_wave' | 'standard' | 'exhaust_twin' | 'exhaust_flame';
+  cardStyle?: 'luxury_bordered' | 'glass_modern' | 'sharp_industrial' | 'elevated_soft';
+  themeFontFamily?: 'Tajawal' | 'El Messiri' | 'Cairo' | 'IBM Plex Sans Arabic' | 'Readex Pro';
   primaryGoldColor: string;
+  secondaryColor?: string;
   backgroundColor: string;
   surfaceColor: string;
+  textColor?: string;
+  productsSectionBgUrl?: string;
+  productsSectionBgOpacity?: number;
   whatsappNumber: string;
   contactEmail: string;
   paypalBusinessEmail: string;
@@ -220,6 +237,7 @@ export interface PromoBanner {
   title: string;
   subtitle: string;
   ctaText: string;
+  ctaUrl?: string;
   discountLabel?: string;
   accentColor: string;
   isActive: boolean;

@@ -195,9 +195,9 @@ export function HeaderBars({
         className="border-b border-white/10 backdrop-blur-md transition-colors"
         style={{ backgroundColor: `${settings.backgroundColor || '#09090B'}E8` }}
       >
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 min-h-16 py-2 flex items-center justify-between gap-2 sm:gap-3">
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 min-h-14 sm:min-h-16 py-2 flex items-center justify-between gap-1.5 sm:gap-3 overflow-x-clip">
           {/* Brand Wordmark */}
-          <div className="flex items-center gap-2 whitespace-nowrap shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 whitespace-nowrap min-w-0 flex-1">
             <a
               href="#top"
               onClick={(e) => {
@@ -206,19 +206,37 @@ export function HeaderBars({
                   onEditSection('identity');
                 }
               }}
-              className={`flex items-center gap-2 whitespace-nowrap shrink-0 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37] rounded-lg ${
+              className={`flex items-center gap-1.5 sm:gap-2 whitespace-nowrap min-w-0 max-w-full group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37] rounded-lg ${
                 editMode ? 'px-2 py-1 border border-dashed border-[#D4AF37]/70 bg-[#171510]/60' : ''
               }`}
             >
               <span
-                className="w-9 h-9 rounded-lg flex items-center justify-center border border-[#D4AF37]/50 bg-[#14120E] shrink-0"
+                className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center border border-[#D4AF37]/50 bg-[#14120E] overflow-hidden shrink-0"
+                style={{ borderColor: `${settings.primaryGoldColor || '#D4AF37'}80` }}
                 aria-hidden="true"
               >
-                <svg viewBox="0 0 24 24" className="w-4 h-4 text-[#D4AF37]" fill="currentColor">
-                  <path d="M3 18h18v2H3v-2zm0-2l2-9 4.5 3.5L12 4l2.5 6.5L19 7l2 9H3z" />
-                </svg>
+                {settings.storeLogoUrl?.trim() ? (
+                  <img
+                    src={settings.storeLogoUrl.trim()}
+                    alt={settings.storeName}
+                    className="w-full h-full object-contain p-0.5"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="w-4 h-4"
+                    style={{ color: settings.primaryGoldColor || '#D4AF37' }}
+                    fill="currentColor"
+                  >
+                    <path d="M3 18h18v2H3v-2zm0-2l2-9 4.5 3.5L12 4l2.5 6.5L19 7l2 9H3z" />
+                  </svg>
+                )}
               </span>
-              <span className="font-display text-sm sm:text-base font-bold text-[#F5F2EB] group-hover:text-[#E5C158] transition-colors max-w-[140px] sm:max-w-none truncate">
+              <span
+                className="font-display text-[11px] sm:text-base font-bold group-hover:opacity-90 transition-opacity min-w-0 truncate"
+                style={{ color: settings.textColor || '#F5F2EB' }}
+              >
                 {settings.storeName}
               </span>
               {editMode && (
@@ -343,14 +361,14 @@ export function HeaderBars({
           </div>
 
           {/* Action Controls */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={() => setMobileSearchOpen((v) => !v)}
               aria-label="Search"
-              className="md:hidden w-9 h-9 rounded-xl border border-white/10 bg-[#141418] flex items-center justify-center text-[#F5F2EB] hover:border-[#D4AF37]/50 cursor-pointer"
+              className="md:hidden w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-white/10 bg-[#141418] flex items-center justify-center text-[#F5F2EB] hover:border-[#D4AF37]/50 cursor-pointer"
             >
-              <Search className="w-4 h-4 text-[#D4AF37]" />
+              <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#D4AF37]" />
             </button>
 
             {/* Gulf Currency Switcher */}
@@ -359,7 +377,7 @@ export function HeaderBars({
                 value={currency}
                 onChange={(e) => onCurrencyChange(e.target.value as CurrencyCode)}
                 aria-label="Currency"
-                className="h-9 px-2 rounded-xl border border-white/10 bg-[#141418] text-xs font-bold text-[#E5C158] focus:outline-none focus:border-[#D4AF37] cursor-pointer"
+                className="h-8 sm:h-9 px-1.5 sm:px-2 rounded-xl border border-white/10 bg-[#141418] text-[10px] sm:text-xs font-bold text-[#E5C158] focus:outline-none focus:border-[#D4AF37] cursor-pointer max-w-[74px] sm:max-w-none"
               >
                 {CURRENCY_KEYS.map((code) => (
                   <option key={code} value={code}>
@@ -375,9 +393,9 @@ export function HeaderBars({
                 type="button"
                 onClick={() => onLanguageChange(lang === 'ar' ? 'en' : 'ar')}
                 title={lang === 'ar' ? 'Switch to English' : 'التبديل للعربية'}
-                className="h-9 px-2.5 rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 text-xs font-bold text-[#F5F2EB] flex items-center gap-1 cursor-pointer"
+                className="h-8 sm:h-9 px-1.5 sm:px-2.5 rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 text-[10px] sm:text-xs font-bold text-[#F5F2EB] flex items-center gap-1 cursor-pointer"
               >
-                <Globe className="w-3.5 h-3.5 text-[#D4AF37]" />
+                <Globe className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#D4AF37]" />
                 <span>{lang === 'ar' ? 'EN' : 'AR'}</span>
               </button>
             )}
@@ -388,9 +406,9 @@ export function HeaderBars({
               onClick={onOpenWishlist}
               title={t(lang, 'wishlistTitle')}
               aria-label={t(lang, 'wishlistTitle')}
-              className="relative w-9 h-9 rounded-xl border border-white/10 bg-[#141418] hover:border-red-400/50 flex items-center justify-center text-[#F5F2EB] cursor-pointer"
+              className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-white/10 bg-[#141418] hover:border-red-400/50 flex items-center justify-center text-[#F5F2EB] cursor-pointer"
             >
-              <Heart className={`w-4 h-4 ${wishlistCount > 0 ? 'text-red-400 fill-red-400' : 'text-[#C5BFB2]'}`} />
+              <Heart className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${wishlistCount > 0 ? 'text-red-400 fill-red-400' : 'text-[#C5BFB2]'}`} />
               {wishlistCount > 0 && (
                 <span className="absolute -top-1 -end-1 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
                   {wishlistCount}
@@ -401,16 +419,16 @@ export function HeaderBars({
             <button
               type="button"
               onClick={onOpenCustomerAuth}
-              className="h-9 px-2.5 sm:px-3 rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 text-xs font-medium text-[#F5F2EB] flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="h-8 sm:h-9 px-2 sm:px-3 rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 text-xs font-medium text-[#F5F2EB] flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <User className="w-4 h-4 text-[#D4AF37] shrink-0" />
+              <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#D4AF37] shrink-0" />
               <span className="hidden lg:inline">
                 {customer ? customer.name : t(lang, 'customerLogin')}
               </span>
               {customer && settings.loyaltyEnabled !== false && (
                 <span
                   title="Golden Coins"
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#D4AF37]/20 border border-[#D4AF37]/50 text-[#F5E1A4] text-[10px] font-bold tabular-nums"
+                  className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#D4AF37]/20 border border-[#D4AF37]/50 text-[#F5E1A4] text-[10px] font-bold tabular-nums"
                 >
                   <Coins className="w-3 h-3 text-[#D4AF37]" />
                   <span>{(customer.goldenCoins ?? 0).toLocaleString('en-US')}</span>
@@ -422,11 +440,11 @@ export function HeaderBars({
               type="button"
               onClick={onOpenCart}
               aria-label={t(lang, 'cart')}
-              className="relative h-9 px-2.5 sm:px-3 rounded-xl border border-[#D4AF37]/40 bg-[#171510] hover:border-[#D4AF37] text-xs font-medium text-[#F5F2EB] flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="relative h-8 sm:h-9 px-2 sm:px-3 rounded-xl border border-[#D4AF37]/40 bg-[#171510] hover:border-[#D4AF37] text-xs font-medium text-[#F5F2EB] flex items-center gap-1 sm:gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <ShoppingBag className="w-4 h-4 text-[#E5C158]" />
+              <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#E5C158]" />
               <span className="hidden sm:inline">{t(lang, 'cart')}</span>
-              <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-md bg-[#D4AF37] text-[#09090B] text-xs font-bold tabular-nums">
+              <span className="inline-flex items-center justify-center min-w-4 sm:min-w-5 h-4 sm:h-5 px-1 rounded-md bg-[#D4AF37] text-[#09090B] text-[10px] sm:text-xs font-bold tabular-nums">
                 {cartCount}
               </span>
             </button>
@@ -436,9 +454,9 @@ export function HeaderBars({
               onClick={onOpenAdmin}
               title={lang === 'en' ? 'Owner Portal' : 'لوحة تحكم المالك'}
               aria-label="لوحة تحكم المالك"
-              className="w-9 h-9 rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 flex items-center justify-center text-[#9E988C] hover:text-[#E5C158] transition-colors shrink-0 cursor-pointer"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 flex items-center justify-center text-[#9E988C] hover:text-[#E5C158] transition-colors shrink-0 cursor-pointer"
             >
-              <Lock className="w-4 h-4" />
+              <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           </div>
         </div>

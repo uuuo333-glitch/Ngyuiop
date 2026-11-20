@@ -82,10 +82,12 @@ import {
   enhanceStoreIdentityWithAi,
   generateAdsAndBanner,
   generateProductSeoData,
+  generateStoreThemeWithAi,
   importProductFromUrlWithHtml,
   lookupVehicleCompatibilityWithSearch,
   optimizeBackgroundWithAi,
   runOwnerAssistantTurn,
+  sanitizeAndNormalizeProductUrl,
   scrapeProductFromUrlOrName,
   scrapeSimilarProductsFromUrl,
   translateProductToEnglishWithAi,
@@ -112,6 +114,26 @@ function parseSeoKeywordsList(input: unknown): string[] {
   return result;
 }
 
+function parseSizesList(input: unknown): string[] {
+  const rawList = Array.isArray(input)
+    ? input.map((item) => String(item || ''))
+    : typeof input === 'string'
+      ? input.split(/[،,\n]+/)
+      : [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of rawList) {
+    const cleaned = item.trim().slice(0, 120);
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(cleaned);
+    if (result.length >= 20) break;
+  }
+  return result;
+}
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -120,8 +142,7 @@ app.post(
   '/api/admin/upload-binary',
   express.raw({ type: '*/*', limit: '150mb' }),
   (req, res) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+    const token = extractBearer(req);
     if (!token) {
       res.status(401).json({ error: 'مطلوب تسجيل دخول المالك.' });
       return;
@@ -162,8 +183,19 @@ app.get('/api/health', (_req, res) => {
 
 function extractBearer(req: Request): string | null {
   const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith('Bearer ')) return null;
-  return auth.slice(7).trim();
+  if (auth && auth.startsWith('Bearer ')) {
+    const t = auth.slice(7).trim();
+    if (t) return t;
+  }
+  const headerToken = req.headers['x-admin-token'];
+  if (typeof headerToken === 'string' && headerToken.trim()) {
+    return headerToken.trim();
+  }
+  const queryToken = req.query?.token;
+  if (typeof queryToken === 'string' && queryToken.trim()) {
+    return queryToken.trim();
+  }
+  return null;
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction): void {
@@ -204,6 +236,7 @@ function requireCustomer(req: CustomerRequest, res: Response, next: NextFunction
 // ==========================================
 
 app.get('/api/storefront', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.json({
     settings: getPublicSettings(),
     products: getPublishedProducts(),
@@ -856,6 +889,10 @@ app.post('/api/admin/login', (req, res) => {
   }
 });
 
+app.get('/api/admin/session', requireAdmin, (_req, res) => {
+  res.json({ ok: true, role: 'admin' });
+});
+
 app.post('/api/admin/login/send-email-otp', async (req, res) => {
   try {
     const { challengeToken } = (req.body || {}) as { challengeToken?: string };
@@ -1314,7 +1351,8 @@ app.post('/api/admin/ai/import-from-url', requireAdmin, async (req, res) => {
       htmlContent?: string;
       rawText?: string;
     };
-    const cleanUrl = (url || '').trim();
+    const rawUrl = (url || '').trim();
+    const cleanUrl = rawUrl ? sanitizeAndNormalizeProductUrl(rawUrl) : '';
     const cleanRaw = (rawText || '').trim();
 
     if (cleanRaw.length < 15 && (!cleanUrl || !/^https?:\/\//i.test(cleanUrl))) {
@@ -1363,7 +1401,8 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
     compareAtPriceSar: body.compareAtPriceSar ? Number(body.compareAtPriceSar) : undefined,
     description: body.description?.trim() || '',
     descriptionEn: body.descriptionEn?.trim() || undefined,
-    images: Array.isArray(body.images) ? body.images.filter(Boolean) : [],
+    images: Array.isArray(body.images) ? body.images.map((s) => String(s || '').trim()).filter(Boolean) : [],
+    sizes: parseSizesList(body.sizes),
     specs: Array.isArray(body.specs) ? body.specs : [],
     installationGuidePdfUrl: body.installationGuidePdfUrl?.trim() || undefined,
     installationGuideImages: Array.isArray(body.installationGuideImages)
@@ -1373,7 +1412,7 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
       ? Number(body.fuelEfficiencyGainPercent)
       : undefined,
     inStock: body.inStock !== false,
-    isPublished: Boolean(body.isPublished),
+    isPublished: body.isPublished !== false,
     costPriceSar: body.costPriceSar ? Number(body.costPriceSar) : undefined,
     profitMarginPercent: body.profitMarginPercent ? Number(body.profitMarginPercent) : undefined,
     seoTitle: body.seoTitle,
@@ -1389,6 +1428,12 @@ app.put('/api/admin/products/:id', requireAdmin, (req, res) => {
   const patch = { ...(req.body as Partial<Product>) };
   if ('seoKeywords' in patch) {
     patch.seoKeywords = parseSeoKeywordsList(patch.seoKeywords);
+  }
+  if ('sizes' in patch) {
+    patch.sizes = parseSizesList(patch.sizes);
+  }
+  if (Array.isArray(patch.images)) {
+    patch.images = patch.images.map((s) => String(s || '').trim()).filter(Boolean);
   }
   const updated = updateProduct(String(req.params.id), patch);
   if (!updated) {
@@ -1415,7 +1460,8 @@ app.post('/api/admin/scrape-product', requireAdmin, async (req, res) => {
       productName?: string;
       category?: string;
     };
-    const cleanUrl = (url || '').trim();
+    const rawUrl = (url || '').trim();
+    const cleanUrl = rawUrl ? sanitizeAndNormalizeProductUrl(rawUrl) : '';
     const cleanName = (productName || '').trim();
 
     if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
@@ -1542,6 +1588,27 @@ app.post('/api/admin/ai/enhance-copy', requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('AI copy enhance error:', error);
     res.status(500).json({ error: 'تعذر تحسين النصوص بالذكاء الاصطناعي.' });
+  }
+});
+
+// AI Smart Appearance & Theme Generator
+app.post('/api/admin/ai/generate-theme', requireAdmin, async (req, res) => {
+  try {
+    const { description, prompt, themePrompt } = (req.body || {}) as {
+      description?: string;
+      prompt?: string;
+      themePrompt?: string;
+    };
+    const clean = (description || prompt || themePrompt || '').trim();
+    if (!clean || clean.length < 3) {
+      res.status(400).json({ error: 'يرجى كتابة وصف للثيم المطلوب (3 أحرف على الأقل).' });
+      return;
+    }
+    const theme = await generateStoreThemeWithAi(clean);
+    res.json({ theme });
+  } catch (error) {
+    console.error('AI theme generation error:', error);
+    res.status(500).json({ error: 'تعذر توليد الثيم بالذكاء الاصطناعي.' });
   }
 });
 
@@ -1706,6 +1773,7 @@ app.post('/api/admin/banners', requireAdmin, (req, res) => {
     title: body.title || 'عرض ملكي خاص',
     subtitle: body.subtitle || '',
     ctaText: body.ctaText || 'تسوق الآن',
+    ctaUrl: typeof body.ctaUrl === 'string' && body.ctaUrl.trim() ? body.ctaUrl.trim() : undefined,
     discountLabel: body.discountLabel,
     accentColor: body.accentColor || '#D4AF37',
     isActive: body.isActive !== false,

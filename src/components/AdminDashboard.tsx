@@ -22,6 +22,7 @@ import {
   Film,
   Globe,
   HeartHandshake,
+  Image as ImageIcon,
   KeyRound,
   Landmark,
   Languages,
@@ -30,11 +31,15 @@ import {
   Lock,
   LogOut,
   Megaphone,
+  Menu,
   MessageCircle,
   Package,
   Palette,
+  Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
+  Ruler,
   Search,
   Send,
   ShoppingBag,
@@ -44,13 +49,22 @@ import {
   Ticket,
   Trash2,
   Truck,
+  Type,
   Upload,
   Users,
   Wallet,
   Wand2,
   X,
 } from 'lucide-react';
-import { auth, googleSignIn, saveProductToFirestore } from '../firebase';
+import {
+  auth,
+  deleteBannerFromFirestore,
+  deleteProductFromFirestore,
+  googleSignIn,
+  saveBannerToFirestore,
+  saveProductToFirestore,
+  saveStorefrontConfigToFirestore,
+} from '../firebase';
 import { DEFAULT_CURRENCY_RATES } from '../i18n';
 import type {
   AssistantMessage,
@@ -78,7 +92,7 @@ import {
   DEFAULT_GROUP_CHAT_TITLE,
 } from './GroupChatSection';
 import { ProductImageStudioModal } from './ProductImageStudioModal';
-import { ResilientImage } from './ResilientImage';
+import { DEFAULT_PRODUCT_IMAGE, ResilientImage } from './ResilientImage';
 import { SquareImageCropModal } from './SquareImageCropModal';
 
 interface AdminDashboardProps {
@@ -96,10 +110,43 @@ type AdminTab =
   | 'ai-seo'
   | 'analytics'
   | 'drive'
+  | 'appearance'
   | 'settings';
 
 const DEFAULT_OWNER_PASSWORD = '604608';
 const FIXED_OWNER_PASSWORDS = ['604608', '2026'];
+
+// Strict in-memory fallbacks so Preview iframes with partitioned/blocked storage never lose session state
+let memoryOwnerAuthenticated = false;
+let memoryAdminToken: string | null = null;
+let memoryOwnerSecret: string | null = null;
+
+function safeStorageGet(store: 'local' | 'session', key: string): string | null {
+  try {
+    const s = store === 'local' ? window.localStorage : window.sessionStorage;
+    return s.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeStorageSet(store: 'local' | 'session', key: string, val: string): void {
+  try {
+    const s = store === 'local' ? window.localStorage : window.sessionStorage;
+    s.setItem(key, val);
+  } catch {
+    // ignore storage restriction inside sandboxed iframe
+  }
+}
+
+function safeStorageRemove(store: 'local' | 'session', key: string): void {
+  try {
+    const s = store === 'local' ? window.localStorage : window.sessionStorage;
+    s.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
 
 function isAcceptedOwnerPassword(candidate: string): boolean {
   const trimmed = candidate.trim();
@@ -222,16 +269,13 @@ function createFallbackAdminSettings(): StoreSettings {
 }
 
 function getStoredOwnerPassword(): string {
-  try {
-    const stored = localStorage.getItem('taj_owner_secret');
-    if (stored === 'Admin@2026') {
-      localStorage.setItem('taj_owner_secret', DEFAULT_OWNER_PASSWORD);
-      return DEFAULT_OWNER_PASSWORD;
-    }
-    return stored || DEFAULT_OWNER_PASSWORD;
-  } catch {
+  if (memoryOwnerSecret) return memoryOwnerSecret;
+  const stored = safeStorageGet('local', 'taj_owner_secret');
+  if (stored === 'Admin@2026') {
+    safeStorageSet('local', 'taj_owner_secret', DEFAULT_OWNER_PASSWORD);
     return DEFAULT_OWNER_PASSWORD;
   }
+  return stored || DEFAULT_OWNER_PASSWORD;
 }
 
 export function AdminDashboard({
@@ -239,23 +283,16 @@ export function AdminDashboard({
   onClose,
   onStorefrontUpdated,
 }: AdminDashboardProps) {
-  const [isOwnerAuthenticated, setIsOwnerAuthenticated] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('owner_authenticated') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [isOwnerAuthenticated, setIsOwnerAuthenticated] = useState<boolean>(
+    () => memoryOwnerAuthenticated || safeStorageGet('local', 'owner_authenticated') === 'true'
+  );
   const [adminToken, setAdminToken] = useState<string | null>(() => {
-    try {
-      const candidate =
-        localStorage.getItem('taj_admin_token') ||
-        sessionStorage.getItem('taj_admin_token') ||
-        null;
-      return isAdminTokenFresh(candidate) ? candidate : null;
-    } catch {
-      return null;
-    }
+    const candidate =
+      memoryAdminToken ||
+      safeStorageGet('local', 'taj_admin_token') ||
+      safeStorageGet('session', 'taj_admin_token') ||
+      null;
+    return isAdminTokenFresh(candidate) ? candidate : null;
   });
   const tokenRef = useRef<string | null>(adminToken);
   const inflightTokenRef = useRef<Promise<string | null> | null>(null);
@@ -264,6 +301,7 @@ export function AdminDashboard({
   const [loggingIn, setLoggingIn] = useState(false);
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [toast, setToast] = useState('');
   const [notifOpen, setNotifOpen] = useState(false);
@@ -308,11 +346,13 @@ export function AdminDashboard({
   // Products filter & editor
   const [productFilter, setProductFilter] = useState<'all' | 'published' | 'drafts'>('all');
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
+  const [sizeDraftInput, setSizeDraftInput] = useState('');
   const [productSeoKeywordsInput, setProductSeoKeywordsInput] = useState('');
   const [pendingCropFiles, setPendingCropFiles] = useState<File[]>([]);
   const [savingProduct, setSavingProduct] = useState(false);
   const [translatingProduct, setTranslatingProduct] = useState(false);
   const [uploadingProductImages, setUploadingProductImages] = useState(false);
+  const [uploadingDirectImage, setUploadingDirectImage] = useState(false);
   const [modalImportUrl, setModalImportUrl] = useState('');
   const [modalManualText, setModalManualText] = useState('');
   const [showManualPasteBox, setShowManualPasteBox] = useState(false);
@@ -376,6 +416,24 @@ export function AdminDashboard({
   const [newPromoType, setNewPromoType] = useState<'percent' | 'fixed'>('percent');
   const [newPromoValue, setNewPromoValue] = useState('10');
 
+  // Manual Promo Banners CRUD state (No AI)
+  const [editingBanner, setEditingBanner] = useState<PromoBanner | null>(null);
+  const [newBannerForm, setNewBannerForm] = useState<{
+    discountLabel: string;
+    title: string;
+    subtitle: string;
+    ctaText: string;
+    ctaUrl: string;
+    accentColor: string;
+    isActive: boolean;
+  } | null>(null);
+  const [savingBanner, setSavingBanner] = useState(false);
+
+  // Smart Appearance & Theme Studio state
+  const [aiThemePrompt, setAiThemePrompt] = useState('');
+  const [generatingTheme, setGeneratingTheme] = useState(false);
+  const [aiThemeRationale, setAiThemeRationale] = useState('');
+
   // Settings, Upload, Coins & Password
   const [savingSettings, setSavingSettings] = useState(false);
   const [uploadingTarget, setUploadingTarget] = useState('');
@@ -397,35 +455,38 @@ export function AdminDashboard({
     setImportUrlStatus('');
     setImportUrlWarning('');
     setImportUrlError('');
+    setSizeDraftInput('');
     setProductSeoKeywordsInput((productData.seoKeywords || []).slice(0, 15).join('، '));
-    setEditingProduct({ ...productData });
+    setEditingProduct({
+      ...productData,
+      sizes: Array.isArray(productData.sizes) ? [...productData.sizes] : [],
+      images: Array.isArray(productData.images) ? [...productData.images] : [],
+    });
   };
 
   const persistAuthTokens = useCallback((token: string | null, secret?: string) => {
+    memoryOwnerAuthenticated = true;
+    if (secret) {
+      memoryOwnerSecret = secret;
+    }
     if (token) {
+      memoryAdminToken = token;
       tokenRef.current = token;
     }
-    try {
-      localStorage.setItem('owner_authenticated', 'true');
-      if (secret) localStorage.setItem('taj_owner_secret', secret);
-      if (token) {
-        localStorage.setItem('taj_admin_token', token);
-        sessionStorage.setItem('taj_admin_token', token);
-      }
-    } catch {
-      // ignore storage quota
+    safeStorageSet('local', 'owner_authenticated', 'true');
+    if (secret) safeStorageSet('local', 'taj_owner_secret', secret);
+    if (token) {
+      safeStorageSet('local', 'taj_admin_token', token);
+      safeStorageSet('session', 'taj_admin_token', token);
     }
   }, []);
 
   const clearStoredAdminToken = useCallback(() => {
+    memoryAdminToken = null;
     tokenRef.current = null;
     setAdminToken(null);
-    try {
-      localStorage.removeItem('taj_admin_token');
-      sessionStorage.removeItem('taj_admin_token');
-    } catch {
-      // ignore
-    }
+    safeStorageRemove('local', 'taj_admin_token');
+    safeStorageRemove('session', 'taj_admin_token');
   }, []);
 
   const requestServerAdminToken = useCallback(
@@ -437,16 +498,20 @@ export function AdminDashboard({
       const task = (async (): Promise<string | null> => {
         const candidates = Array.from(
           new Set(
-            [preferredPassword, getStoredOwnerPassword(), ...FIXED_OWNER_PASSWORDS].filter(
-              (v): v is string => Boolean(v && v.trim())
-            )
+            [
+              preferredPassword,
+              getStoredOwnerPassword(),
+              ...FIXED_OWNER_PASSWORDS,
+            ].filter((v): v is string => Boolean(v && v.trim()))
           )
         );
-        for (let attempt = 0; attempt < 2; attempt++) {
+        for (let attempt = 0; attempt < 3; attempt++) {
           for (const pw of candidates) {
             try {
               const res = await fetch('/api/admin/login', {
                 method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password: pw }),
               });
@@ -462,8 +527,8 @@ export function AdminDashboard({
               // retry transient network failure
             }
           }
-          if (attempt === 0) {
-            await new Promise((r) => setTimeout(r, 350));
+          if (attempt < 2) {
+            await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
           }
         }
         return null;
@@ -486,18 +551,15 @@ export function AdminDashboard({
   const ensureAdminSessionToken = useCallback(
     async (forceRefresh = false): Promise<string | null> => {
       if (!forceRefresh) {
-        let candidate = tokenRef.current || adminToken;
-        if (!candidate) {
-          try {
-            candidate =
-              localStorage.getItem('taj_admin_token') ||
-              sessionStorage.getItem('taj_admin_token') ||
-              null;
-          } catch {
-            candidate = null;
-          }
-        }
+        const candidate =
+          memoryAdminToken ||
+          tokenRef.current ||
+          adminToken ||
+          safeStorageGet('local', 'taj_admin_token') ||
+          safeStorageGet('session', 'taj_admin_token') ||
+          null;
         if (isAdminTokenFresh(candidate)) {
+          memoryAdminToken = candidate;
           tokenRef.current = candidate;
           if (candidate !== adminToken) {
             setAdminToken(candidate);
@@ -528,7 +590,8 @@ export function AdminDashboard({
 
       const headers = new Headers(init.headers || undefined);
       headers.set('Authorization', `Bearer ${tk}`);
-      let res = await fetch(input, { ...init, headers });
+      headers.set('X-Admin-Token', tk);
+      let res = await fetch(input, { ...init, headers, credentials: 'same-origin' });
 
       if (res.status === 401) {
         clearStoredAdminToken();
@@ -536,7 +599,8 @@ export function AdminDashboard({
         if (freshTk) {
           const retryHeaders = new Headers(init.headers || undefined);
           retryHeaders.set('Authorization', `Bearer ${freshTk}`);
-          res = await fetch(input, { ...init, headers: retryHeaders });
+          retryHeaders.set('X-Admin-Token', freshTk);
+          res = await fetch(input, { ...init, headers: retryHeaders, credentials: 'same-origin' });
         }
       }
       return res;
@@ -546,7 +610,7 @@ export function AdminDashboard({
 
   const loadFallbackDashboardData = useCallback(async () => {
     try {
-      const cachedRaw = localStorage.getItem('taj_admin_dashboard_cache');
+      const cachedRaw = safeStorageGet('local', 'taj_admin_dashboard_cache');
       if (cachedRaw) {
         const cached = JSON.parse(cachedRaw);
         if (cached.settings) {
@@ -563,7 +627,7 @@ export function AdminDashboard({
         if (cached.analytics) setAnalytics(cached.analytics);
         return;
       }
-      const sfRes = await fetch('/api/storefront');
+      const sfRes = await fetch('/api/storefront', { cache: 'no-store' });
       if (sfRes.ok) {
         const sfData = await sfRes.json();
         const baseSettings = { ...createFallbackAdminSettings(), ...(sfData.settings || {}) };
@@ -583,20 +647,33 @@ export function AdminDashboard({
     async (tokenOverride?: string) => {
       let tk = tokenOverride || (await ensureAdminSessionToken(false));
       if (!tk) {
+        tk = await ensureAdminSessionToken(true);
+      }
+      if (!tk) {
         await loadFallbackDashboardData();
         return;
       }
       setLoadingData(true);
       try {
         let res = await fetch('/api/admin/dashboard', {
-          headers: { Authorization: `Bearer ${tk}` },
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: {
+            Authorization: `Bearer ${tk}`,
+            'X-Admin-Token': tk,
+          },
         });
         if (res.status === 401) {
           const refreshed = await ensureAdminSessionToken(true);
           if (refreshed) {
             tk = refreshed;
             res = await fetch('/api/admin/dashboard', {
-              headers: { Authorization: `Bearer ${refreshed}` },
+              credentials: 'same-origin',
+              cache: 'no-store',
+              headers: {
+                Authorization: `Bearer ${refreshed}`,
+                'X-Admin-Token': refreshed,
+              },
             });
           }
         }
@@ -717,23 +794,24 @@ export function AdminDashboard({
   };
 
   const handleAdminLogout = () => {
-    try {
-      localStorage.removeItem('owner_authenticated');
-      localStorage.removeItem('taj_admin_token');
-      sessionStorage.removeItem('taj_admin_token');
-    } catch {
-      // ignore
-    }
+    memoryOwnerAuthenticated = false;
+    memoryAdminToken = null;
+    safeStorageRemove('local', 'owner_authenticated');
+    safeStorageRemove('local', 'taj_admin_token');
+    safeStorageRemove('session', 'taj_admin_token');
     tokenRef.current = null;
     setIsOwnerAuthenticated(false);
     setAdminToken(null);
     setNotifOpen(false);
+    setMobileMenuOpen(false);
     onClose();
   };
 
   const handleUploadFile = async (
     file: File,
     target:
+      | 'storeLogo'
+      | 'productsSectionBg'
       | 'heroImage'
       | 'heroVideo'
       | 'heroSlideshow'
@@ -820,6 +898,16 @@ export function AdminDashboard({
       }
 
       const activeSettings = settings || createFallbackAdminSettings();
+      if (target === 'storeLogo') {
+        setSettings({ ...activeSettings, storeLogoUrl: resolvedUrl });
+        showToast('تم رفع شعار المتجر بنجاح! اضغط "حفظ" لتثبيته في المتجر و Firebase فوراً.');
+        return;
+      }
+      if (target === 'productsSectionBg') {
+        setSettings({ ...activeSettings, productsSectionBgUrl: resolvedUrl });
+        showToast('تم رفع خلفية قسم المنتجات! اضغط "حفظ وتطبيق" لتثبيتها.');
+        return;
+      }
       if (target === 'heroImage') {
         setSettings({ ...activeSettings, heroImageUrl: resolvedUrl });
       } else if (target === 'heroVideo') {
@@ -987,19 +1075,96 @@ export function AdminDashboard({
     return { blocked: sawBlock };
   };
 
+  // Direct single-click upload from device for instant Image Preview + persistence
+  const handleDirectDeviceImageUpload = async (file: File | null) => {
+    if (!file || !editingProduct) return;
+    if (file.size > 20 * 1024 * 1024) {
+      showToast(`حجم الصورة "${file.name}" يتجاوز 20 ميجابايت.`);
+      return;
+    }
+    setUploadingDirectImage(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('تعذر قراءة ملف الصورة.'));
+        reader.readAsDataURL(file);
+      });
+
+      let finalUrl = dataUrl;
+      try {
+        const res = await adminFetch('/api/admin/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: file.name || `product_${Date.now()}.jpg`,
+            mimeType: file.type || 'image/jpeg',
+            dataBase64: dataUrl,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.url) finalUrl = String(data.url);
+        }
+      } catch {
+        // Keep Base64 dataUrl fallback so preview and save still work seamlessly
+      }
+
+      setEditingProduct((prev) => {
+        if (!prev) return prev;
+        const rest = (prev.images || []).filter((s) => s && s.trim() && s !== finalUrl);
+        return {
+          ...prev,
+          images: [finalUrl, ...rest],
+        };
+      });
+      showToast('تم رفع الصورة وتحديث المعاينة بنجاح!');
+    } catch {
+      showToast('تعذر رفع الصورة من الجهاز.');
+    } finally {
+      setUploadingDirectImage(false);
+    }
+  };
+
+  const handleAddSizeTag = (raw: string) => {
+    const cleaned = raw.trim().slice(0, 120);
+    if (!cleaned || !editingProduct) return;
+    const current = Array.isArray(editingProduct.sizes) ? editingProduct.sizes : [];
+    if (current.some((s) => s.toLowerCase() === cleaned.toLowerCase())) {
+      setSizeDraftInput('');
+      return;
+    }
+    setEditingProduct({
+      ...editingProduct,
+      sizes: [...current, cleaned].slice(0, 20),
+    });
+    setSizeDraftInput('');
+  };
+
+  const handleRemoveSizeTag = (idx: number) => {
+    if (!editingProduct) return;
+    setEditingProduct({
+      ...editingProduct,
+      sizes: (editingProduct.sizes || []).filter((_, i) => i !== idx),
+    });
+  };
+
   const applyAiImportedProduct = (
     imported: Partial<Product> & { originalExtractedPrice?: string },
     sourceUrl?: string
   ) => {
-    const existingCustomUploads = (editingProduct?.images || []).filter((img) =>
-      img.startsWith('data:')
+    const existingManualImages = (editingProduct?.images || []).filter((img) =>
+      Boolean(img && img.trim())
     );
     const importedImages = Array.isArray(imported.images)
       ? imported.images.filter(
           (s: unknown): s is string => typeof s === 'string' && s.trim().length > 0
         )
       : [];
-    const combinedImages = Array.from(new Set([...importedImages, ...existingCustomUploads]));
+    const combinedImages = Array.from(new Set([...importedImages, ...existingManualImages]));
+    const importedSizes = Array.isArray(imported.sizes)
+      ? imported.sizes.map((s) => String(s || '').trim()).filter(Boolean)
+      : [];
 
     setEditingProduct((prev) => ({
       ...(prev || {}),
@@ -1015,6 +1180,7 @@ export function AdminDashboard({
         settings?.categories?.[0]?.name ||
         'دبات تلوث البنزين',
       images: combinedImages.length > 0 ? combinedImages : prev?.images || [],
+      sizes: importedSizes.length > 0 ? importedSizes : prev?.sizes || [],
       specs:
         Array.isArray(imported.specs) && imported.specs.length > 0
           ? imported.specs
@@ -1028,8 +1194,8 @@ export function AdminDashboard({
 
   const handleImportProductFromUrlInModal = async () => {
     if (!editingProduct) return;
-    const cleanUrl = modalImportUrl.trim();
-    if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) {
+    const rawInput = modalImportUrl.trim();
+    if (!rawInput || !/^https?:\/\//i.test(rawInput)) {
       setImportUrlError('يرجى إدخال رابط منتج صحيح يبدأ بـ https:// أو http://');
       return;
     }
@@ -1037,15 +1203,20 @@ export function AdminDashboard({
     setImportingFromUrl(true);
     setImportUrlError('');
     setImportUrlWarning('');
-    setImportUrlStatus('جاري جلب محتوى صفحة المنتج عبر البروكسي المجاني...');
+
+    const isProtectedStoreHost = /(?:aliexpress\.|amazon\.|amzn\.|noon\.|temu\.|shein\.)/i.test(
+      rawInput
+    );
+    setImportUrlStatus(
+      isProtectedStoreHost
+        ? 'جاري تنظيف الرابط وسحب البيانات عبر محرك الخادم وتحويل السعر إلى الريال السعودي...'
+        : 'جاري تنظيف الرابط وقراءة صفحة المنتج وتحويل العملة إلى الريال السعودي...'
+    );
 
     try {
-      const proxyResult = await fetchPageHtmlViaProxy(cleanUrl);
-      setImportUrlStatus(
-        proxyResult.html
-          ? 'تم سحب محتوى الصفحة بنجاح — جاري التحليل والصياغة عبر Gemini AI...'
-          : 'جاري محاولة قراءة الرابط عبر الخادم والذكاء الاصطناعي...'
-      );
+      const proxyResult = isProtectedStoreHost
+        ? { html: undefined, blocked: true }
+        : await fetchPageHtmlViaProxy(rawInput);
 
       const res = await adminFetch('/api/admin/ai/import-from-url', {
         method: 'POST',
@@ -1053,11 +1224,15 @@ export function AdminDashboard({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          url: cleanUrl,
+          url: rawInput,
           htmlContent: proxyResult.html,
         }),
       });
       const data = await res.json();
+
+      if (data.cleanedUrl && typeof data.cleanedUrl === 'string') {
+        setModalImportUrl(data.cleanedUrl);
+      }
 
       if (data.blockedByProtection || (!data.product && res.ok)) {
         setImportUrlStatus('');
@@ -1075,11 +1250,13 @@ export function AdminDashboard({
         return;
       }
 
-      const imgCount = applyAiImportedProduct(data.product, cleanUrl);
+      const finalCleanUrl =
+        typeof data.cleanedUrl === 'string' && data.cleanedUrl ? data.cleanedUrl : rawInput;
+      const imgCount = applyAiImportedProduct(data.product, finalCleanUrl);
       setImportUrlStatus(
-        `تم استيراد بيانات المنتج وتعبئة الحقول تلقائياً (${imgCount} صورة). راجع البيانات والسعر ثم احفظ في Firebase.`
+        `تم تنظيف الرابط واستيراد بيانات المنتج وتحويل العملة إلى SAR (${imgCount} صورة). راجع البيانات ثم احفظ.`
       );
-      showToast('تم استيراد وتعبئة بيانات المنتج وصوره بالذكاء الاصطناعي!');
+      showToast('تم استيراد وتعبئة بيانات المنتج وصوره بالريال السعودي بنجاح!');
     } catch {
       setImportUrlStatus('');
       setImportUrlWarning(
@@ -1570,7 +1747,12 @@ export function AdminDashboard({
     });
     if (res.ok) {
       const data = await res.json();
-      setProducts((prev) => prev.map((p) => (p.id === product.id ? data.product : p)));
+      const updatedProd = data.product as Product;
+      setProducts((prev) => prev.map((p) => (p.id === product.id ? updatedProd : p)));
+      const activeUser = auth.currentUser || firebaseUser;
+      if (activeUser && activeUser.emailVerified) {
+        saveProductToFirestore(activeUser, updatedProd).catch(() => {});
+      }
       onStorefrontUpdated();
       showToast(nextPublished ? 'تم نشر المنتج في واجهة المتجر.' : 'تم إخفاء المنتج كمسودة سرية.');
     } else {
@@ -1584,6 +1766,10 @@ export function AdminDashboard({
     });
     if (res.ok) {
       setProducts((prev) => prev.filter((p) => p.id !== id));
+      const activeUser = auth.currentUser || firebaseUser;
+      if (activeUser && activeUser.emailVerified) {
+        deleteProductFromFirestore(activeUser, id).catch(() => {});
+      }
       onStorefrontUpdated();
       showToast('تم حذف المنتج.');
     } else {
@@ -1597,8 +1783,24 @@ export function AdminDashboard({
     setSavingProduct(true);
     try {
       const parsedSeoKeywords = parseSeoKeywordsText(productSeoKeywordsInput);
+      const cleanedSizes = Array.from(
+        new Set(
+          [
+            ...(editingProduct.sizes || []),
+            ...(sizeDraftInput.trim() ? [sizeDraftInput.trim()] : []),
+          ]
+            .map((s) => String(s || '').trim())
+            .filter(Boolean)
+        )
+      ).slice(0, 20);
+      const cleanedImages = (editingProduct.images || [])
+        .map((s) => String(s || '').trim())
+        .filter(Boolean);
+
       const payloadToSave: Partial<Product> = {
         ...editingProduct,
+        images: cleanedImages,
+        sizes: cleanedSizes,
         seoKeywords: parsedSeoKeywords,
       };
       const isNew = !editingProduct.id;
@@ -1637,6 +1839,7 @@ export function AdminDashboard({
       }
 
       setEditingProduct(null);
+      setSizeDraftInput('');
       setProductSeoKeywordsInput('');
       setModalImportUrl('');
       setModalManualText('');
@@ -1647,7 +1850,7 @@ export function AdminDashboard({
       onStorefrontUpdated();
       showToast(
         syncedToFirebase
-          ? 'تم حفظ المنتج في المتجر وقاعدة بيانات Firebase بنجاح!'
+          ? 'تم حفظ المنتج ونشره في المتجر و Firebase بنجاح!'
           : 'تم حفظ بيانات المنتج وعرضها في المتجر بنجاح.'
       );
     } catch {
@@ -1753,10 +1956,23 @@ export function AdminDashboard({
       });
       if (res.ok) {
         const data = await res.json();
-        setSettings(data.settings);
-        setStoreSeoKeywordsInput((data.settings?.seoKeywords || []).slice(0, 15).join('، '));
+        const savedSettings: StoreSettings = data.settings || nextSettings;
+        setSettings(savedSettings);
+        setStoreSeoKeywordsInput((savedSettings?.seoKeywords || []).slice(0, 15).join('، '));
+
+        let syncedToFirebase = false;
+        const activeUser = auth.currentUser || firebaseUser;
+        if (activeUser && activeUser.emailVerified) {
+          try {
+            await saveStorefrontConfigToFirestore(activeUser, savedSettings);
+            syncedToFirebase = true;
+          } catch (err) {
+            console.error('Firebase storefront settings sync error:', err);
+          }
+        }
+
         onStorefrontUpdated();
-        showToast(message);
+        showToast(syncedToFirebase ? `${message} (وتم التحديث الفوري في Firebase)` : message);
       } else {
         const data = await res.json().catch(() => ({}));
         showToast(data?.error || 'تعذر حفظ الإعدادات على الخادم.');
@@ -2013,7 +2229,16 @@ export function AdminDashboard({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.banner) {
-        setBanners((prev) => [data.banner, ...prev]);
+        const savedBanner = data.banner as PromoBanner;
+        setBanners((prev) => [savedBanner, ...prev]);
+        const activeUser = auth.currentUser || firebaseUser;
+        if (activeUser && activeUser.emailVerified) {
+          try {
+            await saveBannerToFirestore(activeUser, savedBanner);
+          } catch (err) {
+            console.error('Firebase banner sync error:', err);
+          }
+        }
         onStorefrontUpdated();
         showToast('تم نشر البنر الترويجي في واجهة المتجر بنجاح.');
       } else {
@@ -2021,6 +2246,110 @@ export function AdminDashboard({
       }
     } catch {
       showToast('حدث خطأ في الاتصال بالخادم أثناء نشر البنر.');
+    }
+  };
+
+  const handleCreateManualBanner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBannerForm || !newBannerForm.title.trim()) {
+      showToast('يرجى إدخال عنوان البنر الترويجي.');
+      return;
+    }
+    setSavingBanner(true);
+    try {
+      const res = await adminFetch('/api/admin/banners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          discountLabel: newBannerForm.discountLabel.trim(),
+          title: newBannerForm.title.trim(),
+          subtitle: newBannerForm.subtitle.trim(),
+          ctaText: newBannerForm.ctaText.trim() || 'تسوق الآن',
+          ctaUrl: newBannerForm.ctaUrl.trim() || '#products',
+          accentColor: newBannerForm.accentColor || '#D4AF37',
+          isActive: newBannerForm.isActive,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.banner) {
+        const created = data.banner as PromoBanner;
+        setBanners((prev) => [created, ...prev]);
+        let syncedFb = false;
+        const activeUser = auth.currentUser || firebaseUser;
+        if (activeUser && activeUser.emailVerified) {
+          try {
+            await saveBannerToFirestore(activeUser, created);
+            syncedFb = true;
+          } catch (err) {
+            console.error('Firebase banner save error:', err);
+          }
+        }
+        setNewBannerForm(null);
+        onStorefrontUpdated();
+        showToast(
+          syncedFb
+            ? 'تم إضافة بنر العرض وحفظه فوراً في المتجر و Firebase!'
+            : 'تم إضافة بنر العرض وحفظه في المتجر بنجاح.'
+        );
+      } else {
+        showToast(data?.error || 'تعذر إنشاء البنر اليدوي.');
+      }
+    } catch {
+      showToast('حدث خطأ أثناء حفظ البنر الجديد.');
+    } finally {
+      setSavingBanner(false);
+    }
+  };
+
+  const handleSaveEditedBanner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBanner || !editingBanner.title.trim()) {
+      showToast('يرجى إدخال عنوان البنر.');
+      return;
+    }
+    setSavingBanner(true);
+    try {
+      const res = await adminFetch(`/api/admin/banners/${editingBanner.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          discountLabel: editingBanner.discountLabel,
+          title: editingBanner.title.trim(),
+          subtitle: editingBanner.subtitle.trim(),
+          ctaText: editingBanner.ctaText.trim() || 'تسوق الآن',
+          ctaUrl: editingBanner.ctaUrl?.trim() || '#products',
+          accentColor: editingBanner.accentColor || '#D4AF37',
+          isActive: editingBanner.isActive,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.banner) {
+        const updated = data.banner as PromoBanner;
+        setBanners((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+        let syncedFb = false;
+        const activeUser = auth.currentUser || firebaseUser;
+        if (activeUser && activeUser.emailVerified) {
+          try {
+            await saveBannerToFirestore(activeUser, updated);
+            syncedFb = true;
+          } catch (err) {
+            console.error('Firebase banner update error:', err);
+          }
+        }
+        setEditingBanner(null);
+        onStorefrontUpdated();
+        showToast(
+          syncedFb
+            ? 'تم تعديل البنر وحفظه فوراً في المتجر و Firebase!'
+            : 'تم حفظ تعديلات البنر وتحديثها في المتجر.'
+        );
+      } else {
+        showToast(data?.error || 'تعذر تعديل البنر.');
+      }
+    } catch {
+      showToast('تعذر الاتصال بالخادم لحفظ تعديلات البنر.');
+    } finally {
+      setSavingBanner(false);
     }
   };
 
@@ -2035,9 +2364,18 @@ export function AdminDashboard({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.banner) {
-        setBanners((prev) => prev.map((b) => (b.id === banner.id ? data.banner : b)));
+        const updated = data.banner as PromoBanner;
+        setBanners((prev) => prev.map((b) => (b.id === banner.id ? updated : b)));
+        const activeUser = auth.currentUser || firebaseUser;
+        if (activeUser && activeUser.emailVerified) {
+          try {
+            await saveBannerToFirestore(activeUser, updated);
+          } catch (err) {
+            console.error('Firebase banner toggle error:', err);
+          }
+        }
         onStorefrontUpdated();
-        showToast(data.banner.isActive ? 'تم إظهار البنر في المتجر.' : 'تم إخفاء البنر.');
+        showToast(updated.isActive ? 'تم إظهار البنر في المتجر.' : 'تم إخفاء البنر.');
       } else {
         showToast(data?.error || 'تعذر تحديث حالة البنر.');
       }
@@ -2053,8 +2391,19 @@ export function AdminDashboard({
       });
       if (res.ok) {
         setBanners((prev) => prev.filter((b) => b.id !== id));
+        if (editingBanner?.id === id) setEditingBanner(null);
+        let syncedFb = false;
+        const activeUser = auth.currentUser || firebaseUser;
+        if (activeUser && activeUser.emailVerified) {
+          try {
+            await deleteBannerFromFirestore(id);
+            syncedFb = true;
+          } catch (err) {
+            console.error('Firebase banner delete error:', err);
+          }
+        }
         onStorefrontUpdated();
-        showToast('تم حذف البنر الترويجي.');
+        showToast(syncedFb ? 'تم حذف البنر من المتجر و Firebase.' : 'تم حذف البنر الترويجي.');
       } else {
         const data = await res.json().catch(() => ({}));
         showToast(data?.error || 'تعذر حذف البنر الترويجي.');
@@ -2072,6 +2421,71 @@ export function AdminDashboard({
       seoKeywords: parseSeoKeywordsText(storeSeoKeywordsInput),
     };
     await persistSettingsObject(syncedSettings, 'تم حفظ وتطبيق إعدادات المتجر والثيم بنجاح.');
+  };
+
+  const handleGenerateThemeWithAi = async () => {
+    if (!settings) return;
+    const promptText = aiThemePrompt.trim();
+    if (promptText.length < 3) {
+      showToast('يرجى كتابة وصف للثيم المطلوب (مثلاً: ثيم ليلي فخم باللون الأسود والذهبي).');
+      return;
+    }
+    setGeneratingTheme(true);
+    setAiThemeRationale('');
+    try {
+      const res = await adminFetch('/api/admin/ai/generate-theme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: promptText }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.theme) {
+        showToast(data?.error || 'تعذر توليد الثيم بالذكاء الاصطناعي.');
+        return;
+      }
+      const theme = data.theme;
+      const nextSettings: StoreSettings = {
+        ...settings,
+        themePreset: 'custom',
+        primaryGoldColor: theme.primaryGoldColor || settings.primaryGoldColor || '#D4AF37',
+        secondaryColor: theme.secondaryColor || settings.secondaryColor || '#E5C158',
+        backgroundColor: theme.backgroundColor || settings.backgroundColor || '#09090B',
+        surfaceColor: theme.surfaceColor || settings.surfaceColor || '#131317',
+        textColor: theme.textColor || settings.textColor || '#F5F2EB',
+        themeFontFamily: theme.themeFontFamily || settings.themeFontFamily || 'Tajawal',
+        cardStyle: theme.cardStyle || settings.cardStyle || 'luxury_bordered',
+        buttonStyle: theme.buttonStyle || settings.buttonStyle || 'gold_wave',
+      };
+      setSettings(nextSettings);
+      if (theme.rationale) setAiThemeRationale(theme.rationale);
+      await persistSettingsObject(
+        nextSettings,
+        `تم توليد وتطبيق ثيم "${theme.themeName || 'مخصص'}" في المتجر!`
+      );
+    } catch {
+      showToast('حدث خطأ أثناء الاتصال بمحرك توليد الثيمات.');
+    } finally {
+      setGeneratingTheme(false);
+    }
+  };
+
+  const handleRestoreDefaultColors = async () => {
+    if (!settings) return;
+    const restored: StoreSettings = {
+      ...settings,
+      themePreset: 'royal_gold',
+      primaryGoldColor: '#D4AF37',
+      secondaryColor: '#E5C158',
+      backgroundColor: '#09090B',
+      surfaceColor: '#121216',
+      textColor: '#F5F2EB',
+      themeFontFamily: 'Tajawal',
+      cardStyle: 'luxury_bordered',
+      buttonStyle: 'gold_wave',
+    };
+    setSettings(restored);
+    setAiThemeRationale('');
+    await persistSettingsObject(restored, 'تمت استعادة الألوان والخطوط الافتراضية للمتجر.');
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -2206,29 +2620,29 @@ export function AdminDashboard({
   return (
     <div className="fixed inset-0 z-50 bg-[#09090B] text-[#F5F2EB] flex flex-col overflow-hidden">
       {/* Top Admin Header */}
-      <header className="h-16 px-4 sm:px-6 border-b border-white/10 bg-[#111115] flex items-center justify-between gap-4 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="w-9 h-9 rounded-xl border border-[#D4AF37]/40 bg-[#171510] flex items-center justify-center shrink-0">
+      <header className="min-h-16 px-3 sm:px-6 py-2 border-b border-white/10 bg-[#111115] flex flex-wrap items-center justify-between gap-2 sm:gap-4 shrink-0">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+          <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-[#D4AF37]/40 bg-[#171510] flex items-center justify-center shrink-0">
             <LayoutDashboard className="w-4 h-4 text-[#D4AF37]" />
           </span>
           <div className="min-w-0">
-            <div className="font-display text-base sm:text-lg font-bold truncate">
+            <div className="font-display text-sm sm:text-lg font-bold truncate">
               لوحة تحكم المالك · {settings?.storeName || 'المتجر'}
             </div>
-            <div className="text-xs text-[#9E988C] truncate">
-              إدارة شاملة للمنتجات، المساعد الشخصي والواتساب، الأشرطة المتحركة، والخلفيات
+            <div className="hidden sm:block text-xs text-[#9E988C] truncate">
+              إدارة شاملة للمنتجات، الهوية والبنرات اليدوية، استوديو المظهر والثيمات الذكي، والطلبات
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0 relative">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 relative">
           {/* Owner Header Notifications Bell */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setNotifOpen((v) => !v)}
               aria-label="إشعارات المالك"
-              className="relative w-9 h-9 rounded-lg border border-white/15 bg-[#16161B] hover:border-[#D4AF37]/60 flex items-center justify-center text-[#E5C158] cursor-pointer"
+              className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-lg border border-white/15 bg-[#16161B] hover:border-[#D4AF37]/60 flex items-center justify-center text-[#E5C158] cursor-pointer"
             >
               <Bell className="w-4 h-4" />
               {totalNotifications > 0 && (
@@ -2276,16 +2690,16 @@ export function AdminDashboard({
           <button
             type="button"
             onClick={handleAdminLogout}
-            className="h-9 px-3.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+            className="h-8 sm:h-9 px-2.5 sm:px-3.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-[11px] sm:text-xs font-bold flex items-center gap-1 sm:gap-1.5 shadow-sm transition-colors cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>تسجيل الخروج</span>
+            <span className="hidden xs:inline sm:inline">خروج</span>
           </button>
 
           <button
             type="button"
             onClick={onClose}
-            className="h-9 px-4 rounded-lg border border-[#D4AF37]/40 bg-[#171510] hover:border-[#D4AF37] text-xs font-bold text-[#E5C158] cursor-pointer"
+            className="h-8 sm:h-9 px-3 sm:px-4 rounded-lg border border-[#D4AF37]/40 bg-[#171510] hover:border-[#D4AF37] text-[11px] sm:text-xs font-bold text-[#E5C158] cursor-pointer"
           >
             عرض المتجر
           </button>
@@ -2293,51 +2707,106 @@ export function AdminDashboard({
       </header>
 
       {toast && (
-        <div className="fixed bottom-5 end-5 z-50 px-4 py-3 rounded-xl border border-[#D4AF37]/50 bg-[#171510] text-sm text-[#E5C158] shadow-2xl">
+        <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:end-5 z-50 px-4 py-3 rounded-xl border border-[#D4AF37]/50 bg-[#171510] text-xs sm:text-sm text-[#E5C158] shadow-2xl">
           {toast}
         </div>
       )}
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Sidebar Navigation */}
-        <aside className="lg:w-64 border-b lg:border-b-0 lg:border-e border-white/10 bg-[#0D0D10] p-3 flex lg:flex-col gap-1.5 overflow-x-auto shrink-0">
-          {[
+        {/* Mobile Hamburger Navigation Bar + Collapsible Dropdown */}
+        {(() => {
+          const adminTabs: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
             { id: 'overview', label: 'الطلبات والعملاء', icon: LayoutDashboard },
             { id: 'wallet', label: 'محفظة المالك والشراء', icon: Wallet },
-            {
-              id: 'assistant',
-              label: `المساعد الذكي والواتساب (${alerts.length})`,
-              icon: Bot,
-            },
+            { id: 'assistant', label: `المساعد الذكي والواتساب (${alerts.length})`, icon: Bot },
             { id: 'products', label: `المنتجات والمسودات (${products.length})`, icon: Package },
             { id: 'scraper', label: 'أداة السحب السرية AI', icon: Wand2 },
             { id: 'ai-seo', label: 'SEO وإعلانات جوجل AI', icon: Megaphone },
             { id: 'analytics', label: 'تقارير الأداء والأرباح', icon: BarChart3 },
             { id: 'drive', label: 'Google Drive السحابي', icon: Cloud },
-            { id: 'settings', label: 'الأشرطة والخلفيات والثيم', icon: Palette },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id as AdminTab)}
-                className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
-                  active
-                    ? 'bg-[#D4AF37] text-[#09090B] font-bold'
-                    : 'text-[#C5BFB2] hover:bg-white/5'
-                }`}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </aside>
+            { id: 'appearance', label: 'استوديو المظهر والثيمات الذكي', icon: Sparkles },
+            { id: 'settings', label: 'الهوية والبنرات والإعدادات', icon: Palette },
+          ];
+          const currentTabMeta = adminTabs.find((t) => t.id === activeTab) || adminTabs[0];
+          const CurrentIcon = currentTabMeta.icon;
+          return (
+            <>
+              <div className="lg:hidden border-b border-white/10 bg-[#0D0D10] shrink-0">
+                <div className="px-3 py-2.5 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMobileMenuOpen((v) => !v)}
+                    aria-expanded={mobileMenuOpen}
+                    aria-label="قائمة أقسام لوحة التحكم"
+                    className="flex-1 min-h-[44px] px-3 rounded-xl border border-[#D4AF37]/40 bg-[#15130E] text-[#F5F2EB] flex items-center justify-between gap-2 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <CurrentIcon className="w-4 h-4 text-[#E5C158] shrink-0" />
+                      <span className="text-xs font-bold truncate">{currentTabMeta.label}</span>
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#E5C158] shrink-0">
+                      <span>{mobileMenuOpen ? 'إغلاق' : 'القائمة'}</span>
+                      {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+                    </span>
+                  </button>
+                </div>
+
+                {mobileMenuOpen && (
+                  <nav className="px-3 pb-3 grid grid-cols-1 gap-1.5 max-h-[60vh] overflow-y-auto border-t border-white/10 pt-2">
+                    {adminTabs.map((tab) => {
+                      const Icon = tab.icon;
+                      const active = activeTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveTab(tab.id);
+                            setMobileMenuOpen(false);
+                          }}
+                          className={`min-h-[44px] flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-medium text-start transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-[#D4AF37] text-[#09090B] font-bold'
+                              : 'bg-[#141418] text-[#C5BFB2] hover:bg-white/5'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4 shrink-0" />
+                          <span>{tab.label}</span>
+                        </button>
+                      );
+                    })}
+                  </nav>
+                )}
+              </div>
+
+              {/* Desktop Sidebar Navigation */}
+              <aside className="hidden lg:flex lg:w-64 lg:flex-col border-e border-white/10 bg-[#0D0D10] p-3 gap-1.5 overflow-y-auto shrink-0">
+                {adminTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const active = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+                        active
+                          ? 'bg-[#D4AF37] text-[#09090B] font-bold'
+                          : 'text-[#C5BFB2] hover:bg-white/5'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </aside>
+            </>
+          );
+        })()}
 
         {/* Main Admin Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8 space-y-6">
           {loadingData && !settings ? (
             <div className="py-16 text-center text-sm text-[#9E988C]">جاري تحميل البيانات...</div>
           ) : (
@@ -3710,10 +4179,12 @@ export function AdminDashboard({
                       onClick={() =>
                         openProductEditor({
                           name: '',
+                          nameEn: '',
                           category: activeCategories[0]?.name || 'دبات تلوث البنزين',
                           priceSar: 1200,
                           description: '',
                           images: [],
+                          sizes: [],
                           seoKeywords: [],
                           specs: [{ label: 'نوع الوقود', value: 'بنزين / ديزل' }],
                           inStock: true,
@@ -3839,10 +4310,12 @@ export function AdminDashboard({
                         onClick={() =>
                           openProductEditor({
                             name: '',
+                            nameEn: '',
                             category: activeCategories[0]?.name || 'دبات تلوث البنزين',
                             priceSar: 1200,
                             description: '',
                             images: [],
+                            sizes: [],
                             seoKeywords: [],
                             specs: [{ label: 'نوع الوقود', value: 'بنزين / ديزل' }],
                             inStock: true,
@@ -4604,39 +5077,278 @@ export function AdminDashboard({
                       </div>
                     )}
 
-                    <div className="pt-4 border-t border-white/10 space-y-2.5">
-                      <div className="text-xs font-bold text-[#9E988C]">
-                        بنرات العروض الحالية ({banners.length})
+                    <div className="pt-4 border-t border-white/10 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs font-bold text-[#E5C158]">
+                          إدارة بنرات العروض الحالية يدوياً ({banners.length})
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNewBannerForm({
+                              discountLabel: 'خصم حصري',
+                              title: '',
+                              subtitle: '',
+                              ctaText: 'تسوق الآن',
+                              ctaUrl: '#products',
+                              accentColor: '#D4AF37',
+                              isActive: true,
+                            })
+                          }
+                          className="h-8 px-3 rounded-lg border border-[#D4AF37]/45 bg-[#171510] text-xs font-bold text-[#E5C158] flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>إضافة بنر عرض يدوياً</span>
+                        </button>
                       </div>
+
+                      {newBannerForm && (
+                        <form
+                          onSubmit={handleCreateManualBanner}
+                          className="p-4 rounded-xl border border-[#D4AF37]/40 bg-[#14120C] space-y-3"
+                        >
+                          <div className="text-xs font-bold text-[#E5C158]">
+                            إضافة بنر عرض جديد يدوياً (بدون ذكاء اصطناعي)
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <input
+                              type="text"
+                              placeholder="وسم الخصم (مثال: خصم 20%)"
+                              value={newBannerForm.discountLabel}
+                              onChange={(e) =>
+                                setNewBannerForm({
+                                  ...newBannerForm,
+                                  discountLabel: e.target.value,
+                                })
+                              }
+                              className="h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                            />
+                            <input
+                              type="text"
+                              required
+                              placeholder="عنوان البنر الرئيسي *"
+                              value={newBannerForm.title}
+                              onChange={(e) =>
+                                setNewBannerForm({ ...newBannerForm, title: e.target.value })
+                              }
+                              className="h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                            />
+                            <input
+                              type="text"
+                              placeholder="نص الزر (مثال: تسوق الآن)"
+                              value={newBannerForm.ctaText}
+                              onChange={(e) =>
+                                setNewBannerForm({ ...newBannerForm, ctaText: e.target.value })
+                              }
+                              className="h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                            />
+                            <input
+                              type="text"
+                              dir="ltr"
+                              placeholder="رابط الزر (#products أو https://...)"
+                              value={newBannerForm.ctaUrl}
+                              onChange={(e) =>
+                                setNewBannerForm({ ...newBannerForm, ctaUrl: e.target.value })
+                              }
+                              className="h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                            />
+                          </div>
+                          <textarea
+                            rows={2}
+                            placeholder="الوصف الفرعي لبنر العرض..."
+                            value={newBannerForm.subtitle}
+                            onChange={(e) =>
+                              setNewBannerForm({ ...newBannerForm, subtitle: e.target.value })
+                            }
+                            className="w-full p-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                          />
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <label className="flex items-center gap-2 text-xs text-[#C5BFB2] cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={newBannerForm.isActive}
+                                onChange={(e) =>
+                                  setNewBannerForm({
+                                    ...newBannerForm,
+                                    isActive: e.target.checked,
+                                  })
+                                }
+                              />
+                              <span>إظهار فوراً للعملاء</span>
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setNewBannerForm(null)}
+                                className="h-8 px-3 rounded-lg border border-white/15 text-xs text-[#9E988C] cursor-pointer"
+                              >
+                                إلغاء
+                              </button>
+                              <button
+                                type="submit"
+                                disabled={savingBanner}
+                                className="btn-gold-wave h-8 px-4 rounded-lg text-xs font-bold cursor-pointer"
+                              >
+                                {savingBanner ? 'جاري الحفظ...' : 'حفظ البنر في المتجر و Firebase'}
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      )}
+
                       {banners.map((b) => (
                         <div
                           key={b.id}
-                          className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border border-white/10 bg-[#0D0D10]"
+                          className="p-3.5 rounded-xl border border-white/10 bg-[#0D0D10] space-y-3"
                         >
-                          <div>
-                            <div className="text-sm font-bold text-[#F5F2EB]">{b.title}</div>
-                            <div className="text-xs text-[#9E988C]">{b.subtitle}</div>
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="min-w-0 space-y-0.5">
+                              {b.discountLabel && (
+                                <span className="inline-block text-[11px] font-bold text-[#E5C158]">
+                                  {b.discountLabel}
+                                </span>
+                              )}
+                              <div className="text-sm font-bold text-[#F5F2EB]">{b.title}</div>
+                              <div className="text-xs text-[#9E988C]">{b.subtitle}</div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleBanner(b)}
+                                className={`px-3 py-1 rounded-lg text-xs cursor-pointer ${
+                                  b.isActive
+                                    ? 'bg-emerald-950/50 border border-emerald-500/40 text-emerald-300'
+                                    : 'bg-white/5 border border-white/15 text-[#9E988C]'
+                                }`}
+                              >
+                                {b.isActive ? 'ظاهر في المتجر' : 'مخفي'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingBanner({ ...b })}
+                                className="px-3 py-1 rounded-lg border border-[#D4AF37]/40 bg-[#171510] text-xs font-bold text-[#E5C158] flex items-center gap-1 cursor-pointer"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                <span>تعديل</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteBanner(b.id)}
+                                className="px-2.5 py-1 rounded-lg border border-red-500/35 bg-red-950/30 text-red-300 hover:bg-red-950/50 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>حذف</span>
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleBanner(b)}
-                              className={`px-3 py-1 rounded-lg text-xs cursor-pointer ${
-                                b.isActive
-                                  ? 'bg-emerald-950/50 border border-emerald-500/40 text-emerald-300'
-                                  : 'bg-white/5 border border-white/15 text-[#9E988C]'
-                              }`}
+
+                          {editingBanner?.id === b.id && (
+                            <form
+                              onSubmit={handleSaveEditedBanner}
+                              className="pt-3 border-t border-white/10 space-y-3"
                             >
-                              {b.isActive ? 'ظاهر في المتجر' : 'مخفي'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteBanner(b.id)}
-                              className="p-1.5 text-red-400 hover:bg-red-950/30 rounded-lg cursor-pointer"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <div>
+                                  <label className="block text-[11px] text-[#9E988C] mb-1">
+                                    وسم العرض
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingBanner.discountLabel || ''}
+                                    onChange={(e) =>
+                                      setEditingBanner({
+                                        ...editingBanner,
+                                        discountLabel: e.target.value,
+                                      })
+                                    }
+                                    className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] text-[#9E988C] mb-1">
+                                    عنوان البنر الرئيسي
+                                  </label>
+                                  <input
+                                    type="text"
+                                    required
+                                    value={editingBanner.title}
+                                    onChange={(e) =>
+                                      setEditingBanner({
+                                        ...editingBanner,
+                                        title: e.target.value,
+                                      })
+                                    }
+                                    className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] text-[#9E988C] mb-1">
+                                    نص الزر
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingBanner.ctaText || ''}
+                                    onChange={(e) =>
+                                      setEditingBanner({
+                                        ...editingBanner,
+                                        ctaText: e.target.value,
+                                      })
+                                    }
+                                    className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] text-[#9E988C] mb-1">
+                                    رابط الزر
+                                  </label>
+                                  <input
+                                    type="text"
+                                    dir="ltr"
+                                    value={editingBanner.ctaUrl || '#products'}
+                                    onChange={(e) =>
+                                      setEditingBanner({
+                                        ...editingBanner,
+                                        ctaUrl: e.target.value,
+                                      })
+                                    }
+                                    className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-[11px] text-[#9E988C] mb-1">
+                                  النص الفرعي للبنر
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  value={editingBanner.subtitle}
+                                  onChange={(e) =>
+                                    setEditingBanner({
+                                      ...editingBanner,
+                                      subtitle: e.target.value,
+                                    })
+                                  }
+                                  className="w-full p-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                                />
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingBanner(null)}
+                                  className="h-8 px-3 rounded-lg border border-white/15 text-xs text-[#9E988C] cursor-pointer"
+                                >
+                                  إلغاء
+                                </button>
+                                <button
+                                  type="submit"
+                                  disabled={savingBanner}
+                                  className="btn-gold-wave h-8 px-4 rounded-lg text-xs font-bold cursor-pointer"
+                                >
+                                  {savingBanner ? 'جاري الحفظ...' : 'حفظ التعديلات في المتجر و Firebase'}
+                                </button>
+                              </div>
+                            </form>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -4783,42 +5495,614 @@ export function AdminDashboard({
                 />
               )}
 
-              {/* TAB 6: DUAL MARQUEES + SPEED, VIDEO/PHOTO BACKGROUNDS, & STORE SETTINGS */}
+              {/* TAB 5.9: SMART APPEARANCE & THEME STUDIO */}
+              {activeTab === 'appearance' && settings && (
+                <div className="max-w-5xl space-y-6">
+                  {/* Firebase Connection Banner */}
+                  <div className="p-4 rounded-2xl border border-[#D4AF37]/30 bg-[#121216] flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-0.5 text-xs">
+                      <div className="font-bold text-[#E5C158] flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4" />
+                        <span>استوديو المظهر والثيمات الذكي (مزامنة فورية مع Firebase)</span>
+                      </div>
+                      <p className="text-[#9E988C]">
+                        تحكم كامل في الألوان، الخطوط العربية، خلفيات قسم المنتجات، وأنماط البطاقات والأزرار.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {!(auth.currentUser || firebaseUser)?.emailVerified ? (
+                        <button
+                          type="button"
+                          disabled={connectingFirebase}
+                          onClick={handleQuickGoogleConnectForFirebase}
+                          className="h-9 px-3.5 rounded-xl border border-amber-500/45 bg-amber-950/30 text-amber-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Database className="w-3.5 h-3.5" />
+                          <span>
+                            {connectingFirebase
+                              ? 'جاري الربط...'
+                              : 'ربط حساب Google للحفظ في Firebase'}
+                          </span>
+                        </button>
+                      ) : (
+                        <span className="h-9 px-3 rounded-xl border border-emerald-500/35 bg-emerald-950/25 text-emerald-300 text-xs font-bold inline-flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>متصل بـ Firebase Firestore</span>
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        disabled={savingSettings}
+                        onClick={() =>
+                          persistSettingsObject(
+                            settings,
+                            'تم حفظ وتطبيق إعدادات استوديو المظهر في المتجر و Firebase!'
+                          )
+                        }
+                        className="btn-gold-wave h-9 px-4 rounded-xl text-xs font-bold cursor-pointer"
+                      >
+                        {savingSettings ? 'جاري الحفظ...' : 'حفظ وتطبيق الثيم فوراً'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Feature 1: AI Theme Generator + 4 Ready Presets */}
+                  <section className="p-5 rounded-2xl border border-[#D4AF37]/35 bg-[#121216] space-y-5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-[#E5C158]">
+                        <Wand2 className="w-4 h-4" />
+                        <h3 className="font-bold text-base">
+                          1. مولد الثيمات بالذكاء الاصطناعي (Gemini AI) والقوالب الجاهزة
+                        </h3>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2.5">
+                      <input
+                        type="text"
+                        value={aiThemePrompt}
+                        onChange={(e) => setAiThemePrompt(e.target.value)}
+                        placeholder='اكتب وصف الثيم المطلوب (مثلاً: "ثيم ليلي فخم باللون الأسود والذهبي" أو "ثيم رياضي حديث بالأحمر والرمادي")'
+                        className="flex-1 h-11 px-3.5 rounded-xl bg-[#16161B] border border-white/15 text-xs sm:text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                      <button
+                        type="button"
+                        disabled={generatingTheme}
+                        onClick={handleGenerateThemeWithAi}
+                        className="btn-gold-wave h-11 px-5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>
+                          {generatingTheme ? 'جاري توليد الثيم...' : 'توليد الثيم بالذكاء الاصطناعي'}
+                        </span>
+                      </button>
+                    </div>
+
+                    {aiThemeRationale && (
+                      <div className="p-3 rounded-xl border border-[#D4AF37]/30 bg-[#171510] text-xs text-[#E5C158]">
+                        {aiThemeRationale}
+                      </div>
+                    )}
+
+                    <div className="space-y-2 pt-2 border-t border-white/10">
+                      <div className="text-xs text-[#C5BFB2]">
+                        ثيمات جاهزة للتبديل السريع بضغطة زر:
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        {[
+                          {
+                            id: 'royal_gold' as const,
+                            label: 'الكلاسيكي الذهبي',
+                            desc: 'أسود ملكي مع لمسات ذهبية فاخرة',
+                            primary: '#D4AF37',
+                            secondary: '#E5C158',
+                            bg: '#09090B',
+                            surface: '#121216',
+                            text: '#F5F2EB',
+                            font: 'Tajawal' as const,
+                            card: 'luxury_bordered' as const,
+                            btn: 'gold_wave' as const,
+                          },
+                          {
+                            id: 'titanium_exhaust' as const,
+                            label: 'الداكن المعدني',
+                            desc: 'تيتانيوم وفضي صناعي مع أزرق حراري',
+                            primary: '#38BDF8',
+                            secondary: '#7DD3FC',
+                            bg: '#080B10',
+                            surface: '#111622',
+                            text: '#F1F5F9',
+                            font: 'IBM Plex Sans Arabic' as const,
+                            card: 'sharp_industrial' as const,
+                            btn: 'exhaust_twin' as const,
+                          },
+                          {
+                            id: 'light_modern' as const,
+                            label: 'الفاتح العصري',
+                            desc: 'أبيض كريمي أنيق مع ذهبي دافئ ونصوص واضحة',
+                            primary: '#B45309',
+                            secondary: '#D97706',
+                            bg: '#F8FAFC',
+                            surface: '#FFFFFF',
+                            text: '#111827',
+                            font: 'Cairo' as const,
+                            card: 'elevated_soft' as const,
+                            btn: 'standard' as const,
+                          },
+                          {
+                            id: 'carbon_amber' as const,
+                            label: 'التيتانيوم الرياضي',
+                            desc: 'ألياف كربون داكنة مع أحمر رياضي جريء',
+                            primary: '#EF4444',
+                            secondary: '#F97316',
+                            bg: '#0B0B0E',
+                            surface: '#16161B',
+                            text: '#F9FAFB',
+                            font: 'Readex Pro' as const,
+                            card: 'glass_modern' as const,
+                            btn: 'exhaust_flame' as const,
+                          },
+                        ].map((tpl) => {
+                          const active = settings.themePreset === tpl.id;
+                          return (
+                            <button
+                              key={tpl.id}
+                              type="button"
+                              onClick={() =>
+                                setSettings({
+                                  ...settings,
+                                  themePreset: tpl.id,
+                                  primaryGoldColor: tpl.primary,
+                                  secondaryColor: tpl.secondary,
+                                  backgroundColor: tpl.bg,
+                                  surfaceColor: tpl.surface,
+                                  textColor: tpl.text,
+                                  themeFontFamily: tpl.font,
+                                  cardStyle: tpl.card,
+                                  buttonStyle: tpl.btn,
+                                })
+                              }
+                              className={`p-3.5 rounded-xl border text-right transition-colors cursor-pointer space-y-2 ${
+                                active
+                                  ? 'border-[#D4AF37] bg-[#19160E]'
+                                  : 'border-white/10 bg-[#0D0D10] hover:border-white/25'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className="w-4 h-4 rounded-full border border-white/20"
+                                  style={{ backgroundColor: tpl.primary }}
+                                />
+                                <span
+                                  className="w-4 h-4 rounded-full border border-white/20"
+                                  style={{ backgroundColor: tpl.bg }}
+                                />
+                                <span
+                                  className="w-4 h-4 rounded-full border border-white/20"
+                                  style={{ backgroundColor: tpl.surface }}
+                                />
+                                <span
+                                  className="w-4 h-4 rounded-full border border-white/20"
+                                  style={{ backgroundColor: tpl.text }}
+                                />
+                              </div>
+                              <div className="text-xs font-bold text-[#F5F2EB]">{tpl.label}</div>
+                              <div className="text-[11px] text-[#9E988C] leading-snug">
+                                {tpl.desc}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Feature 2: Comprehensive 5-Color Palette + Restore Default */}
+                  <section className="p-5 rounded-2xl border border-white/10 bg-[#121216] space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-[#E5C158]">
+                        <Palette className="w-4 h-4" />
+                        <h3 className="font-bold text-base">
+                          2. ضبط الألوان الشامل للمتجر (Color Palette)
+                        </h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRestoreDefaultColors}
+                        className="h-9 px-3.5 rounded-xl border border-white/15 bg-[#16161B] hover:border-[#D4AF37]/50 text-xs font-bold text-[#C5BFB2] hover:text-[#E5C158] flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>استعادة الألوان الافتراضية</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                      {[
+                        {
+                          key: 'primaryGoldColor' as const,
+                          label: 'اللون الرئيسي (الأزرار والروابط)',
+                          fallback: '#D4AF37',
+                        },
+                        {
+                          key: 'secondaryColor' as const,
+                          label: 'اللون الثانوي (العناوين الفرعية)',
+                          fallback: '#E5C158',
+                        },
+                        {
+                          key: 'backgroundColor' as const,
+                          label: 'لون خلفية الصفحة',
+                          fallback: '#09090B',
+                        },
+                        {
+                          key: 'surfaceColor' as const,
+                          label: 'لون بطاقات المنتجات',
+                          fallback: '#121216',
+                        },
+                        {
+                          key: 'textColor' as const,
+                          label: 'لون النصوص الأساسية',
+                          fallback: '#F5F2EB',
+                        },
+                      ].map((item) => {
+                        const val = settings[item.key] || item.fallback;
+                        return (
+                          <div
+                            key={item.key}
+                            className="p-3 rounded-xl border border-white/10 bg-[#0D0D10] space-y-2"
+                          >
+                            <label className="block text-[11px] font-bold text-[#C5BFB2] min-h-8">
+                              {item.label}
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={val}
+                                onChange={(e) =>
+                                  setSettings({
+                                    ...settings,
+                                    themePreset: 'custom',
+                                    [item.key]: e.target.value,
+                                  })
+                                }
+                                className="w-11 h-9 rounded-lg bg-[#16161B] border border-white/15 p-0.5 cursor-pointer shrink-0"
+                              />
+                              <input
+                                type="text"
+                                dir="ltr"
+                                value={val}
+                                onChange={(e) =>
+                                  setSettings({
+                                    ...settings,
+                                    themePreset: 'custom',
+                                    [item.key]: e.target.value,
+                                  })
+                                }
+                                className="w-full h-9 px-2 rounded-lg bg-[#16161B] border border-white/15 text-xs font-mono"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  {/* Feature 3: Products Section Background Upload & Opacity */}
+                  <section className="p-5 rounded-2xl border border-white/10 bg-[#121216] space-y-4">
+                    <div className="flex items-center gap-2 text-[#E5C158]">
+                      <ImageIcon className="w-4 h-4" />
+                      <h3 className="font-bold text-base">
+                        3. رفع وتخصيص خلفيات قسم المنتجات
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                      <div className="space-y-3">
+                        <label className="block text-xs text-[#C5BFB2]">
+                          رابط خلفية قسم المنتجات أو رفع صورة من جهازك
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <input
+                            type="text"
+                            dir="ltr"
+                            placeholder="https://... أو ارفع صورة مباشرة"
+                            value={settings.productsSectionBgUrl || ''}
+                            onChange={(e) =>
+                              setSettings({ ...settings, productsSectionBgUrl: e.target.value })
+                            }
+                            className="flex-1 min-w-44 h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs"
+                          />
+                          <label className="h-10 px-3.5 rounded-xl border border-[#D4AF37]/45 bg-[#171510] text-xs font-bold text-[#E5C158] flex items-center gap-1.5 cursor-pointer shrink-0">
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>
+                              {uploadingTarget === 'productsSectionBg' ? 'جاري الرفع...' : 'رفع صورة'}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleUploadFile(f, 'productsSectionBg');
+                              }}
+                            />
+                          </label>
+                          {settings.productsSectionBgUrl && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSettings({ ...settings, productsSectionBgUrl: '' })
+                              }
+                              className="h-10 px-3 rounded-xl border border-red-500/35 bg-red-950/30 text-xs text-red-300 cursor-pointer"
+                            >
+                              مسح الخلفية
+                            </button>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between text-xs text-[#C5BFB2] mb-1">
+                            <span>شفافية خلفية قسم المنتجات</span>
+                            <span className="tabular-nums text-[#E5C158]">
+                              {Math.round((settings.productsSectionBgOpacity ?? 0.25) * 100)}%
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0.05}
+                            max={0.85}
+                            step={0.05}
+                            value={settings.productsSectionBgOpacity ?? 0.25}
+                            onChange={(e) =>
+                              setSettings({
+                                ...settings,
+                                productsSectionBgOpacity: Number(e.target.value),
+                              })
+                            }
+                            className="w-full accent-[#D4AF37]"
+                          />
+                        </div>
+                      </div>
+
+                      <div
+                        className="relative h-36 rounded-xl border border-white/10 overflow-hidden flex items-center justify-center p-4 text-center"
+                        style={{ backgroundColor: settings.backgroundColor || '#09090B' }}
+                      >
+                        {settings.productsSectionBgUrl ? (
+                          <img
+                            src={settings.productsSectionBgUrl}
+                            alt=""
+                            style={{ opacity: settings.productsSectionBgOpacity ?? 0.25 }}
+                            className="absolute inset-0 w-full h-full object-cover"
+                          />
+                        ) : null}
+                        <div className="relative z-10 space-y-1">
+                          <div
+                            className="text-xs font-bold"
+                            style={{ color: settings.secondaryColor || '#E5C158' }}
+                          >
+                            معاينة خلفية قسم المنتجات
+                          </div>
+                          <div
+                            className="text-xs opacity-80"
+                            style={{ color: settings.textColor || '#F5F2EB' }}
+                          >
+                            {settings.productsSectionBgUrl
+                              ? 'تظهر هذه الخلفية خلف بطاقات المنتجات بدقة عالية'
+                              : 'لا توجد خلفية مخصصة حالياً (يستخدم لون خلفية المتجر)'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Feature 4: Fonts & Card/Button Styles + Live Preview */}
+                  <section className="p-5 rounded-2xl border border-white/10 bg-[#121216] space-y-5">
+                    <div className="flex items-center gap-2 text-[#E5C158]">
+                      <Type className="w-4 h-4" />
+                      <h3 className="font-bold text-base">
+                        4. الخطوط العربية، نمط بطاقات المنتجات، وأزرار المتجر
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-[#C5BFB2] mb-1.5">
+                          نوع الخط العربي في المتجر
+                        </label>
+                        <select
+                          value={settings.themeFontFamily || 'Tajawal'}
+                          onChange={(e) =>
+                            setSettings({
+                              ...settings,
+                              themeFontFamily: e.target.value as StoreSettings['themeFontFamily'],
+                            })
+                          }
+                          className="w-full h-11 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
+                        >
+                          <option value="Tajawal">Tajawal — عصري متوازن (الافتراضي)</option>
+                          <option value="El Messiri">El Messiri — فاخر وكلاسيكي</option>
+                          <option value="Cairo">Cairo — واضح وحديث</option>
+                          <option value="IBM Plex Sans Arabic">IBM Plex Sans Arabic — هندسي تقني</option>
+                          <option value="Readex Pro">Readex Pro — جريء ورياضي</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-[#C5BFB2] mb-1.5">
+                          شكل وأسلوب الأزرار
+                        </label>
+                        <select
+                          value={settings.buttonStyle || 'gold_wave'}
+                          onChange={(e) =>
+                            setSettings({
+                              ...settings,
+                              buttonStyle: e.target.value as StoreSettings['buttonStyle'],
+                            })
+                          }
+                          className="w-full h-11 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
+                        >
+                          <option value="gold_wave">الموج الذهبي الفاخر</option>
+                          <option value="standard">النظام العادي البسيط</option>
+                          <option value="exhaust_twin">أنظمة العادم (تيتانيوم)</option>
+                          <option value="exhaust_flame">أنظمة العادم (التيربو)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs text-[#C5BFB2]">نمط بطاقات المنتجات:</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                        {[
+                          {
+                            id: 'luxury_bordered' as const,
+                            title: 'فاخر بإطار ذهبي',
+                            desc: 'إطار أنيق وزوايا ناعمة (الافتراضي)',
+                          },
+                          {
+                            id: 'glass_modern' as const,
+                            title: 'زجاجي حديث (Glass)',
+                            desc: 'تأثير زجاجي شفاف متدرج وعصري',
+                          },
+                          {
+                            id: 'sharp_industrial' as const,
+                            title: 'صناعي حاد (Industrial)',
+                            desc: 'حواف هندسية حادة بطابع مصانع',
+                          },
+                          {
+                            id: 'elevated_soft' as const,
+                            title: 'ناعم بظلال عميقة',
+                            desc: 'بطاقات مرتفعة بظل ناعم ومريح',
+                          },
+                        ].map((cs) => {
+                          const active = (settings.cardStyle || 'luxury_bordered') === cs.id;
+                          return (
+                            <button
+                              key={cs.id}
+                              type="button"
+                              onClick={() => setSettings({ ...settings, cardStyle: cs.id })}
+                              className={`p-3 rounded-xl border text-right cursor-pointer space-y-1 ${
+                                active
+                                  ? 'border-[#D4AF37] bg-[#19160E]'
+                                  : 'border-white/10 bg-[#0D0D10] hover:border-white/25'
+                              }`}
+                            >
+                              <div className="text-xs font-bold text-[#F5F2EB]">{cs.title}</div>
+                              <div className="text-[11px] text-[#9E988C]">{cs.desc}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Feature 5: Live Preview Card & Apply/Save */}
+                    <div
+                      data-card-style={settings.cardStyle || 'luxury_bordered'}
+                      data-button-style={settings.buttonStyle || 'gold_wave'}
+                      style={
+                        {
+                          backgroundColor: settings.backgroundColor || '#09090B',
+                          color: settings.textColor || '#F5F2EB',
+                          fontFamily: settings.themeFontFamily
+                            ? `"${settings.themeFontFamily}", "Tajawal", sans-serif`
+                            : undefined,
+                          '--royal-gold': settings.primaryGoldColor || '#D4AF37',
+                          '--royal-secondary': settings.secondaryColor || '#E5C158',
+                          '--royal-surface': settings.surfaceColor || '#121216',
+                        } as React.CSSProperties
+                      }
+                      className="p-4 sm:p-5 rounded-2xl border border-white/15 space-y-3"
+                    >
+                      <div className="text-[11px] opacity-75">معاينة حية لبطاقة المنتج والخط المختار:</div>
+                      <div
+                        className="store-product-card max-w-sm rounded-2xl border border-white/15 p-4 space-y-3"
+                        style={{ backgroundColor: settings.surfaceColor || '#121216' }}
+                      >
+                        <div
+                          className="text-xs font-bold"
+                          style={{ color: settings.secondaryColor || '#E5C158' }}
+                        >
+                          دبات تلوث البنزين · Euro-6
+                        </div>
+                        <div
+                          className="text-base font-bold"
+                          style={{ color: settings.textColor || '#F5F2EB' }}
+                        >
+                          دبة تلوث ستانلس ستيل {settings.storeName}
+                        </div>
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                          <span
+                            className="text-base font-extrabold tabular-nums"
+                            style={{ color: settings.secondaryColor || '#E5C158' }}
+                          >
+                            690 ر.س
+                          </span>
+                          <span className="btn-gold-wave px-4 h-9 rounded-xl text-xs inline-flex items-center justify-center">
+                            أضف للسلة
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        type="button"
+                        disabled={savingSettings}
+                        onClick={() =>
+                          persistSettingsObject(
+                            settings,
+                            'تم حفظ وتطبيق الثيم الجديد على المتجر بالكامل!'
+                          )
+                        }
+                        className="btn-gold-wave h-11 px-6 rounded-xl text-xs sm:text-sm font-bold cursor-pointer"
+                      >
+                        {savingSettings
+                          ? 'جاري الحفظ...'
+                          : 'حفظ وتطبيق الثيم فوراً في المتجر و Firebase'}
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              )}
+
+              {/* TAB 6: DIRECT MANUAL IDENTITY/BANNERS + MARQUEES & STORE SETTINGS */}
               {activeTab === 'settings' && settings && (
                 <div className="max-w-4xl space-y-6">
                   <form onSubmit={handleSaveSettings} className="space-y-6">
-                    {/* Store Identity + AI Store Enhancement + Quick Save */}
-                    <section className="p-5 rounded-2xl border border-white/10 bg-[#121216] space-y-4">
+                    {/* Direct Manual Store Identity & Top-Bar Logo (NO AI) */}
+                    <section className="p-5 rounded-2xl border border-[#D4AF37]/35 bg-[#121216] space-y-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="font-bold text-base text-[#E5C158]">
-                          هوية المتجر القابلة للتعديل
-                        </h3>
-                        <div className="flex items-center gap-2">
+                        <div>
+                          <h3 className="font-bold text-base text-[#E5C158]">
+                            التعديل اليدوي المباشر لاسم المتجر والشعار (بدون ذكاء اصطناعي)
+                          </h3>
+                          <p className="text-xs text-[#9E988C] mt-0.5">
+                            عدّل اسم المتجر، الوصف المختصر، وشعار الشريط العلوي يدوياً واحفظها فوراً في المتجر و Firebase.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
-                            disabled={enhancingStore}
-                            onClick={handleEnhanceStoreWithAi}
-                            className="h-9 px-3.5 rounded-xl border border-[#D4AF37]/40 bg-[#171510] text-xs text-[#E5C158] flex items-center gap-1.5 cursor-pointer"
+                            onClick={() => setActiveTab('appearance')}
+                            className="h-9 px-3 rounded-xl border border-[#D4AF37]/40 bg-[#171510] text-xs font-bold text-[#E5C158] flex items-center gap-1.5 cursor-pointer"
                           >
-                            <Wand2 className="w-3.5 h-3.5" />
-                            <span>
-                              {enhancingStore
-                                ? 'جاري التوليد...'
-                                : 'تحسين الاسم والعناوين بالذكاء الاصطناعي'}
-                            </span>
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>استوديو المظهر والثيمات الذكي</span>
                           </button>
                           <button
                             type="submit"
                             disabled={savingSettings}
                             className="btn-gold-wave h-9 px-4 rounded-xl text-xs font-bold cursor-pointer"
                           >
-                            حفظ المتجر
+                            {savingSettings ? 'جاري الحفظ...' : 'حفظ الاسم والشعار يدوياً'}
                           </button>
                         </div>
                       </div>
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs text-[#C5BFB2] mb-1">اسم المتجر</label>
+                          <label className="block text-xs text-[#C5BFB2] mb-1">
+                            اسم المتجر (الشريط العلوي)
+                          </label>
                           <input
                             type="text"
                             required
@@ -4830,7 +6114,9 @@ export function AdminDashboard({
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-[#C5BFB2] mb-1">الوصف المختصر</label>
+                          <label className="block text-xs text-[#C5BFB2] mb-1">
+                            الوصف المختصر تحت الاسم
+                          </label>
                           <input
                             type="text"
                             value={settings.storeTagline}
@@ -4841,6 +6127,358 @@ export function AdminDashboard({
                           />
                         </div>
                       </div>
+
+                      {/* Top-Bar Logo Manual Upload / URL */}
+                      <div className="p-3.5 rounded-xl border border-white/10 bg-[#0D0D10] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-12 h-12 rounded-xl border border-[#D4AF37]/45 bg-[#171510] flex items-center justify-center overflow-hidden shrink-0">
+                            {settings.storeLogoUrl ? (
+                              <img
+                                src={settings.storeLogoUrl}
+                                alt={settings.storeName}
+                                className="w-full h-full object-contain p-1"
+                              />
+                            ) : (
+                              <Palette className="w-5 h-5 text-[#D4AF37]" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="text-xs font-bold text-[#F5F2EB]">
+                              شعار المتجر في الشريط العلوي
+                            </div>
+                            <input
+                              type="text"
+                              dir="ltr"
+                              placeholder="رابط الشعار (أو ارفع صورة الشعار)"
+                              value={settings.storeLogoUrl || ''}
+                              onChange={(e) =>
+                                setSettings({ ...settings, storeLogoUrl: e.target.value })
+                              }
+                              className="w-full h-8 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <label className="h-9 px-3 rounded-lg border border-[#D4AF37]/45 bg-[#171510] text-xs font-bold text-[#E5C158] flex items-center gap-1.5 cursor-pointer">
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>
+                              {uploadingTarget === 'storeLogo' ? 'جاري الرفع...' : 'رفع شعار'}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleUploadFile(f, 'storeLogo');
+                              }}
+                            />
+                          </label>
+                          {settings.storeLogoUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setSettings({ ...settings, storeLogoUrl: '' })}
+                              className="h-9 px-3 rounded-lg border border-red-500/35 bg-red-950/30 text-xs text-red-300 cursor-pointer"
+                            >
+                              استعادة الأيقونة الافتراضية
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+                        {!(auth.currentUser || firebaseUser)?.emailVerified ? (
+                          <button
+                            type="button"
+                            disabled={connectingFirebase}
+                            onClick={handleQuickGoogleConnectForFirebase}
+                            className="h-8 px-3 rounded-lg border border-amber-500/45 bg-amber-950/30 text-amber-200 font-bold flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Database className="w-3.5 h-3.5" />
+                            <span>
+                              {connectingFirebase
+                                ? 'جاري الربط...'
+                                : 'ربط حساب Google لمزامنة الحفظ اليدوي مع Firebase'}
+                            </span>
+                          </button>
+                        ) : (
+                          <span className="text-emerald-300 font-bold inline-flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>جاهز للحفظ الفوري في Firebase Firestore والموقع</span>
+                          </span>
+                        )}
+                      </div>
+                    </section>
+
+                    {/* Direct Manual Promo Banners Editor inside Settings (NO AI) */}
+                    <section className="p-5 rounded-2xl border border-[#D4AF37]/30 bg-[#121216] space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h3 className="font-bold text-base text-[#E5C158]">
+                            التعديل اليدوي لبنرات العروض الحالية ({banners.length})
+                          </h3>
+                          <p className="text-xs text-[#9E988C] mt-0.5">
+                            تعديل نص وعنوان أي بنر عرض حالي (مثل بنر خصومات الإنتاج المباشر) أو حذفه وإضافة بنر جديد يدوياً وحفظه مباشرة في Firebase.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNewBannerForm({
+                              discountLabel: 'خصم حصري',
+                              title: '',
+                              subtitle: '',
+                              ctaText: 'تسوق الآن',
+                              ctaUrl: '#products',
+                              accentColor: '#D4AF37',
+                              isActive: true,
+                            })
+                          }
+                          className="h-9 px-3.5 rounded-xl border border-[#D4AF37]/45 bg-[#171510] text-xs font-bold text-[#E5C158] flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>إضافة بنر عرض جديد يدوياً</span>
+                        </button>
+                      </div>
+
+                      {newBannerForm && (
+                        <div className="p-4 rounded-xl border border-[#D4AF37]/40 bg-[#14120C] space-y-3">
+                          <div className="text-xs font-bold text-[#E5C158]">
+                            بيانات البنر الجديد (حفظ يدوي مباشر)
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <input
+                              type="text"
+                              placeholder="وسم العرض (مثال: خصم 15%)"
+                              value={newBannerForm.discountLabel}
+                              onChange={(e) =>
+                                setNewBannerForm({
+                                  ...newBannerForm,
+                                  discountLabel: e.target.value,
+                                })
+                              }
+                              className="h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                            />
+                            <input
+                              type="text"
+                              placeholder="عنوان البنر الرئيسي *"
+                              value={newBannerForm.title}
+                              onChange={(e) =>
+                                setNewBannerForm({ ...newBannerForm, title: e.target.value })
+                              }
+                              className="h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                            />
+                            <input
+                              type="text"
+                              placeholder="نص الزر"
+                              value={newBannerForm.ctaText}
+                              onChange={(e) =>
+                                setNewBannerForm({ ...newBannerForm, ctaText: e.target.value })
+                              }
+                              className="h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                            />
+                            <input
+                              type="text"
+                              dir="ltr"
+                              placeholder="رابط الزر"
+                              value={newBannerForm.ctaUrl}
+                              onChange={(e) =>
+                                setNewBannerForm({ ...newBannerForm, ctaUrl: e.target.value })
+                              }
+                              className="h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                            />
+                          </div>
+                          <textarea
+                            rows={2}
+                            placeholder="نص البنر الترويجي..."
+                            value={newBannerForm.subtitle}
+                            onChange={(e) =>
+                              setNewBannerForm({ ...newBannerForm, subtitle: e.target.value })
+                            }
+                            className="w-full p-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setNewBannerForm(null)}
+                              className="h-8 px-3 rounded-lg border border-white/15 text-xs text-[#9E988C] cursor-pointer"
+                            >
+                              إلغاء
+                            </button>
+                            <button
+                              type="button"
+                              disabled={savingBanner}
+                              onClick={(e) => void handleCreateManualBanner(e as unknown as React.FormEvent)}
+                              className="btn-gold-wave h-8 px-4 rounded-lg text-xs font-bold cursor-pointer"
+                            >
+                              {savingBanner ? 'جاري الحفظ...' : 'حفظ البنر في المتجر و Firebase'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {banners.length === 0 ? (
+                        <div className="p-4 rounded-xl border border-white/10 bg-[#0D0D10] text-xs text-[#9E988C] text-center">
+                          لا توجد بنرات حالياً. اضغط "إضافة بنر عرض جديد يدوياً" لإنشاء بنر.
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {banners.map((b) => (
+                            <div
+                              key={b.id}
+                              className="p-3.5 rounded-xl border border-white/10 bg-[#0D0D10] space-y-3"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="min-w-0 space-y-0.5">
+                                  {b.discountLabel && (
+                                    <div className="text-[11px] font-bold text-[#E5C158]">
+                                      {b.discountLabel}
+                                    </div>
+                                  )}
+                                  <div className="text-sm font-bold text-[#F5F2EB]">{b.title}</div>
+                                  <div className="text-xs text-[#9E988C]">{b.subtitle}</div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleBanner(b)}
+                                    className={`px-3 py-1 rounded-lg text-xs cursor-pointer ${
+                                      b.isActive
+                                        ? 'bg-emerald-950/50 border border-emerald-500/40 text-emerald-300'
+                                        : 'bg-white/5 border border-white/15 text-[#9E988C]'
+                                    }`}
+                                  >
+                                    {b.isActive ? 'ظاهر' : 'مخفي'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingBanner({ ...b })}
+                                    className="px-3 py-1 rounded-lg border border-[#D4AF37]/40 bg-[#171510] text-xs font-bold text-[#E5C158] flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                    <span>تعديل</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteBanner(b.id)}
+                                    className="px-2.5 py-1 rounded-lg border border-red-500/35 bg-red-950/30 text-red-300 hover:bg-red-950/50 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>حذف</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {editingBanner?.id === b.id && (
+                                <div className="pt-3 border-t border-white/10 space-y-3">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    <div>
+                                      <label className="block text-[11px] text-[#9E988C] mb-1">
+                                        وسم العرض
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={editingBanner.discountLabel || ''}
+                                        onChange={(e) =>
+                                          setEditingBanner({
+                                            ...editingBanner,
+                                            discountLabel: e.target.value,
+                                          })
+                                        }
+                                        className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[11px] text-[#9E988C] mb-1">
+                                        عنوان البنر
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={editingBanner.title}
+                                        onChange={(e) =>
+                                          setEditingBanner({
+                                            ...editingBanner,
+                                            title: e.target.value,
+                                          })
+                                        }
+                                        className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[11px] text-[#9E988C] mb-1">
+                                        نص الزر
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={editingBanner.ctaText || ''}
+                                        onChange={(e) =>
+                                          setEditingBanner({
+                                            ...editingBanner,
+                                            ctaText: e.target.value,
+                                          })
+                                        }
+                                        className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[11px] text-[#9E988C] mb-1">
+                                        رابط الزر
+                                      </label>
+                                      <input
+                                        type="text"
+                                        dir="ltr"
+                                        value={editingBanner.ctaUrl || '#products'}
+                                        onChange={(e) =>
+                                          setEditingBanner({
+                                            ...editingBanner,
+                                            ctaUrl: e.target.value,
+                                          })
+                                        }
+                                        className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-[#9E988C] mb-1">
+                                      النص الفرعي للبنر
+                                    </label>
+                                    <textarea
+                                      rows={2}
+                                      value={editingBanner.subtitle}
+                                      onChange={(e) =>
+                                        setEditingBanner({
+                                          ...editingBanner,
+                                          subtitle: e.target.value,
+                                        })
+                                      }
+                                      className="w-full p-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                                    />
+                                  </div>
+                                  <div className="flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingBanner(null)}
+                                      className="h-8 px-3 rounded-lg border border-white/15 text-xs text-[#9E988C] cursor-pointer"
+                                    >
+                                      إلغاء
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={savingBanner}
+                                      onClick={(e) => void handleSaveEditedBanner(e as unknown as React.FormEvent)}
+                                      className="btn-gold-wave h-8 px-4 rounded-lg text-xs font-bold cursor-pointer"
+                                    >
+                                      {savingBanner
+                                        ? 'جاري الحفظ...'
+                                        : 'حفظ تعديلات البنر في المتجر و Firebase'}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </section>
 
                     {/* Themes, Custom Colors & Exhaust/Standard Button Styles */}
@@ -6844,32 +8482,33 @@ export function AdminDashboard({
       {/* Product Editor Modal */}
       {editingProduct && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 overflow-y-auto"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 p-2 sm:p-4 overflow-y-auto"
           onClick={() => setEditingProduct(null)}
         >
           <form
             onSubmit={handleSaveProduct}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-3xl rounded-2xl border border-[#D4AF37]/35 bg-[#121216] p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto"
+            className="w-full max-w-3xl rounded-2xl border border-[#D4AF37]/35 bg-[#121216] p-4 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto overflow-x-hidden"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="font-display text-lg font-bold text-[#E5C158]">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-display text-base sm:text-lg font-bold text-[#E5C158]">
                 {editingProduct.id ? 'تعديل بيانات المنتج' : 'إضافة منتج جديد'}
               </h3>
               <button
                 type="button"
                 onClick={() => setEditingProduct(null)}
-                className="w-8 h-8 rounded-lg border border-white/10 flex items-center justify-center cursor-pointer"
+                aria-label="إغلاق النافذة"
+                className="w-10 h-10 sm:w-8 sm:h-8 rounded-xl border border-white/15 flex items-center justify-center cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* AI Product Importer: Method 1 (URL via CORS Proxy) + Method 2 (Manual Paste Fallback) */}
-            <div className="p-4 rounded-2xl border border-[#D4AF37]/45 bg-gradient-to-br from-[#17140D] to-[#111116] space-y-3.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* AI Product Importer: Method 1 (URL) + Method 2 (Paste Product Text) */}
+            <div className="p-3.5 sm:p-4 rounded-2xl border border-[#D4AF37]/45 bg-gradient-to-br from-[#17140D] to-[#111116] space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/40 flex items-center justify-center text-[#E5C158]">
+                  <div className="w-8 h-8 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/40 flex items-center justify-center text-[#E5C158] shrink-0">
                     <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
@@ -6877,13 +8516,13 @@ export function AdminDashboard({
                       استيراد بيانات المنتج بالذكاء الاصطناعي (AI Product Importer)
                     </div>
                     <div className="text-[11px] text-[#B8B0A0]">
-                      استورد البيانات بالرابط مباشرة أو الصق نص صفحة المنتج للمتاجر المحمية ليتم تحليلها وتعبئة الحقول فوراً.
+                      استورد بالرابط أو الصق نص صفحة المنتج ليتم استخراج الاسم، الوصف، السعر والمقاسات تلقائياً وتبقى الصورة متاحة للتعديل يدوياً.
                     </div>
                   </div>
                 </div>
                 {firebaseUser?.emailVerified ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/50 border border-emerald-500/35 text-[11px] text-emerald-300">
-                    <Database className="w-3.5 h-3.5" />
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/50 border border-emerald-500/35 text-[11px] text-emerald-300 self-start sm:self-auto">
+                    <Database className="w-3.5 h-3.5 shrink-0" />
                     <span>مربوط مع Firebase ({firebaseUser.email})</span>
                   </span>
                 ) : (
@@ -6891,7 +8530,7 @@ export function AdminDashboard({
                     onClick={handleQuickGoogleConnectForFirebase}
                     disabled={connectingFirebase}
                     label={connectingFirebase ? 'جاري الربط...' : 'ربط Firebase لحفظ المنتج سحابياً'}
-                    className="!h-8 !px-3 !text-[11px]"
+                    className="!h-9 !px-3 !text-[11px] self-start sm:self-auto"
                   />
                 )}
               </div>
@@ -6917,13 +8556,13 @@ export function AdminDashboard({
                       }
                     }}
                     placeholder="https://example-store.com/product-page"
-                    className="flex-1 h-10 px-3 rounded-xl bg-[#0B0B0F] border border-[#D4AF37]/30 text-xs sm:text-sm text-white placeholder:text-white/35 focus:border-[#E5C158] outline-none"
+                    className="w-full sm:flex-1 h-11 sm:h-10 px-3 rounded-xl bg-[#0B0B0F] border border-[#D4AF37]/30 text-xs sm:text-sm text-white placeholder:text-white/35 focus:border-[#E5C158] outline-none"
                   />
                   <button
                     type="button"
                     disabled={importingFromUrl || importingFromText}
                     onClick={handleImportProductFromUrlInModal}
-                    className="btn-gold-wave h-10 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shrink-0 cursor-pointer disabled:opacity-60"
+                    className="btn-gold-wave w-full sm:w-auto h-11 sm:h-10 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shrink-0 cursor-pointer disabled:opacity-60"
                   >
                     {importingFromUrl ? (
                       <RefreshCw className="w-4 h-4 animate-spin" />
@@ -6950,35 +8589,35 @@ export function AdminDashboard({
                 <button
                   type="button"
                   onClick={() => setShowManualPasteBox((v) => !v)}
-                  className="text-xs font-bold text-[#E5C158] hover:text-[#F3D77A] flex items-center gap-1.5 cursor-pointer"
+                  className="w-full min-h-[40px] text-xs font-bold text-[#E5C158] hover:text-[#F3D77A] flex items-center justify-between gap-2 cursor-pointer text-start"
                 >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>
-                    الطريقة الثانية: أو الصق تفاصيل/نص صفحة المنتج هنا (Paste Product Text)
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 shrink-0" />
+                    <span>الطريقة الثانية: لصق نص صفحة المنتج للاستخراج الذكي (الاسم، السعر، المقاس، الوصف)</span>
                   </span>
-                  <span className="text-[10px] text-[#9E988C] font-normal">
+                  <span className="text-[10px] text-[#9E988C] font-normal shrink-0">
                     {showManualPasteBox ? '▲ إخفاء' : '▼ فتح المربع'}
                   </span>
                 </button>
 
                 {showManualPasteBox && (
-                  <div className="space-y-2 pt-1">
+                  <div className="space-y-2.5 pt-1">
                     <textarea
                       rows={4}
                       value={modalManualText}
                       onChange={(e) => setModalManualText(e.target.value)}
-                      placeholder="انسخ اسم المنتج ووصفه وسعره وأي مواصفات أو روابط صور من أمازون أو علي إكسبريس أو أي متجر محمي والصقه هنا..."
+                      placeholder="انسخ اسم المنتج ووصفه وسعره ومقاساته من المتجر الخارجي والصقه هنا ليقوم الذكاء الاصطناعي بتعبئة الخانات تلقائياً..."
                       className="w-full p-3 rounded-xl bg-[#0B0B0F] border border-[#D4AF37]/30 text-xs sm:text-sm text-white placeholder:text-white/35 focus:border-[#E5C158] outline-none"
                     />
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <span className="text-[11px] text-[#9E988C]">
-                        سيقوم Gemini AI بصياغة الاسم والوصف بالعربية واستخراج السعر والقسم والصور تلقائياً.
+                        يستخرج الاسم، الوصف، السعر بالريال والمقاسات تلقائياً مع إبقاء خانة رابط الصورة ورفع الصورة متاحة للتعبئة اليدوية.
                       </span>
                       <button
                         type="button"
                         disabled={importingFromText || importingFromUrl}
                         onClick={handleAnalyzeManualProductText}
-                        className="h-9 px-4 rounded-xl border border-[#D4AF37]/50 bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-xs font-bold text-[#E5C158] flex items-center gap-2 shrink-0 cursor-pointer disabled:opacity-60"
+                        className="w-full sm:w-auto h-11 sm:h-9 px-4 rounded-xl border border-[#D4AF37]/50 bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-xs font-bold text-[#E5C158] flex items-center justify-center gap-2 shrink-0 cursor-pointer disabled:opacity-60"
                       >
                         {importingFromText ? (
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -6986,7 +8625,7 @@ export function AdminDashboard({
                           <Wand2 className="w-3.5 h-3.5" />
                         )}
                         <span>
-                          {importingFromText ? 'جاري التحليل...' : 'تحليل وتعبئة البيانات'}
+                          {importingFromText ? 'جاري التحليل...' : 'تحليل وتعبئة البيانات والمقاسات'}
                         </span>
                       </button>
                     </div>
@@ -7027,19 +8666,154 @@ export function AdminDashboard({
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl border border-[#D4AF37]/30 bg-[#14120E]">
+            {/* Image Preview Box + Explicit Image URL Field + Direct Device Upload */}
+            <div className="p-3.5 sm:p-4 rounded-2xl border border-[#D4AF37]/35 bg-[#0D0D10] space-y-3">
+              <div className="flex flex-col sm:flex-row gap-4 items-start">
+                {/* Live Image Preview Square */}
+                <div className="w-full sm:w-36 shrink-0 space-y-1.5">
+                  <div className="text-[11px] font-bold text-[#E5C158]">معاينة الصورة (Preview)</div>
+                  <div className="w-36 h-36 mx-auto sm:mx-0 aspect-square rounded-xl border border-[#D4AF37]/40 bg-[#08080B] p-1.5 overflow-hidden relative">
+                    <ResilientImage
+                      src={(editingProduct.images || []).find((s) => s.trim().length > 0)}
+                      defaultFallbackSrc={DEFAULT_PRODUCT_IMAGE}
+                      alt={editingProduct.name || 'معاينة صورة المنتج'}
+                      className="w-full h-full object-contain rounded-lg"
+                    />
+                    {!(editingProduct.images || []).some((s) => s.trim().length > 0) && (
+                      <span className="absolute bottom-1.5 inset-x-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[10px] text-[#E5C158] text-center">
+                        صورة افتراضية أنيقة
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Primary Image URL Input + Upload Buttons */}
+                <div className="flex-1 w-full space-y-2.5">
+                  <div>
+                    <label className="block text-xs font-bold text-[#E5C158] mb-1">
+                      رابط صورة المنتج (Image URL)
+                    </label>
+                    <input
+                      type="text"
+                      dir="ltr"
+                      value={(editingProduct.images && editingProduct.images[0]) || ''}
+                      onChange={(e) => {
+                        const nextPrimary = e.target.value;
+                        const rest = (editingProduct.images || []).slice(1);
+                        setEditingProduct({
+                          ...editingProduct,
+                          images: nextPrimary.trim() ? [nextPrimary, ...rest] : rest,
+                        });
+                      }}
+                      placeholder="https://example.com/product-image.jpg"
+                      className="w-full h-11 sm:h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 focus:border-[#D4AF37] text-xs sm:text-sm outline-none"
+                    />
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <label className="btn-gold-wave flex-1 h-11 sm:h-10 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer">
+                      <Upload className="w-4 h-4 shrink-0" />
+                      <span>
+                        {uploadingDirectImage
+                          ? 'جاري رفع الصورة...'
+                          : 'رفع صورة مباشرة من الجهاز'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          void handleDirectDeviceImageUpload(f);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+
+                    <label className="h-11 sm:h-10 px-3.5 rounded-xl border border-[#D4AF37]/45 bg-[#171510] hover:border-[#D4AF37] text-xs font-bold text-[#E5C158] flex items-center justify-center gap-1.5 cursor-pointer shrink-0">
+                      <ImageIcon className="w-4 h-4 shrink-0" />
+                      <span>
+                        {uploadingProductImages ? 'جاري الضبط...' : 'رفع مع قص 1000×1000'}
+                      </span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/jpeg,image/png,image/webp,image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          handleProductMultiImageUpload(e.target.files);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {/* Uploaded / Added Images Thumbnails with (X) Delete Button */}
+                  {(editingProduct.images || []).filter((s) => s.trim().length > 0).length > 0 && (
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 pt-1">
+                      {(editingProduct.images || []).map((imgUrl, imgIdx) => {
+                        if (!imgUrl || !imgUrl.trim()) return null;
+                        return (
+                          <div
+                            key={imgIdx}
+                            className="relative aspect-square rounded-xl border border-white/15 bg-[#0B0B0F] p-1 overflow-hidden group"
+                          >
+                            <ResilientImage
+                              src={imgUrl}
+                              alt={`صورة ${imgIdx + 1}`}
+                              className="w-full h-full object-contain rounded-lg"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveEditingImage(imgIdx)}
+                              title="حذف الصورة"
+                              aria-label="حذف الصورة"
+                              className="absolute top-1 end-1 w-5 h-5 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-md cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-[#C5BFB2] mb-1">
+                  روابط الصور الإضافية (رابط في كل سطر)
+                </label>
+                <textarea
+                  rows={2}
+                  dir="ltr"
+                  value={(editingProduct.images || []).join('\n')}
+                  onChange={(e) =>
+                    setEditingProduct({
+                      ...editingProduct,
+                      images: e.target.value.split('\n').map((s) => s.trim()),
+                    })
+                  }
+                  placeholder="https://.../img1.jpg"
+                  className="w-full p-2.5 rounded-xl bg-[#16161B] border border-white/15 text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Vertical Mobile-Friendly Product Form Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="sm:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl border border-[#D4AF37]/30 bg-[#14120E]">
                 <div className="text-xs text-[#C5BFB2]">
                   أدوات الذكاء الاصطناعي والترجمة وتجميل المنتج:
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col sm:flex-row flex-wrap gap-2">
                   <button
                     type="button"
                     disabled={enhancingProductCopy}
                     onClick={handleEnhanceProductCopyWithAi}
-                    className="px-3 py-1.5 rounded-lg border border-[#D4AF37]/40 bg-[#171510] text-xs text-[#E5C158] flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[40px] px-3 py-1.5 rounded-lg border border-[#D4AF37]/40 bg-[#171510] text-xs text-[#E5C158] flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <Wand2 className="w-3.5 h-3.5" />
+                    <Wand2 className="w-3.5 h-3.5 shrink-0" />
                     <span>
                       {enhancingProductCopy
                         ? 'جاري التحسين...'
@@ -7050,9 +8824,9 @@ export function AdminDashboard({
                     type="button"
                     disabled={translatingProduct}
                     onClick={handleTranslateProductWithAi}
-                    className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-950/30 text-xs text-sky-300 flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[40px] px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-950/30 text-xs text-sky-300 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <Languages className="w-3.5 h-3.5" />
+                    <Languages className="w-3.5 h-3.5 shrink-0" />
                     <span>
                       {translatingProduct
                         ? 'جاري الترجمة...'
@@ -7071,22 +8845,23 @@ export function AdminDashboard({
                         priceSar: editingProduct.priceSar,
                       })
                     }
-                    className="px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-950/30 text-xs text-emerald-300 flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[40px] px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-950/30 text-xs text-emerald-300 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <Sparkles className="w-3.5 h-3.5" />
+                    <Sparkles className="w-3.5 h-3.5 shrink-0" />
                     <span>تحسين الصورة في الاستوديو</span>
                   </button>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs text-[#C5BFB2] mb-1">اسم المنتج (عربي)</label>
+                <label className="block text-xs font-bold text-[#F5F2EB] mb-1">اسم المنتج (عربي) *</label>
                 <input
                   type="text"
                   required
                   value={editingProduct.name || ''}
                   onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
-                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
+                  placeholder="مثال: دبة تلوث تويوتا كامري أصلي Euro-6"
+                  className="w-full h-11 sm:h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
                 />
               </div>
 
@@ -7100,8 +8875,27 @@ export function AdminDashboard({
                   value={editingProduct.nameEn || ''}
                   onChange={(e) => setEditingProduct({ ...editingProduct, nameEn: e.target.value })}
                   placeholder="Auto-filled or custom English title"
-                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
+                  className="w-full h-11 sm:h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#E5C158] mb-1">التصنيف *</label>
+                <input
+                  type="text"
+                  required
+                  list="store-categories-datalist"
+                  value={editingProduct.category || ''}
+                  onChange={(e) =>
+                    setEditingProduct({ ...editingProduct, category: e.target.value })
+                  }
+                  className="w-full h-11 sm:h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
+                />
+                <datalist id="store-categories-datalist">
+                  {(settings?.categories || []).map((c) => (
+                    <option key={c.id} value={c.name} />
+                  ))}
+                </datalist>
               </div>
 
               <div>
@@ -7112,31 +8906,25 @@ export function AdminDashboard({
                   value={editingProduct.sku || ''}
                   onChange={(e) => setEditingProduct({ ...editingProduct, sku: e.target.value })}
                   placeholder="TAJ-101"
-                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm font-mono"
+                  className="w-full h-11 sm:h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm font-mono"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs text-[#C5BFB2] mb-1">القسم</label>
-                <input
-                  type="text"
-                  required
-                  list="store-categories-datalist"
-                  value={editingProduct.category || ''}
-                  onChange={(e) =>
-                    setEditingProduct({ ...editingProduct, category: e.target.value })
-                  }
-                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
-                />
-                <datalist id="store-categories-datalist">
-                  {(settings?.categories || []).map((c) => (
-                    <option key={c.id} value={c.name} />
-                  ))}
-                </datalist>
-              </div>
-
-              {/* Profit Margin + Cost + Retail + Wholesale Auto-Calculator */}
-              <div className="sm:col-span-2 p-3.5 rounded-xl border border-[#D4AF37]/25 bg-[#0D0D10] grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+              {/* Price SAR & Cost Auto-Calculator (Mobile Single Column, Desktop 5-col) */}
+              <div className="sm:col-span-2 p-3.5 rounded-xl border border-[#D4AF37]/25 bg-[#0D0D10] grid grid-cols-1 sm:grid-cols-5 gap-3 text-xs">
+                <div>
+                  <label className="block text-[#E5C158] font-bold mb-1">السعر (بالريال السعودي SAR) *</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={editingProduct.priceSar || ''}
+                    onChange={(e) =>
+                      setEditingProduct({ ...editingProduct, priceSar: Number(e.target.value) })
+                    }
+                    className="w-full h-11 sm:h-9 px-3 rounded-lg bg-[#16161B] border border-[#D4AF37]/50 font-bold text-[#E5C158] text-sm tabular-nums"
+                  />
+                </div>
                 <div>
                   <label className="block text-[#9E988C] mb-1">التكلفة (ر.س)</label>
                   <input
@@ -7156,7 +8944,7 @@ export function AdminDashboard({
                         priceSar: nextRetail,
                       });
                     }}
-                    className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 tabular-nums"
+                    className="w-full h-11 sm:h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 tabular-nums"
                   />
                 </div>
                 <div>
@@ -7177,20 +8965,7 @@ export function AdminDashboard({
                         priceSar: nextRetail,
                       });
                     }}
-                    className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 tabular-nums"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[#E5C158] font-bold mb-1">سعر البيع (ر.س) *</label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    value={editingProduct.priceSar || ''}
-                    onChange={(e) =>
-                      setEditingProduct({ ...editingProduct, priceSar: Number(e.target.value) })
-                    }
-                    className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-[#D4AF37]/50 font-bold text-[#E5C158] tabular-nums"
+                    className="w-full h-11 sm:h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 tabular-nums"
                   />
                 </div>
                 <div>
@@ -7205,7 +8980,7 @@ export function AdminDashboard({
                         wholesalePriceSar: Number(e.target.value) || undefined,
                       })
                     }
-                    className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 tabular-nums"
+                    className="w-full h-11 sm:h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 tabular-nums"
                   />
                 </div>
                 <div>
@@ -7221,20 +8996,97 @@ export function AdminDashboard({
                         fuelEfficiencyGainPercent: Number(e.target.value) || 14,
                       })
                     }
-                    className="w-full h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 tabular-nums"
+                    className="w-full h-11 sm:h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 tabular-nums"
                   />
                 </div>
               </div>
 
+              {/* Multi-Size / Dimensions Section */}
+              <div className="sm:col-span-2 p-3.5 sm:p-4 rounded-xl border border-[#D4AF37]/30 bg-[#0D0D10] space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#E5C158]">
+                    <Ruler className="w-4 h-4 shrink-0" />
+                    <span>المقاس / الأبعاد (Size) — يمكنك إضافة أكثر من مقاس للمنتج الواحد</span>
+                  </div>
+                  <span className="text-[11px] text-[#9E988C]">
+                    {(editingProduct.sizes || []).length} مقاس مضاف
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={sizeDraftInput}
+                    onChange={(e) => setSizeDraftInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddSizeTag(sizeDraftInput);
+                      }
+                    }}
+                    placeholder="اكتب المقاس أو الأبعاد (مثال: 2.5 بوصة / 63 ملم أو الطول 35 سم)"
+                    className="w-full sm:flex-1 h-11 sm:h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs sm:text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddSizeTag(sizeDraftInput)}
+                    className="w-full sm:w-auto h-11 sm:h-10 px-4 rounded-xl border border-[#D4AF37]/50 bg-[#171510] hover:border-[#D4AF37] text-xs font-bold text-[#E5C158] flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>إضافة مقاس</span>
+                  </button>
+                </div>
+
+                {/* Quick Size Presets */}
+                <div className="flex flex-wrap gap-1.5">
+                  {['2.0 بوصة (51 ملم)', '2.5 بوصة (63 ملم)', '3.0 بوصة (76 ملم)', '3.5 بوصة (89 ملم)', 'مقاس مصنعي قياسي'].map(
+                    (preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => handleAddSizeTag(preset)}
+                        className="px-2.5 py-1 rounded-lg border border-white/10 bg-[#16161B] hover:border-[#D4AF37]/50 text-[11px] text-[#C5BFB2] hover:text-[#E5C158] cursor-pointer"
+                      >
+                        + {preset}
+                      </button>
+                    )
+                  )}
+                </div>
+
+                {/* Added Size Tags */}
+                {(editingProduct.sizes || []).length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {(editingProduct.sizes || []).map((sz, sIdx) => (
+                      <span
+                        key={`${sz}-${sIdx}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-[#D4AF37]/45 bg-[#D4AF37]/15 text-xs font-bold text-[#F5E1A4]"
+                      >
+                        <span>{sz}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSizeTag(sIdx)}
+                          aria-label={`حذف المقاس ${sz}`}
+                          className="text-red-300 hover:text-red-200 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Detailed Description */}
               <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-[#C5BFB2] mb-1">الوصف الكامل (عربي)</label>
+                  <label className="block text-xs font-bold text-[#F5F2EB] mb-1">الوصف التفصيلي (عربي)</label>
                   <textarea
-                    rows={3}
+                    rows={4}
                     value={editingProduct.description || ''}
                     onChange={(e) =>
                       setEditingProduct({ ...editingProduct, description: e.target.value })
                     }
+                    placeholder="اكتب المواصفات والمميزات وضمان اجتياز الفحص الدوري..."
                     className="w-full p-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
                   />
                 </div>
@@ -7243,7 +9095,7 @@ export function AdminDashboard({
                     الوصف بالإنجليزية (English Description)
                   </label>
                   <textarea
-                    rows={3}
+                    rows={4}
                     dir="ltr"
                     value={editingProduct.descriptionEn || ''}
                     onChange={(e) =>
@@ -7255,94 +9107,13 @@ export function AdminDashboard({
                 </div>
               </div>
 
-              {/* Product Images: Multi-File Device Upload (Auto-Cropped 1000x1000) + Thumbnails w/ X Delete + Text URL Box */}
-              <div className="sm:col-span-2 p-4 rounded-xl border border-[#D4AF37]/30 bg-[#0D0D10] space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="text-xs font-bold text-[#E5C158]">
-                      صور المنتج وروابط الصور (قص تلقائي 1000 × 1000 بكسل)
-                    </div>
-                    <div className="text-[11px] text-[#9E988C]">
-                      يمكنك رفع صورة من جهازك مع أداة قص وضبط مقاس الصورة تلقائياً إلى مربع (1000 ×
-                      1000 بكسل) أو وضع رابط الصورة مباشرة بالأسفل.
-                    </div>
-                  </div>
-                  <label className="btn-gold-wave h-9 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0">
-                    <Upload className="w-4 h-4" />
-                    <span>
-                      {uploadingProductImages
-                        ? 'جاري الرفع والضبط...'
-                        : 'رفع صور من الجهاز (قص تلقائي 1000×1000)'}
-                    </span>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/jpeg,image/png,image/webp,image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        handleProductMultiImageUpload(e.target.files);
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
-                </div>
-
-                {/* Uploaded / Added Images Thumbnails with (X) Delete Button */}
-                {(editingProduct.images || []).filter((s) => s.trim().length > 0).length > 0 && (
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5 pt-1">
-                    {(editingProduct.images || []).map((imgUrl, imgIdx) => {
-                      if (!imgUrl || !imgUrl.trim()) return null;
-                      return (
-                        <div
-                          key={imgIdx}
-                          className="relative aspect-square rounded-xl border border-white/15 bg-[#0B0B0F] p-1 overflow-hidden group"
-                        >
-                          <ResilientImage
-                            src={imgUrl}
-                            alt={`صورة ${imgIdx + 1}`}
-                            className="w-full h-full object-contain rounded-lg"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveEditingImage(imgIdx)}
-                            title="حذف الصورة"
-                            aria-label="حذف الصورة"
-                            className="absolute top-1 end-1 w-5 h-5 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-md cursor-pointer"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-[11px] text-[#C5BFB2] mb-1">
-                    روابط الصور (رابط في كل سطر — متاح لإضافة روابط خارجية بجانب الصور المرفوعة)
-                  </label>
-                  <textarea
-                    rows={2}
-                    dir="ltr"
-                    value={(editingProduct.images || []).join('\n')}
-                    onChange={(e) =>
-                      setEditingProduct({
-                        ...editingProduct,
-                        images: e.target.value.split('\n').map((s) => s.trim()),
-                      })
-                    }
-                    className="w-full p-2.5 rounded-xl bg-[#16161B] border border-white/15 text-xs"
-                  />
-                </div>
-              </div>
-
               {/* Installation & Compatibility Guide (PDF + Images) */}
               <div className="sm:col-span-2 p-4 rounded-xl border border-white/10 bg-[#0D0D10] space-y-3">
                 <div className="flex items-center gap-2 text-xs font-bold text-[#E5C158]">
                   <FileText className="w-4 h-4" />
                   <span>دليل التوافق والتركيب (ملف PDF أو صور خطوات التركيب)</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col sm:flex-row flex-wrap gap-2">
                   <input
                     type="text"
                     dir="ltr"
@@ -7354,34 +9125,36 @@ export function AdminDashboard({
                       })
                     }
                     placeholder="رابط دليل التركيب PDF أو ارفع ملفاً"
-                    className="flex-1 h-9 px-3 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                    className="w-full sm:flex-1 h-10 px-3 rounded-lg bg-[#16161B] border border-white/15 text-xs"
                   />
-                  <label className="h-9 px-3 rounded-lg border border-[#D4AF37]/40 bg-[#171510] text-xs text-[#E5C158] flex items-center gap-1 cursor-pointer shrink-0">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>{uploadingTarget === 'guidePdf' ? '...' : 'رفع PDF'}</span>
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleUploadFile(f, 'guidePdf');
-                      }}
-                    />
-                  </label>
-                  <label className="h-9 px-3 rounded-lg border border-emerald-500/40 bg-emerald-950/30 text-xs text-emerald-300 flex items-center gap-1 cursor-pointer shrink-0">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>{uploadingTarget === 'guideImage' ? '...' : '+ صورة تركيب'}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleUploadFile(f, 'guideImage');
-                      }}
-                    />
-                  </label>
+                  <div className="flex gap-2">
+                    <label className="flex-1 sm:flex-initial h-10 px-3 rounded-lg border border-[#D4AF37]/40 bg-[#171510] text-xs text-[#E5C158] flex items-center justify-center gap-1 cursor-pointer shrink-0">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{uploadingTarget === 'guidePdf' ? '...' : 'رفع PDF'}</span>
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleUploadFile(f, 'guidePdf');
+                        }}
+                      />
+                    </label>
+                    <label className="flex-1 sm:flex-initial h-10 px-3 rounded-lg border border-emerald-500/40 bg-emerald-950/30 text-xs text-emerald-300 flex items-center justify-center gap-1 cursor-pointer shrink-0">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{uploadingTarget === 'guideImage' ? '...' : '+ صورة تركيب'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleUploadFile(f, 'guideImage');
+                        }}
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 {(editingProduct.installationGuideImages || []).length > 0 && (
@@ -7432,9 +9205,9 @@ export function AdminDashboard({
                     + إضافة مواصفة
                   </button>
                 </div>
-                <div className="space-y-2 max-h-36 overflow-y-auto">
+                <div className="space-y-2 max-h-40 overflow-y-auto">
                   {(editingProduct.specs || []).map((sp: ProductSpec, idx: number) => (
-                    <div key={idx} className="flex gap-2">
+                    <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <input
                         type="text"
                         placeholder="المواصفة"
@@ -7444,7 +9217,7 @@ export function AdminDashboard({
                           next[idx] = { ...next[idx], label: e.target.value };
                           setEditingProduct({ ...editingProduct, specs: next });
                         }}
-                        className="flex-1 h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                        className="w-full h-10 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
                       />
                       <input
                         type="text"
@@ -7455,7 +9228,7 @@ export function AdminDashboard({
                           next[idx] = { ...next[idx], value: e.target.value };
                           setEditingProduct({ ...editingProduct, specs: next });
                         }}
-                        className="flex-1 h-9 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                        className="w-full h-10 px-2.5 rounded-lg bg-[#16161B] border border-white/15 text-xs"
                       />
                     </div>
                   ))}
@@ -7477,7 +9250,7 @@ export function AdminDashboard({
                   value={productSeoKeywordsInput}
                   onChange={(e) => setProductSeoKeywordsInput(e.target.value)}
                   placeholder="أدخل حتى 15 كلمة أو عبارة مفصولة بفاصلة (مثال: دبة تلوث تويوتا، فلتر بيئة DPF، دبة عادم Euro 6)"
-                  className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full h-11 sm:h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs focus:outline-none focus:border-[#D4AF37]"
                 />
                 {parseSeoKeywordsText(productSeoKeywordsInput).length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
@@ -7494,8 +9267,8 @@ export function AdminDashboard({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-6 pt-2 border-t border-white/10">
-              <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <div className="flex flex-wrap items-center gap-5 pt-2 border-t border-white/10">
+              <label className="flex items-center gap-2 text-xs min-h-[36px] cursor-pointer">
                 <input
                   type="checkbox"
                   checked={editingProduct.inStock !== false}
@@ -7506,7 +9279,7 @@ export function AdminDashboard({
                 <span>متوفر بالمخزون</span>
               </label>
 
-              <label className="flex items-center gap-2 text-xs font-bold text-[#E5C158] cursor-pointer">
+              <label className="flex items-center gap-2 text-xs font-bold text-[#E5C158] min-h-[36px] cursor-pointer">
                 <input
                   type="checkbox"
                   checked={Boolean(editingProduct.isPublished)}
@@ -7518,20 +9291,20 @@ export function AdminDashboard({
               </label>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setEditingProduct(null)}
-                className="h-10 px-4 rounded-xl border border-white/15 text-xs cursor-pointer"
+                className="w-full sm:w-auto h-11 sm:h-10 px-4 rounded-xl border border-white/15 text-xs cursor-pointer"
               >
                 إلغاء
               </button>
               <button
                 type="submit"
                 disabled={savingProduct}
-                className="btn-gold-wave h-10 px-6 rounded-xl text-xs sm:text-sm cursor-pointer"
+                className="btn-gold-wave w-full sm:w-auto h-11 sm:h-10 px-6 rounded-xl text-xs sm:text-sm cursor-pointer"
               >
-                {savingProduct ? 'جاري الحفظ...' : 'حفظ المنتج'}
+                {savingProduct ? 'جاري الحفظ...' : 'حفظ ونشر المنتج في المتجر'}
               </button>
             </div>
           </form>

@@ -3,6 +3,7 @@
   "settings": {
     "storeName": "مصنع التاج الذهبي لدبات التلوث",
     "storeTagline": "إنتاج دبات التلوث للديزل والبنزين",
+    "storeLogoUrl": "",
     "storeOpen": true,
     "storeClosedTitle": "المتجر مغلق مؤقتاً للصيانة والتحديث",
     "storeClosedMessage": "نعمل حالياً على تحديث المخزون وتجهيز منتجات وعروض جديدة. يمكنكم التواصل معنا مباشرة عبر واتساب لأي استفسار أو طلب عاجل، وسنعود لاستقبال الطلبات قريباً.",
@@ -115,9 +116,15 @@
     "siteBackgroundOpacity": 0.2,
     "themePreset": "royal_gold",
     "buttonStyle": "gold_wave",
+    "cardStyle": "luxury_bordered",
+    "themeFontFamily": "Tajawal",
     "primaryGoldColor": "#D4AF37",
+    "secondaryColor": "#E5C158",
     "backgroundColor": "#09090B",
     "surfaceColor": "#131317",
+    "textColor": "#F5F2EB",
+    "productsSectionBgUrl": "",
+    "productsSectionBgOpacity": 0.25,
     "whatsappNumber": "966504597852",
     "contactEmail": "uuuo333@gmail.com",
     "paypalBusinessEmail": "payments@taj-catalytic.example",
@@ -181,6 +188,59 @@
     ],
     "seoAutoUpdateEnabled": true,
     "seoLastAutoRun": "2026-11-16T09:35:45.669Z",
+    "groupChatEnabled": true,
+    "groupChatTitle": "تجارب ومشاكل ملاك السيارات مع دبة التلوث.. وحلول أهل الخبرة",
+    "groupChatMessages": [
+      {
+        "id": "gc-1",
+        "senderName": "خالد (صاحب هوندا)",
+        "roleTag": "مالك سيارة",
+        "accent": "owner_car",
+        "message": "يا شباب عندي هوندا أكورد وظهرت لمبة المكينة (كود P0420) والسيارة صارت تصرف بنزين بزيادة، وش الحل؟"
+      },
+      {
+        "id": "gc-2",
+        "senderName": "سعد (صاحب مازدا)",
+        "roleTag": "مالك سيارة",
+        "accent": "owner_car",
+        "message": "نفس مشكلتك صارت معي في المازدا! رحت لورشة وقالوا فرّغ الدبة، وبعد ما فرغتها طلع صوت مزعج وريحة كربون ورسبت في الفحص الدوري."
+      },
+      {
+        "id": "gc-3",
+        "senderName": "تركي (صاحب لكزس)",
+        "roleTag": "مالك سيارة",
+        "accent": "owner_car",
+        "message": "انتبهوا من التفريغ يا إخوان، أنا معي لكزس 430 ولما فرغتها ارتفعت حرارة الشكمان وضعف عزم الموتر."
+      },
+      {
+        "id": "gc-4",
+        "senderName": "فيصل (صاحب بي إم دبليو)",
+        "roleTag": "مالك سيارة",
+        "accent": "owner_car",
+        "message": "فعلاً، خصوصاً في البي إم دبليو والسيارات الحديثة، حساسات الشكمان دقيقة وأي تفريغ يلخبط كمبيوتر السيارة."
+      },
+      {
+        "id": "gc-5",
+        "senderName": "المهندس أحمد",
+        "roleTag": "مهندس فحص وتشخيص",
+        "accent": "engineer",
+        "message": "حياكم الله جميعاً. كلامكم سليم 100%، تفريغ الدبة يرفع ضغط الحرارة ويضر الحساسات والقير مع الوقت، والحل الصحيح هو استبدالها بدبة مطابقة للمواصفات."
+      },
+      {
+        "id": "gc-6",
+        "senderName": "المعلم فهد",
+        "roleTag": "خبير تركيب الدبات",
+        "accent": "master",
+        "message": "ومن واقع خبرتنا في التركيب، دباتنا مصممة بقلب سيراميك ومعدن عالي الجودة يطفي لمبة المكينة ويرجع عزم الموتر الطبيعي من أول تشغيل."
+      },
+      {
+        "id": "gc-7",
+        "senderName": "المدير يوسف",
+        "roleTag": "إدارة المصنع",
+        "accent": "manager",
+        "message": "أبشروا بالخير جميعاً، نوفر لكم دبات تلوث (هوندا، مازدا، لكزس، بي إم دبليو، وجميع السيارات) بمواصفات ألمانية وضمان رسمي وبسعر المصنع المباشر."
+      }
+    ],
     "promoDiscountCodes": [
       {
         "id": "promo-taj5",

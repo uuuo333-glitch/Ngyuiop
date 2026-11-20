@@ -5,22 +5,55 @@
     --royal-bg: #09090b;
     --royal-surface: #121216;
     --royal-gold: #d4af37;
+    --royal-secondary: #e5c158;
     --royal-gold-soft: #f1d37a;
     --royal-text: #f5f2eb;
     --royal-muted: #9e988c;
+    --royal-font: "Tajawal";
   }
 
   html {
     scroll-behavior: smooth;
-    font-family: "Tajawal", system-ui, -apple-system, sans-serif;
+    overflow-x: clip;
+    font-family: var(--royal-font, "Tajawal"), system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    overflow-x: clip;
   }
 
   h1,
   h2,
   h3,
   .font-display {
-    font-family: "El Messiri", "Tajawal", serif;
+    font-family: "El Messiri", var(--royal-font, "Tajawal"), serif;
   }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+[data-card-style="glass_modern"] .store-product-card {
+  backdrop-filter: blur(14px);
+  background-color: color-mix(in srgb, var(--royal-surface, #121216) 72%, transparent) !important;
+  border-color: color-mix(in srgb, var(--royal-gold, #d4af37) 30%, rgba(255, 255, 255, 0.14));
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.65);
+}
+
+[data-card-style="sharp_industrial"] .store-product-card {
+  border-radius: 0.5rem !important;
+  border-width: 1.5px;
+  border-color: color-mix(in srgb, var(--royal-gold, #d4af37) 42%, rgba(255, 255, 255, 0.12));
+}
+
+[data-card-style="elevated_soft"] .store-product-card {
+  border-radius: 1.5rem !important;
+  box-shadow: 0 18px 40px -16px color-mix(in srgb, var(--royal-gold, #d4af37) 26%, rgba(0, 0, 0, 0.75));
 }
 
 .tabular-nums {

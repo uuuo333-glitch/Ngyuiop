@@ -4,6 +4,7 @@ import {
   Fuel,
   Heart,
   MessageCircle,
+  Ruler,
   Scale,
   ShoppingBag,
   Star,
@@ -22,7 +23,7 @@ import type {
   PublicProduct,
   PublicSettings,
 } from '../types';
-import { ResilientImage } from './ResilientImage';
+import { DEFAULT_PRODUCT_IMAGE, ResilientImage } from './ResilientImage';
 import { ShareButton } from './ShareButton';
 
 interface ProductModalProps {
@@ -53,6 +54,7 @@ export function ProductModal({
   onAddToCart,
 }: ProductModalProps) {
   const [selectedImageIdx, setSelectedImageIdx] = useState(0);
+  const [selectedSize, setSelectedSize] = useState('');
   const [monthlyFuelSpend, setMonthlyFuelSpend] = useState(800);
 
   // Customer Review Submission Form
@@ -65,11 +67,18 @@ export function ProductModal({
 
   useEffect(() => {
     setSelectedImageIdx(0);
+    setSelectedSize(
+      Array.isArray(product?.sizes) && product.sizes.length > 0 ? product.sizes[0] : ''
+    );
     setReviewNotice('');
     setReviewError('');
-  }, [product?.id]);
+  }, [product?.id, product?.sizes]);
 
   if (!product) return null;
+
+  const productSizes = Array.isArray(product.sizes)
+    ? product.sizes.map((s) => s.trim()).filter(Boolean)
+    : [];
 
   const displayName = lang === 'en' ? product.nameEn || product.name : product.name;
   const displayDesc =
@@ -108,8 +117,8 @@ export function ProductModal({
       : rawDigits;
   const whatsappText = encodeURIComponent(
     lang === 'en'
-      ? `Hello, I want to inquire/order:\n• ${displayName}\n${product.sku ? `• SKU: ${product.sku}\n` : ''}• Price: ${priceDisplay.valueText} ${priceDisplay.unit}`
-      : `مرحباً، أرغب في طلب / الاستفسار عن المنتج التالي:\n• ${displayName}\n${product.sku ? `• كود المنتج: ${product.sku}\n` : ''}• السعر: ${priceDisplay.valueText} ${priceDisplay.unit}`
+      ? `Hello, I want to inquire/order:\n• ${displayName}\n${selectedSize ? `• Size: ${selectedSize}\n` : ''}${product.sku ? `• SKU: ${product.sku}\n` : ''}• Price: ${priceDisplay.valueText} ${priceDisplay.unit}`
+      : `مرحباً، أرغب في طلب / الاستفسار عن المنتج التالي:\n• ${displayName}\n${selectedSize ? `• المقاس المختار: ${selectedSize}\n` : ''}${product.sku ? `• كود المنتج: ${product.sku}\n` : ''}• السعر: ${priceDisplay.valueText} ${priceDisplay.unit}`
   );
 
   // Fuel Savings Estimation
@@ -198,7 +207,8 @@ export function ProductModal({
           <div className="lg:col-span-5 p-5 bg-[#0C0C0F] border-b lg:border-b-0 lg:border-e border-white/10 space-y-3">
             <div className="aspect-square rounded-xl overflow-hidden border border-white/10 bg-[#0B0B0F] p-2">
               <ResilientImage
-                src={product.images[selectedImageIdx] || product.images[0]}
+                src={product.images?.[selectedImageIdx] || product.images?.[0]}
+                defaultFallbackSrc={DEFAULT_PRODUCT_IMAGE}
                 alt={displayName}
                 className="w-full h-full object-contain rounded-lg"
               />
@@ -324,6 +334,35 @@ export function ProductModal({
               )}
 
               <p className="text-sm text-[#C5BFB2] leading-relaxed">{displayDesc}</p>
+
+              {/* Product Sizes / Dimensions Selector */}
+              {productSizes.length > 0 && (
+                <div className="p-3.5 rounded-xl border border-[#D4AF37]/25 bg-[#141418] space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#E5C158]">
+                    <Ruler className="w-3.5 h-3.5" />
+                    <span>{lang === 'en' ? 'Available Sizes / Dimensions' : 'المقاسات / الأبعاد المتاحة'}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {productSizes.map((sz) => {
+                      const active = selectedSize === sz;
+                      return (
+                        <button
+                          key={sz}
+                          type="button"
+                          onClick={() => setSelectedSize(sz)}
+                          className={`min-h-[38px] px-3 py-1.5 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${
+                            active
+                              ? 'border-[#D4AF37] bg-[#D4AF37] text-[#09090B]'
+                              : 'border-white/15 bg-[#0C0C0F] text-[#F5F2EB] hover:border-[#D4AF37]/60'
+                          }`}
+                        >
+                          {sz}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="space-y-2.5 pt-2">

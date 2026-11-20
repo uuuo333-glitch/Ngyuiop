@@ -241,6 +241,10 @@
           "type": "array",
           "description": "Product image URLs (max 12)."
         },
+        "sizes": {
+          "type": "array",
+          "description": "Available product sizes or dimensions (max 20)."
+        },
         "inStock": {
           "type": "boolean",
           "description": "Stock availability flag."
@@ -302,6 +306,176 @@
         }
       },
       "required": ["uid", "email", "role", "createdAt"]
+    },
+    "StorefrontConfig": {
+      "title": "Storefront Public Config",
+      "description": "Manually edited storefront brand name, tagline, and top-bar logo URL managed by verified admins.",
+      "type": "object",
+      "properties": {
+        "configId": {
+          "type": "string",
+          "enum": ["public"],
+          "description": "Fixed public configuration document identifier."
+        },
+        "storeName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Storefront brand title shown in top navigation bar and hero."
+        },
+        "storeTagline": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Short Arabic storefront subtitle."
+        },
+        "storeLogoUrl": {
+          "type": "string",
+          "maxLength": 1500,
+          "description": "Top-bar emblem image URL."
+        },
+        "themePreset": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Active theme preset key."
+        },
+        "primaryGoldColor": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Primary brand/button accent hex color."
+        },
+        "secondaryColor": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Secondary accent hex color."
+        },
+        "backgroundColor": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Page background hex color."
+        },
+        "surfaceColor": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Product card background hex color."
+        },
+        "textColor": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Primary text hex color."
+        },
+        "themeFontFamily": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Selected Arabic typography family."
+        },
+        "cardStyle": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Product card visual style key."
+        },
+        "buttonStyle": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Button visual style key."
+        },
+        "productsSectionBgUrl": {
+          "type": "string",
+          "maxLength": 1500,
+          "description": "Optional background image URL for products section."
+        },
+        "productsSectionBgOpacity": {
+          "type": "number",
+          "description": "Opacity for products section background overlay."
+        },
+        "updatedByUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of admin who saved this configuration."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp."
+        }
+      },
+      "required": ["configId", "storeName", "storeTagline", "updatedByUid", "updatedAt"]
+    },
+    "PromoBannerDoc": {
+      "title": "Promotional Banner Document",
+      "description": "Manually or AI created promotional offer banner displayed on storefront and synced to Firestore.",
+      "type": "object",
+      "properties": {
+        "bannerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Banner ID matching the document ID."
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Admin UID that created the banner."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "description": "Banner headline."
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Banner description text."
+        },
+        "ctaText": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Call-to-action button label."
+        },
+        "ctaUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Optional CTA target URL or section hash."
+        },
+        "discountLabel": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Offer badge label."
+        },
+        "accentColor": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Hex accent color."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Public storefront visibility flag."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation server timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp."
+        }
+      },
+      "required": [
+        "bannerId",
+        "ownerUid",
+        "title",
+        "subtitle",
+        "ctaText",
+        "accentColor",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -328,6 +502,14 @@
     "/products/{productId}": {
       "schema": { "$ref": "#/entities/StoreProduct" },
       "description": "Public catalog products mirrored by admin."
+    },
+    "/storefront/{docId}": {
+      "schema": { "$ref": "#/entities/StorefrontConfig" },
+      "description": "Public storefront store name, tagline, and top-bar logo managed by verified admin."
+    },
+    "/banners/{bannerId}": {
+      "schema": { "$ref": "#/entities/PromoBannerDoc" },
+      "description": "Storefront offer banners managed by verified admin."
     },
     "/admins/{userId}": {
       "schema": { "$ref": "#/entities/AdminGrant" },
