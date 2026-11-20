@@ -91,7 +91,7 @@ service cloud.firestore {
 
     function isValidStoreProduct(data, userId, productId) {
       return data.keys().hasAll(['ownerUid', 'productId', 'name', 'category', 'priceSar', 'description', 'images', 'inStock', 'isPublished', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['ownerUid', 'productId', 'sku', 'name', 'nameEn', 'category', 'priceSar', 'description', 'images', 'inStock', 'isPublished', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerUid', 'productId', 'sku', 'name', 'nameEn', 'category', 'priceSar', 'description', 'images', 'sizes', 'inStock', 'isPublished', 'createdAt', 'updatedAt'])
         && data.ownerUid is string && data.ownerUid == userId && isValidId(data.ownerUid)
         && data.productId is string && data.productId == productId && isValidId(data.productId)
         && (!('sku' in data) || (data.sku is string && data.sku.size() <= 64))
@@ -101,8 +101,65 @@ service cloud.firestore {
         && (data.priceSar is int || data.priceSar is float) && data.priceSar >= 0 && data.priceSar <= 10000000
         && data.description is string && data.description.size() <= 5000
         && data.images is list && data.images.size() <= 12 && (data.images.size() == 0 || (data.images[0] is string && data.images[0].size() <= 1500))
+        && (!('sizes' in data) || (data.sizes is list && data.sizes.size() <= 20 && (data.sizes.size() == 0 || (data.sizes[0] is string && data.sizes[0].size() <= 120))))
         && data.inStock is bool
         && data.isPublished is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStorefrontConfig(data, userId, docId) {
+      return data.keys().hasAll(['configId', 'storeName', 'storeTagline', 'updatedByUid', 'updatedAt'])
+        && data.keys().hasOnly([
+          'configId',
+          'storeName',
+          'storeTagline',
+          'storeLogoUrl',
+          'themePreset',
+          'primaryGoldColor',
+          'secondaryColor',
+          'backgroundColor',
+          'surfaceColor',
+          'textColor',
+          'themeFontFamily',
+          'cardStyle',
+          'buttonStyle',
+          'productsSectionBgUrl',
+          'productsSectionBgOpacity',
+          'updatedByUid',
+          'updatedAt'
+        ])
+        && data.configId is string && data.configId == docId && docId == 'public'
+        && data.updatedByUid is string && data.updatedByUid == userId && isValidId(data.updatedByUid)
+        && data.storeName is string && data.storeName.size() >= 1 && data.storeName.size() <= 160
+        && data.storeTagline is string && data.storeTagline.size() <= 300
+        && (!('storeLogoUrl' in data) || (data.storeLogoUrl is string && data.storeLogoUrl.size() <= 1500))
+        && (!('themePreset' in data) || (data.themePreset is string && data.themePreset.size() <= 40))
+        && (!('primaryGoldColor' in data) || (data.primaryGoldColor is string && data.primaryGoldColor.size() <= 32))
+        && (!('secondaryColor' in data) || (data.secondaryColor is string && data.secondaryColor.size() <= 32))
+        && (!('backgroundColor' in data) || (data.backgroundColor is string && data.backgroundColor.size() <= 32))
+        && (!('surfaceColor' in data) || (data.surfaceColor is string && data.surfaceColor.size() <= 32))
+        && (!('textColor' in data) || (data.textColor is string && data.textColor.size() <= 32))
+        && (!('themeFontFamily' in data) || (data.themeFontFamily is string && data.themeFontFamily.size() <= 64))
+        && (!('cardStyle' in data) || (data.cardStyle is string && data.cardStyle.size() <= 40))
+        && (!('buttonStyle' in data) || (data.buttonStyle is string && data.buttonStyle.size() <= 40))
+        && (!('productsSectionBgUrl' in data) || (data.productsSectionBgUrl is string && data.productsSectionBgUrl.size() <= 1500))
+        && (!('productsSectionBgOpacity' in data) || ((data.productsSectionBgOpacity is int || data.productsSectionBgOpacity is float) && data.productsSectionBgOpacity >= 0 && data.productsSectionBgOpacity <= 1))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPromoBanner(data, userId, bannerId) {
+      return data.keys().hasAll(['bannerId', 'ownerUid', 'title', 'subtitle', 'ctaText', 'accentColor', 'isActive', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['bannerId', 'ownerUid', 'title', 'subtitle', 'ctaText', 'ctaUrl', 'discountLabel', 'accentColor', 'isActive', 'createdAt', 'updatedAt'])
+        && data.bannerId is string && data.bannerId == bannerId && isValidId(data.bannerId)
+        && data.ownerUid is string && data.ownerUid == userId && isValidId(data.ownerUid)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 240
+        && data.subtitle is string && data.subtitle.size() <= 1000
+        && data.ctaText is string && data.ctaText.size() >= 1 && data.ctaText.size() <= 80
+        && (!('ctaUrl' in data) || (data.ctaUrl is string && data.ctaUrl.size() <= 500))
+        && (!('discountLabel' in data) || (data.discountLabel is string && data.discountLabel.size() <= 120))
+        && data.accentColor is string && data.accentColor.size() >= 3 && data.accentColor.size() <= 32
+        && data.isActive is bool
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -123,6 +180,41 @@ service cloud.firestore {
       allow create: if isAdmin() && isValidId(userId) && isValidAdminGrant(incoming(), userId) && incoming().createdAt == request.time;
       allow update: if isAdmin() && isValidId(userId) && isValidAdminGrant(incoming(), userId);
       allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    // Collection: /storefront/{docId} (Public brand name, tagline, and top-bar logo managed by verified admin)
+    match /storefront/{docId} {
+      allow get: if docId == 'public';
+      allow list: if isAdmin();
+      allow create: if docId == 'public'
+        && isAdmin()
+        && isValidStorefrontConfig(incoming(), request.auth.uid, docId)
+        && incoming().updatedAt == request.time;
+      allow update: if docId == 'public'
+        && isAdmin()
+        && isValidStorefrontConfig(incoming(), request.auth.uid, docId)
+        && incoming().configId == existing().configId
+        && incoming().updatedAt == request.time;
+      allow delete: if docId == 'public' && isAdmin();
+    }
+
+    // Collection: /banners/{bannerId} (Promotional offer banners managed by verified admin)
+    match /banners/{bannerId} {
+      allow get: if isValidId(bannerId) && (resource.data.isActive == true || isAdmin());
+      allow list: if resource.data.isActive == true || (isVerifiedUser() && resource.data.ownerUid == request.auth.uid);
+      allow create: if isValidId(bannerId)
+        && isAdmin()
+        && isValidPromoBanner(incoming(), request.auth.uid, bannerId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(bannerId)
+        && isAdmin()
+        && isValidPromoBanner(incoming(), existing().ownerUid, bannerId)
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().bannerId == existing().bannerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(bannerId) && isAdmin();
     }
 
     // Collection: /products/{productId} (Public catalog mirror managed by admins)
@@ -263,7 +355,7 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && (
             isAdmin() ||
-            (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['sku', 'name', 'nameEn', 'category', 'priceSar', 'description', 'images', 'inStock', 'isPublished', 'updatedAt']))
+            (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['sku', 'name', 'nameEn', 'category', 'priceSar', 'description', 'images', 'sizes', 'inStock', 'isPublished', 'updatedAt']))
           );
         allow delete: if isValidId(userId) && isValidId(productId) && (isOwner(userId) || isAdmin());
       }

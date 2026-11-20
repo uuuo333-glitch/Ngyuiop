@@ -154,6 +154,13 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error) {
     console.error('Google sign in error:', error);
+    const code = (error as { code?: string })?.code || '';
+    if (code === 'auth/popup-blocked') {
+      throw new Error('تم حظر النافذة المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع والمحاولة مجدداً.');
+    }
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      throw new Error('تم إغلاق نافذة تسجيل الدخول قبل إتمام التحقق.');
+    }
     throw error;
   } finally {
     isSigningIn = false;
@@ -436,6 +443,7 @@ export interface SaveFirestoreProductInput {
   priceSar: number;
   description?: string;
   images?: string[];
+  sizes?: string[];
   inStock?: boolean;
   isPublished?: boolean;
 }
@@ -459,6 +467,11 @@ export async function saveProductToFirestore(
     .filter((u) => u.length > 0 && !u.startsWith('data:') && u.length <= 1500)
     .slice(0, 12);
 
+  const sanitizedSizes = (product.sizes || [])
+    .map((s) => String(s || '').trim().slice(0, 120))
+    .filter(Boolean)
+    .slice(0, 20);
+
   const baseFields: Record<string, unknown> = {
     ownerUid: uid,
     productId: pid,
@@ -467,6 +480,7 @@ export async function saveProductToFirestore(
     priceSar: Math.max(0, Math.min(10000000, Number(product.priceSar) || 0)),
     description: (product.description || '').trim().slice(0, 5000),
     images: sanitizedImages,
+    sizes: sanitizedSizes,
     inStock: product.inStock !== false,
     isPublished: Boolean(product.isPublished),
   };
@@ -488,8 +502,10 @@ export async function saveProductToFirestore(
         updatedAt: serverTimestamp(),
       });
     } else {
+      const existingPersonal = existingSnap.data();
       await updateDoc(personalRef, {
         ...baseFields,
+        ownerUid: String(existingPersonal.ownerUid || uid),
         updatedAt: serverTimestamp(),
       });
     }
@@ -499,7 +515,6 @@ export async function saveProductToFirestore(
 
   let catalogPublished = false;
   if (user.email === 'uuuo333@gmail.com' || user.email === 'dbattloth.221@gmail.com') {
-    const catalogPath = `products/${pid}`;
     const catalogRef = doc(db, 'products', pid);
     try {
       const catSnap = await getDoc(catalogRef);
@@ -510,8 +525,10 @@ export async function saveProductToFirestore(
           updatedAt: serverTimestamp(),
         });
       } else {
+        const existingCatalog = catSnap.data();
         await updateDoc(catalogRef, {
           ...baseFields,
+          ownerUid: String(existingCatalog.ownerUid || uid),
           updatedAt: serverTimestamp(),
         });
       }
@@ -524,4 +541,247 @@ export async function saveProductToFirestore(
 
   return { personalPath, catalogPublished };
 }
+
+export async function deleteProductFromFirestore(
+  user: User,
+  productId: string
+): Promise<boolean> {
+  if (!user.uid || !user.emailVerified) return false;
+  const uid = sanitizeDocId(user.uid);
+  const pid = sanitizeDocId(productId);
+  try {
+    await deleteDoc(doc(db, 'users', uid, 'products', pid)).catch(() => {});
+    if (user.email === 'uuuo333@gmail.com' || user.email === 'dbattloth.221@gmail.com') {
+      await deleteDoc(doc(db, 'products', pid)).catch(() => {});
+    }
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `products/${pid}`);
+  }
+}
+
+export interface StorefrontConfigFirestoreInput {
+  storeName: string;
+  storeTagline: string;
+  storeLogoUrl?: string;
+  themePreset?: string;
+  primaryGoldColor?: string;
+  secondaryColor?: string;
+  backgroundColor?: string;
+  surfaceColor?: string;
+  textColor?: string;
+  themeFontFamily?: string;
+  cardStyle?: string;
+  buttonStyle?: string;
+  productsSectionBgUrl?: string;
+  productsSectionBgOpacity?: number;
+}
+
+export async function saveStorefrontConfigToFirestore(
+  user: User,
+  input: StorefrontConfigFirestoreInput
+): Promise<boolean> {
+  if (!user.uid || !user.emailVerified) {
+    throw new Error('يرجى ربط حساب Google الموثق لحفظ التعديلات في قاعدة بيانات Firebase.');
+  }
+
+  const uid = sanitizeDocId(user.uid);
+  const path = 'storefront/public';
+  await ensureFirestoreUserProfile(user);
+
+  const payload: Record<string, unknown> = {
+    configId: 'public',
+    storeName: (input.storeName || 'مصنع التاج الذهبي لدبات التلوث').trim().slice(0, 160),
+    storeTagline: (input.storeTagline || '').trim().slice(0, 300),
+    updatedByUid: uid,
+    updatedAt: serverTimestamp(),
+  };
+
+  const addStr = (key: string, val: string | undefined, maxLen: number, allowEmpty = false) => {
+    if (typeof val !== 'string') return;
+    const trimmed = val.trim();
+    if (!trimmed && !allowEmpty) return;
+    if (trimmed.startsWith('data:') && trimmed.length > maxLen) return;
+    if (trimmed.length <= maxLen) {
+      payload[key] = trimmed;
+    }
+  };
+
+  addStr('storeLogoUrl', input.storeLogoUrl, 1500, true);
+  addStr('themePreset', input.themePreset, 40);
+  addStr('primaryGoldColor', input.primaryGoldColor, 32);
+  addStr('secondaryColor', input.secondaryColor, 32);
+  addStr('backgroundColor', input.backgroundColor, 32);
+  addStr('surfaceColor', input.surfaceColor, 32);
+  addStr('textColor', input.textColor, 32);
+  addStr('themeFontFamily', input.themeFontFamily, 64);
+  addStr('cardStyle', input.cardStyle, 40);
+  addStr('buttonStyle', input.buttonStyle, 40);
+  addStr('productsSectionBgUrl', input.productsSectionBgUrl, 1500, true);
+
+  if (
+    typeof input.productsSectionBgOpacity === 'number' &&
+    !Number.isNaN(input.productsSectionBgOpacity)
+  ) {
+    payload.productsSectionBgOpacity = Math.max(
+      0,
+      Math.min(1, Number(input.productsSectionBgOpacity))
+    );
+  }
+
+  try {
+    await setDoc(doc(db, 'storefront', 'public'), payload);
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export interface StorefrontBannerFirestoreInput {
+  id: string;
+  title: string;
+  subtitle: string;
+  ctaText: string;
+  ctaUrl?: string;
+  discountLabel?: string;
+  accentColor: string;
+  isActive: boolean;
+}
+
+export async function saveBannerToFirestore(
+  user: User,
+  banner: StorefrontBannerFirestoreInput
+): Promise<boolean> {
+  if (!user.uid || !user.emailVerified) {
+    throw new Error('يرجى ربط حساب Google الموثق لحفظ البنر في قاعدة بيانات Firebase.');
+  }
+
+  const uid = sanitizeDocId(user.uid);
+  const bid = sanitizeDocId(banner.id || `banner_${Date.now().toString(36)}`);
+  const path = `banners/${bid}`;
+  await ensureFirestoreUserProfile(user);
+
+  const ref = doc(db, 'banners', bid);
+  const baseFields: Record<string, unknown> = {
+    bannerId: bid,
+    title: (banner.title || 'عرض خاص').trim().slice(0, 240),
+    subtitle: (banner.subtitle || '').trim().slice(0, 1000),
+    ctaText: (banner.ctaText || 'تسوق الآن').trim().slice(0, 80),
+    accentColor: (banner.accentColor || '#D4AF37').trim().slice(0, 32),
+    isActive: banner.isActive !== false,
+  };
+  if (banner.ctaUrl?.trim()) {
+    baseFields.ctaUrl = banner.ctaUrl.trim().slice(0, 500);
+  }
+  if (banner.discountLabel?.trim()) {
+    baseFields.discountLabel = banner.discountLabel.trim().slice(0, 120);
+  }
+
+  try {
+    const existingSnap = await getDoc(ref);
+    if (!existingSnap.exists()) {
+      await setDoc(ref, {
+        ...baseFields,
+        ownerUid: uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      const existingData = existingSnap.data();
+      await setDoc(ref, {
+        ...baseFields,
+        ownerUid: String(existingData.ownerUid || uid),
+        createdAt: existingData.createdAt || serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteBannerFromFirestore(bannerId: string): Promise<boolean> {
+  const bid = sanitizeDocId(bannerId);
+  const path = `banners/${bid}`;
+  try {
+    await deleteDoc(doc(db, 'banners', bid));
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export function subscribePublicStorefrontOverrides(
+  onConfig: (config: Partial<StorefrontConfigFirestoreInput>) => void,
+  onBanners: (banners: StorefrontBannerFirestoreInput[]) => void
+): Unsubscribe {
+  const unsubConfig = onSnapshot(
+    doc(db, 'storefront', 'public'),
+    (snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data();
+      onConfig({
+        storeName: typeof d.storeName === 'string' ? d.storeName : undefined,
+        storeTagline: typeof d.storeTagline === 'string' ? d.storeTagline : undefined,
+        storeLogoUrl: typeof d.storeLogoUrl === 'string' ? d.storeLogoUrl : undefined,
+        themePreset: typeof d.themePreset === 'string' ? d.themePreset : undefined,
+        primaryGoldColor: typeof d.primaryGoldColor === 'string' ? d.primaryGoldColor : undefined,
+        secondaryColor: typeof d.secondaryColor === 'string' ? d.secondaryColor : undefined,
+        backgroundColor: typeof d.backgroundColor === 'string' ? d.backgroundColor : undefined,
+        surfaceColor: typeof d.surfaceColor === 'string' ? d.surfaceColor : undefined,
+        textColor: typeof d.textColor === 'string' ? d.textColor : undefined,
+        themeFontFamily: typeof d.themeFontFamily === 'string' ? d.themeFontFamily : undefined,
+        cardStyle: typeof d.cardStyle === 'string' ? d.cardStyle : undefined,
+        buttonStyle: typeof d.buttonStyle === 'string' ? d.buttonStyle : undefined,
+        productsSectionBgUrl:
+          typeof d.productsSectionBgUrl === 'string' ? d.productsSectionBgUrl : undefined,
+        productsSectionBgOpacity:
+          typeof d.productsSectionBgOpacity === 'number' ? d.productsSectionBgOpacity : undefined,
+      });
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.GET, 'storefront/public');
+      } catch {
+        // Non-fatal fallback for offline storefront reads
+      }
+    }
+  );
+
+  const bannersQuery = query(collection(db, 'banners'), where('isActive', '==', true));
+  const unsubBanners = onSnapshot(
+    bannersQuery,
+    (snap) => {
+      if (snap.empty) return;
+      const list: StorefrontBannerFirestoreInput[] = snap.docs.map((docSnap) => {
+        const d = docSnap.data();
+        return {
+          id: String(d.bannerId || docSnap.id),
+          title: String(d.title || ''),
+          subtitle: String(d.subtitle || ''),
+          ctaText: String(d.ctaText || 'تسوق الآن'),
+          ctaUrl: typeof d.ctaUrl === 'string' ? d.ctaUrl : undefined,
+          discountLabel: typeof d.discountLabel === 'string' ? d.discountLabel : undefined,
+          accentColor: String(d.accentColor || '#D4AF37'),
+          isActive: d.isActive !== false,
+        };
+      });
+      onBanners(list);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, 'banners');
+      } catch {
+        // Non-fatal fallback for offline storefront reads
+      }
+    }
+  );
+
+  return () => {
+    unsubConfig();
+    unsubBanners();
+  };
+}
+
 

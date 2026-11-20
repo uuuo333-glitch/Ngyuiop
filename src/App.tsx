@@ -1,7 +1,23 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { User } from 'firebase/auth';
-import { Crown, Lock, Mail, MessageCircle, Scale, Wrench, X } from 'lucide-react';
-import { fetchFirestoreWishlistIds, initAuth, syncWishlistItemToFirestore } from './firebase';
+import {
+  Crown,
+  Home,
+  Lock,
+  Mail,
+  MessageCircle,
+  Package,
+  Scale,
+  ShoppingBag,
+  Wrench,
+  X,
+} from 'lucide-react';
+import {
+  fetchFirestoreWishlistIds,
+  initAuth,
+  subscribePublicStorefrontOverrides,
+  syncWishlistItemToFirestore,
+} from './firebase';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CartDrawer } from './components/CartDrawer';
 import { CharityCornerPopup, CharitySection } from './components/CharitySectionAndPopup';
@@ -122,14 +138,21 @@ const INITIAL_PUBLIC_SETTINGS: PublicSettings = {
     { id: 'vid-3', title: 'فلاتر جسيمات الديزل DPF', url: '/videos/showcase-3.mp4' },
     { id: 'vid-4', title: 'خلايا السيراميك البلاتينية', url: '/videos/showcase-4.mp4' },
   ],
+  storeLogoUrl: '',
   siteBackgroundType: 'none',
   siteBackgroundUrl: '',
   siteBackgroundOpacity: 0.2,
   themePreset: 'royal_gold',
   buttonStyle: 'gold_wave',
+  cardStyle: 'luxury_bordered',
+  themeFontFamily: 'Tajawal',
   primaryGoldColor: '#D4AF37',
+  secondaryColor: '#E5C158',
   backgroundColor: '#09090B',
   surfaceColor: '#131317',
+  textColor: '#F5F2EB',
+  productsSectionBgUrl: '',
+  productsSectionBgOpacity: 0.25,
   whatsappNumber: '966504597852',
   contactEmail: 'uuuo333@gmail.com',
   paypalMeUrl: 'https://www.paypal.me/yousefAlmohamad931',
@@ -334,7 +357,7 @@ export default function App() {
 
   const loadStorefront = useCallback(async () => {
     try {
-      const res = await fetch('/api/storefront');
+      const res = await fetch('/api/storefront', { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
       if (data.settings) {
@@ -367,6 +390,58 @@ export default function App() {
   useEffect(() => {
     loadStorefront();
   }, [loadStorefront]);
+
+  // Real-time Firebase Firestore overrides for Storefront Config & Active Promo Banners
+  useEffect(() => {
+    let sawFirestoreBannerSnapshot = false;
+    const unsub = subscribePublicStorefrontOverrides(
+      (fbConfig) => {
+        if (!fbConfig) return;
+        setSettings((prev) => ({
+          ...prev,
+          ...(fbConfig.storeName ? { storeName: fbConfig.storeName } : {}),
+          ...(fbConfig.storeTagline !== undefined ? { storeTagline: fbConfig.storeTagline } : {}),
+          ...(fbConfig.storeLogoUrl !== undefined ? { storeLogoUrl: fbConfig.storeLogoUrl } : {}),
+          ...(fbConfig.themePreset
+            ? { themePreset: fbConfig.themePreset as PublicSettings['themePreset'] }
+            : {}),
+          ...(fbConfig.primaryGoldColor ? { primaryGoldColor: fbConfig.primaryGoldColor } : {}),
+          ...(fbConfig.secondaryColor ? { secondaryColor: fbConfig.secondaryColor } : {}),
+          ...(fbConfig.backgroundColor ? { backgroundColor: fbConfig.backgroundColor } : {}),
+          ...(fbConfig.surfaceColor ? { surfaceColor: fbConfig.surfaceColor } : {}),
+          ...(fbConfig.textColor ? { textColor: fbConfig.textColor } : {}),
+          ...(fbConfig.themeFontFamily
+            ? { themeFontFamily: fbConfig.themeFontFamily as PublicSettings['themeFontFamily'] }
+            : {}),
+          ...(fbConfig.cardStyle
+            ? { cardStyle: fbConfig.cardStyle as PublicSettings['cardStyle'] }
+            : {}),
+          ...(fbConfig.buttonStyle
+            ? { buttonStyle: fbConfig.buttonStyle as PublicSettings['buttonStyle'] }
+            : {}),
+          ...(fbConfig.productsSectionBgUrl !== undefined
+            ? { productsSectionBgUrl: fbConfig.productsSectionBgUrl }
+            : {}),
+          ...(typeof fbConfig.productsSectionBgOpacity === 'number'
+            ? { productsSectionBgOpacity: fbConfig.productsSectionBgOpacity }
+            : {}),
+        }));
+      },
+      (fbBanners) => {
+        if (fbBanners.length > 0) {
+          sawFirestoreBannerSnapshot = true;
+          const mapped: PromoBanner[] = fbBanners.map((b) => ({
+            ...b,
+            createdAt: new Date().toISOString(),
+          }));
+          setBanners(mapped);
+        } else if (sawFirestoreBannerSnapshot) {
+          setBanners([]);
+        }
+      }
+    );
+    return () => unsub();
+  }, []);
 
   // Silent store visit counter
   useEffect(() => {
@@ -757,13 +832,21 @@ export default function App() {
     return (
       <div
         data-button-style={settings.buttonStyle || 'gold_wave'}
-        className="relative min-h-screen flex flex-col items-center justify-center p-6 text-[#F5F2EB] overflow-hidden"
+        data-card-style={settings.cardStyle || 'luxury_bordered'}
+        className="relative min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 overflow-x-clip"
         style={
           {
             backgroundColor: settings.backgroundColor || '#09090B',
+            color: settings.textColor || '#F5F2EB',
+            fontFamily: settings.themeFontFamily
+              ? `"${settings.themeFontFamily}", "Tajawal", sans-serif`
+              : undefined,
             '--royal-gold': settings.primaryGoldColor || '#D4AF37',
+            '--royal-secondary': settings.secondaryColor || '#E5C158',
             '--royal-bg': settings.backgroundColor || '#09090B',
             '--royal-surface': settings.surfaceColor || '#131317',
+            '--royal-text': settings.textColor || '#F5F2EB',
+            '--royal-font': settings.themeFontFamily || 'Tajawal',
           } as CSSProperties
         }
       >
@@ -837,13 +920,21 @@ export default function App() {
   return (
     <div
       data-button-style={settings.buttonStyle || 'gold_wave'}
-      className="relative min-h-screen flex flex-col text-[#F5F2EB]"
+      data-card-style={settings.cardStyle || 'luxury_bordered'}
+      className="relative min-h-screen flex flex-col overflow-x-clip"
       style={
         {
           backgroundColor: settings.backgroundColor || '#09090B',
+          color: settings.textColor || '#F5F2EB',
+          fontFamily: settings.themeFontFamily
+            ? `"${settings.themeFontFamily}", "Tajawal", sans-serif`
+            : undefined,
           '--royal-gold': settings.primaryGoldColor || '#D4AF37',
+          '--royal-secondary': settings.secondaryColor || '#E5C158',
           '--royal-bg': settings.backgroundColor || '#09090B',
           '--royal-surface': settings.surfaceColor || '#131317',
+          '--royal-text': settings.textColor || '#F5F2EB',
+          '--royal-font': settings.themeFontFamily || 'Tajawal',
         } as CSSProperties
       }
     >
@@ -940,123 +1031,173 @@ export default function App() {
             )}
 
             <div className={hasSidebarVideos ? 'lg:col-start-1 lg:row-start-2 min-w-0' : ''}>
-              {/* Active AI Promotional Banners */}
+              {/* Active Promotional Banners */}
               {banners.length > 0 && (
-                <section id="offers" className="max-w-7xl mx-auto px-4 sm:px-6 pt-10">
+                <section id="offers" className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10">
                   <div className="space-y-4">
-                    {banners.map((banner) => (
-                      <div
-                        key={banner.id}
-                        className="rounded-2xl border border-[#D4AF37]/35 bg-gradient-to-l from-[#18140B] via-[#121216] to-[#0D0D10] p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5"
-                      >
-                        <div className="space-y-1.5">
-                          {banner.discountLabel && (
-                            <div className="text-xs font-bold text-[#E5C158]">
-                              {banner.discountLabel}
-                            </div>
-                          )}
-                          <h2 className="font-display text-xl sm:text-2xl font-bold text-[#F5F2EB]">
-                            {banner.title}
-                          </h2>
-                          <p className="text-sm text-[#C5BFB2] max-w-2xl">{banner.subtitle}</p>
+                    {banners.map((banner) => {
+                      const targetHref = banner.ctaUrl?.trim() || '#products';
+                      const isExternal = /^https?:\/\//i.test(targetHref);
+                      return (
+                        <div
+                          key={banner.id}
+                          className="rounded-2xl border border-[#D4AF37]/35 bg-gradient-to-l from-[#18140B] via-[#121216] to-[#0D0D10] p-4 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-5"
+                          style={
+                            banner.accentColor
+                              ? { borderColor: `${banner.accentColor}55` }
+                              : undefined
+                          }
+                        >
+                          <div className="space-y-1.5 min-w-0">
+                            {banner.discountLabel && (
+                              <div
+                                className="text-xs font-bold"
+                                style={{ color: settings.secondaryColor || '#E5C158' }}
+                              >
+                                {banner.discountLabel}
+                              </div>
+                            )}
+                            <h2
+                              className="font-display text-lg sm:text-2xl font-bold"
+                              style={{ color: settings.textColor || '#F5F2EB' }}
+                            >
+                              {banner.title}
+                            </h2>
+                            <p className="text-xs sm:text-sm text-[#C5BFB2] max-w-2xl leading-relaxed">
+                              {banner.subtitle}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2.5 w-full sm:w-auto shrink-0">
+                            <a
+                              href={targetHref}
+                              target={isExternal ? '_blank' : undefined}
+                              rel={isExternal ? 'noopener noreferrer' : undefined}
+                              className="btn-gold-wave flex-1 sm:flex-initial h-11 px-5 sm:px-6 rounded-xl text-xs sm:text-sm flex items-center justify-center whitespace-nowrap"
+                            >
+                              {banner.ctaText || 'تسوق الآن'}
+                            </a>
+                            <ShareButton title={banner.title} text={banner.subtitle} />
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <a
-                            href="#products"
-                            className="btn-gold-wave h-11 px-6 rounded-xl text-sm flex items-center justify-center whitespace-nowrap"
-                          >
-                            {banner.ctaText || 'تسوق الآن'}
-                          </a>
-                          <ShareButton title={banner.title} text={banner.subtitle} />
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </section>
               )}
 
               {/* Products Catalog Section */}
-              <section id="products" className="max-w-7xl mx-auto px-4 sm:px-6 py-14 space-y-8">
-                <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 border-b border-white/10 pb-6">
-                  <div className="space-y-1.5">
-                    <div className="text-xs font-medium text-[#E5C158]">
-                      {t(lang, 'approvedProducts')}
-                    </div>
-                    <h2 className="font-display text-2xl sm:text-3xl font-bold text-[#F5F2EB]">
-                      {t(lang, 'catalogHeading')}
-                    </h2>
-                    {activeCategoryDescription && (
-                      <p className="text-xs sm:text-sm text-[#C5BFB2]">
-                        {activeCategoryDescription}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3">
-                    {/* Custom Fabrication Button */}
-                    <button
-                      type="button"
-                      onClick={() => setCustomFabOpen(true)}
-                      className="h-10 px-4 rounded-xl border border-[#D4AF37]/50 bg-[#171510] hover:border-[#D4AF37] text-xs font-bold text-[#E5C158] flex items-center gap-2 cursor-pointer whitespace-nowrap"
-                    >
-                      <Wrench className="w-4 h-4" />
-                      <span>{t(lang, 'customFab')}</span>
-                    </button>
-
-                    {/* Category Filter Tabs */}
+              <section
+                id="products"
+                className="relative overflow-hidden max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14 space-y-6 sm:space-y-8"
+              >
+                {settings.productsSectionBgUrl?.trim() && (
+                  <div
+                    className="pointer-events-none absolute inset-0 z-0 rounded-3xl overflow-hidden"
+                    style={{ opacity: settings.productsSectionBgOpacity ?? 0.25 }}
+                  >
+                    <img
+                      src={settings.productsSectionBgUrl}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover"
+                    />
                     <div
-                      className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl border border-white/10"
-                      style={{ backgroundColor: settings.surfaceColor || '#121216' }}
-                    >
-                      {categories.map((cat) => (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => setSelectedCategory(cat)}
-                          style={
-                            selectedCategory === cat
-                              ? {
-                                  backgroundColor: settings.primaryGoldColor || '#D4AF37',
-                                  color: '#09090B',
-                                }
-                              : undefined
-                          }
-                          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                            selectedCategory === cat
-                              ? 'font-bold'
-                              : 'text-[#C5BFB2] hover:text-[#F5F2EB]'
-                          }`}
-                        >
-                          {cat === 'الكل' ? t(lang, 'allCategory') : cat}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {visibleProducts.length === 0 ? (
-                  <div className="py-16 text-center rounded-2xl border border-white/10 bg-[#121216] text-sm text-[#9E988C]">
-                    {t(lang, 'noProductsInCategory')}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {visibleProducts.map((product) => (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        settings={settings}
-                        currency={currency}
-                        lang={lang}
-                        isWishlisted={wishlistIds.includes(product.id)}
-                        isCompared={compareIds.includes(product.id)}
-                        onToggleWishlist={handleToggleWishlist}
-                        onToggleCompare={handleToggleCompare}
-                        onAddToCart={handleAddToCart}
-                        onSelect={(p) => setSelectedProduct(p)}
-                      />
-                    ))}
+                      className="absolute inset-0"
+                      style={{
+                        background: `linear-gradient(to bottom, ${settings.backgroundColor || '#09090B'} 0%, transparent 18%, transparent 82%, ${settings.backgroundColor || '#09090B'} 100%)`,
+                      }}
+                    />
                   </div>
                 )}
+
+                <div className="relative z-10 space-y-6 sm:space-y-8">
+                  <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 sm:gap-5 border-b border-white/10 pb-5 sm:pb-6">
+                    <div className="space-y-1.5">
+                      <div
+                        className="text-xs font-medium"
+                        style={{ color: settings.secondaryColor || '#E5C158' }}
+                      >
+                        {t(lang, 'approvedProducts')}
+                      </div>
+                      <h2
+                        className="font-display text-xl sm:text-3xl font-bold"
+                        style={{ color: settings.textColor || '#F5F2EB' }}
+                      >
+                        {t(lang, 'catalogHeading')}
+                      </h2>
+                      {activeCategoryDescription && (
+                        <p className="text-xs sm:text-sm text-[#C5BFB2]">
+                          {activeCategoryDescription}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2.5 sm:gap-3 w-full lg:w-auto">
+                      {/* Custom Fabrication Button */}
+                      <button
+                        type="button"
+                        onClick={() => setCustomFabOpen(true)}
+                        className="h-10 px-4 rounded-xl border border-[#D4AF37]/50 bg-[#171510] hover:border-[#D4AF37] text-xs font-bold text-[#E5C158] flex items-center justify-center sm:justify-start gap-2 cursor-pointer whitespace-nowrap w-full sm:w-auto"
+                      >
+                        <Wrench className="w-4 h-4" />
+                        <span>{t(lang, 'customFab')}</span>
+                      </button>
+
+                      {/* Category Filter Tabs */}
+                      <div
+                        className="flex items-center gap-1.5 p-1 rounded-xl border border-white/10 overflow-x-auto no-scrollbar max-w-full"
+                        style={{ backgroundColor: settings.surfaceColor || '#121216' }}
+                      >
+                        {categories.map((cat) => (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => setSelectedCategory(cat)}
+                            style={
+                              selectedCategory === cat
+                                ? {
+                                    backgroundColor: settings.primaryGoldColor || '#D4AF37',
+                                    color: '#09090B',
+                                  }
+                                : undefined
+                            }
+                            className={`px-3 sm:px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                              selectedCategory === cat
+                                ? 'font-bold'
+                                : 'text-[#C5BFB2] hover:text-[#F5F2EB]'
+                            }`}
+                          >
+                            {cat === 'الكل' ? t(lang, 'allCategory') : cat}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {visibleProducts.length === 0 ? (
+                    <div className="py-14 sm:py-16 text-center rounded-2xl border border-white/10 bg-[#121216] text-sm text-[#9E988C]">
+                      {t(lang, 'noProductsInCategory')}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-6">
+                      {visibleProducts.map((product) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          settings={settings}
+                          currency={currency}
+                          lang={lang}
+                          isWishlisted={wishlistIds.includes(product.id)}
+                          isCompared={compareIds.includes(product.id)}
+                          onToggleWishlist={handleToggleWishlist}
+                          onToggleCompare={handleToggleCompare}
+                          onAddToCart={handleAddToCart}
+                          onSelect={(p) => setSelectedProduct(p)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
               </section>
             </div>
           </div>
@@ -1069,7 +1210,7 @@ export default function App() {
 
         {/* Floating Product Comparison Bar */}
         {comparedProducts.length > 0 && (
-          <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 z-40 max-w-xl rounded-2xl border border-[#D4AF37]/50 bg-[#121216]/95 backdrop-blur-md p-3 shadow-2xl flex items-center justify-between gap-3">
+          <div className="fixed bottom-20 md:bottom-4 inset-x-3 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 z-40 max-w-xl rounded-2xl border border-[#D4AF37]/50 bg-[#121216]/95 backdrop-blur-md p-2.5 sm:p-3 shadow-2xl flex items-center justify-between gap-2 sm:gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <Scale className="w-4 h-4 text-[#E5C158] shrink-0" />
               <span className="text-xs font-bold text-[#F5F2EB] truncate">
@@ -1080,7 +1221,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setCompareOpen(true)}
-                className="btn-gold-wave h-8 px-3.5 rounded-lg text-xs font-bold cursor-pointer"
+                className="btn-gold-wave h-9 px-3.5 rounded-lg text-xs font-bold cursor-pointer"
               >
                 {t(lang, 'compareNow')}
               </button>
@@ -1088,7 +1229,7 @@ export default function App() {
                 type="button"
                 onClick={() => setCompareIds([])}
                 aria-label={t(lang, 'clearCompare')}
-                className="h-8 px-2.5 rounded-lg border border-white/15 text-xs text-[#9E988C] hover:text-white flex items-center gap-1 cursor-pointer"
+                className="h-9 px-2.5 rounded-lg border border-white/15 text-xs text-[#9E988C] hover:text-white flex items-center gap-1 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
                 <span>{t(lang, 'clearCompare')}</span>
@@ -1099,7 +1240,7 @@ export default function App() {
 
         {/* Cart Notification Toast */}
         {cartNotice && (
-          <div className="fixed top-24 start-4 sm:start-6 z-50 px-4 py-3 rounded-xl border border-[#D4AF37]/50 bg-[#14120E] text-xs sm:text-sm text-[#E5C158] shadow-2xl">
+          <div className="fixed top-24 start-4 sm:start-6 z-50 px-4 py-3 rounded-xl border border-[#D4AF37]/50 bg-[#14120E] text-xs sm:text-sm text-[#E5C158] shadow-2xl max-w-[calc(100vw-2rem)]">
             {cartNotice}
           </div>
         )}
@@ -1107,7 +1248,7 @@ export default function App() {
         {/* Corner Ehsan & Charity Reminder Popup */}
         <CharityCornerPopup settings={settings} />
 
-        {/* Floating Fixed WhatsApp Button */}
+        {/* Floating Fixed WhatsApp Button (Desktop) */}
         <a
           href={`https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(
             `مرحباً ${settings.storeName}، لدي استفسار عن منتجاتكم.`
@@ -1115,11 +1256,63 @@ export default function App() {
           target="_blank"
           rel="noopener noreferrer"
           aria-label="تواصل مباشر عبر واتساب"
-          className="fixed bottom-4 start-4 sm:bottom-6 sm:start-6 z-30 h-12 px-4 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xl flex items-center gap-2 text-xs sm:text-sm font-bold transition-transform hover:scale-105"
+          className="hidden md:flex fixed bottom-6 start-6 z-30 h-12 px-4 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xl items-center gap-2 text-sm font-bold transition-transform hover:scale-105"
         >
           <MessageCircle className="w-5 h-5 shrink-0" />
-          <span className="hidden sm:inline">{t(lang, 'askWhatsappFloating')}</span>
+          <span>{t(lang, 'askWhatsappFloating')}</span>
         </a>
+
+        {/* Fixed Mobile Bottom Navigation Bar */}
+        <nav
+          aria-label={lang === 'en' ? 'Mobile quick navigation' : 'شريط التنقل السريع للجوال'}
+          className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-[#D4AF37]/30 bg-[#0C0C10]/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_28px_rgba(0,0,0,0.65)]"
+        >
+          <div className="grid grid-cols-4 items-center px-1 py-1.5 gap-1">
+            <a
+              href="#top"
+              className="min-h-[52px] rounded-xl flex flex-col items-center justify-center gap-1 text-[11px] font-bold text-[#F5F2EB] active:bg-white/10 transition-colors"
+            >
+              <Home className="w-5 h-5" style={{ color: settings.primaryGoldColor || '#D4AF37' }} />
+              <span>{lang === 'en' ? 'Home' : 'الرئيسية'}</span>
+            </a>
+
+            <a
+              href="#products"
+              className="min-h-[52px] rounded-xl flex flex-col items-center justify-center gap-1 text-[11px] font-bold text-[#F5F2EB] active:bg-white/10 transition-colors"
+            >
+              <Package className="w-5 h-5 text-[#E5C158]" />
+              <span>{lang === 'en' ? 'Products' : 'المنتجات'}</span>
+            </a>
+
+            <button
+              type="button"
+              onClick={() => setCartOpen(true)}
+              className="relative min-h-[52px] rounded-xl flex flex-col items-center justify-center gap-1 text-[11px] font-bold text-[#F5F2EB] active:bg-white/10 transition-colors cursor-pointer"
+            >
+              <div className="relative">
+                <ShoppingBag className="w-5 h-5 text-[#E5C158]" />
+                {cartCount > 0 && (
+                  <span className="absolute -top-1.5 -end-2.5 min-w-4 h-4 px-1 rounded-full bg-[#D4AF37] text-[#09090B] text-[10px] font-extrabold flex items-center justify-center tabular-nums">
+                    {cartCount}
+                  </span>
+                )}
+              </div>
+              <span>{t(lang, 'cart')}</span>
+            </button>
+
+            <a
+              href={`https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(
+                `مرحباً ${settings.storeName}، لدي استفسار عن منتجاتكم.`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-h-[52px] rounded-xl flex flex-col items-center justify-center gap-1 text-[11px] font-bold text-emerald-300 bg-emerald-950/35 border border-emerald-500/25 active:bg-emerald-900/40 transition-colors"
+            >
+              <MessageCircle className="w-5 h-5 text-emerald-400" />
+              <span>{t(lang, 'whatsapp')}</span>
+            </a>
+          </div>
+        </nav>
 
         {/* Modals & Drawers */}
         <ProductModal

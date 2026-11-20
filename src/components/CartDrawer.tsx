@@ -109,7 +109,16 @@ export function CartDrawer({
     let cancelled = false;
     const loadOwnerWallet = async () => {
       try {
-        const isOwner = localStorage.getItem('owner_authenticated') === 'true';
+        let isOwner = false;
+        let tk: string | null = null;
+        let savedSecret: string | null = null;
+        try {
+          isOwner = localStorage.getItem('owner_authenticated') === 'true';
+          tk = localStorage.getItem('taj_admin_token') || sessionStorage.getItem('taj_admin_token');
+          savedSecret = localStorage.getItem('taj_owner_secret');
+        } catch {
+          isOwner = false;
+        }
         if (!isOwner) {
           if (!cancelled) {
             setOwnerTokenValue(null);
@@ -117,25 +126,32 @@ export function CartDrawer({
           }
           return;
         }
-        let tk =
-          localStorage.getItem('taj_admin_token') || sessionStorage.getItem('taj_admin_token');
 
         const refreshTk = async (): Promise<string | null> => {
           const candidates = Array.from(
-            new Set([localStorage.getItem('taj_owner_secret'), '604608', '2026'].filter(Boolean))
+            new Set([savedSecret, '604608', '2026'].filter(Boolean))
           ) as string[];
           for (const pw of candidates) {
             try {
               const lr = await fetch('/api/admin/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({ password: pw }),
               });
               if (lr.ok) {
                 const ld = await lr.json().catch(() => ({}));
                 if (ld?.token) {
-                  localStorage.setItem('taj_admin_token', ld.token);
-                  sessionStorage.setItem('taj_admin_token', ld.token);
+                  try {
+                    localStorage.setItem('taj_admin_token', ld.token);
+                  } catch {
+                    // ignore
+                  }
+                  try {
+                    sessionStorage.setItem('taj_admin_token', ld.token);
+                  } catch {
+                    // ignore
+                  }
                   return ld.token as string;
                 }
               }
@@ -156,14 +172,16 @@ export function CartDrawer({
         }
 
         let res = await fetch('/api/admin/wallet', {
-          headers: { Authorization: `Bearer ${tk}` },
+          headers: { Authorization: `Bearer ${tk}`, 'X-Admin-Token': tk },
+          credentials: 'same-origin',
         });
         if (res.status === 401) {
           const fresh = await refreshTk();
           if (fresh) {
             tk = fresh;
             res = await fetch('/api/admin/wallet', {
-              headers: { Authorization: `Bearer ${fresh}` },
+              headers: { Authorization: `Bearer ${fresh}`, 'X-Admin-Token': fresh },
+              credentials: 'same-origin',
             });
           }
         }

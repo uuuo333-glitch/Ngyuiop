@@ -8,6 +8,7 @@
 5. **Immutable Ownership & Timestamps**: `uid` / `userId` / `ownerUid` and `createdAt` cannot be modified after creation; `createdAt` on create and `updatedAt` on create/update must equal `request.time`.
 6. **Terminal State Locking**: In `driveBackups`, once `status == 'archived'`, non-admin users cannot unarchive or mutate the record.
 7. **Admin Privilege Prevention**: Users cannot write to `/admins/{userId}` to elevate themselves; only an existing verified admin (including the bootstrapped support email `dbattloth.221@gmail.com` with `email_verified == true`) can manage admin grants.
+8. **Storefront Identity, Theme & Banners Governance**: `/storefront/public` and active `/banners/{bannerId}` (`isActive == true`) are intentionally public-readable for storefront rendering, while all creates/updates/deletes strictly require `isAdmin()`, bounded string sizes, `hasAll`/`hasOnly` field validation, and `request.time` timestamps.
 
 ## 2. The "Dirty Dozen" Adversarial Payloads
 1. **Unauthenticated Profile Create**: Anonymous caller tries to create `/users/u1`. Expected: `PERMISSION_DENIED`.

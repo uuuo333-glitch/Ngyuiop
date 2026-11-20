@@ -55,7 +55,11 @@ export function ProductImageStudioModal({
           const resp = await fetch(
             `/api/admin/proxy-image?url=${encodeURIComponent(finalSrc)}`,
             {
-              headers: { Authorization: `Bearer ${adminToken}` },
+              headers: {
+                Authorization: `Bearer ${adminToken}`,
+                'X-Admin-Token': adminToken,
+              },
+              credentials: 'same-origin',
             }
           );
           if (!resp.ok) {

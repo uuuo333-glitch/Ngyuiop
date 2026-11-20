@@ -1,12 +1,15 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { ShieldCheck } from 'lucide-react';
 
+export const DEFAULT_PRODUCT_IMAGE = '/src/assets/images/product_gasoline_cat_1794821493329.jpg';
+
 interface ResilientImageProps {
   src?: string;
   alt: string;
   className?: string;
   style?: CSSProperties;
   fallbackLabel?: string;
+  defaultFallbackSrc?: string;
 }
 
 export function ResilientImage({
@@ -15,14 +18,25 @@ export function ResilientImage({
   className = 'w-full h-full object-cover',
   style,
   fallbackLabel,
+  defaultFallbackSrc,
 }: ResilientImageProps) {
-  const [failed, setFailed] = useState(false);
+  const [primaryFailed, setPrimaryFailed] = useState(false);
+  const [secondaryFailed, setSecondaryFailed] = useState(false);
 
   useEffect(() => {
-    setFailed(false);
-  }, [src]);
+    setPrimaryFailed(false);
+    setSecondaryFailed(false);
+  }, [src, defaultFallbackSrc]);
 
-  if (!src || failed) {
+  const cleanSrc = typeof src === 'string' ? src.trim() : '';
+  const activeSrc =
+    cleanSrc && !primaryFailed
+      ? cleanSrc
+      : defaultFallbackSrc && !secondaryFailed
+        ? defaultFallbackSrc
+        : '';
+
+  if (!activeSrc) {
     return (
       <div
         className={`flex flex-col items-center justify-center bg-gradient-to-br from-[#16161B] via-[#0E0E12] to-[#1D1910] border border-[#D4AF37]/20 text-center p-4 ${className}`}
@@ -38,13 +52,21 @@ export function ResilientImage({
     );
   }
 
+  const isShowingFallback = !cleanSrc || primaryFailed;
+
   return (
     <img
-      src={src}
+      src={activeSrc}
       alt={alt}
       referrerPolicy="no-referrer"
       loading="lazy"
-      onError={() => setFailed(true)}
+      onError={() => {
+        if (!isShowingFallback) {
+          setPrimaryFailed(true);
+        } else {
+          setSecondaryFailed(true);
+        }
+      }}
       className={className}
       style={style}
     />

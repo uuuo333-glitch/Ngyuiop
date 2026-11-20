@@ -100,7 +100,7 @@ export function LandingHero({
         />
       </div>
 
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 pt-14 pb-16 lg:pt-20 lg:pb-20">
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 pt-8 pb-10 sm:pt-14 sm:pb-16 lg:pt-20 lg:pb-20">
         {editMode && onEditSection && (
           <div className="mb-5 flex items-center justify-end">
             <button
@@ -114,33 +114,39 @@ export function LandingHero({
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 sm:gap-10 items-center">
           <div
             onClick={() => {
               if (editMode && onEditSection) onEditSection('hero');
             }}
-            className={`lg:col-span-6 space-y-6 ${
+            className={`lg:col-span-6 space-y-4 sm:space-y-6 ${
               editMode
                 ? 'p-4 -m-4 rounded-2xl border border-dashed border-[#D4AF37]/60 hover:bg-[#14120E]/50 cursor-pointer transition-colors'
                 : ''
             }`}
           >
-            <div className="text-xs sm:text-sm font-medium text-[#E5C158]">
+            <div
+              className="text-xs sm:text-sm font-medium"
+              style={{ color: settings.secondaryColor || '#E5C158' }}
+            >
               {settings.storeName} · {settings.storeTagline}
             </div>
 
-            <h1 className="font-display text-3xl sm:text-5xl lg:text-[3.25rem] font-bold leading-tight text-[#F5F2EB] text-balance">
+            <h1
+              className="font-display text-2xl sm:text-5xl lg:text-[3.25rem] font-bold leading-tight text-balance"
+              style={{ color: settings.textColor || '#F5F2EB' }}
+            >
               {settings.heroTitle}
             </h1>
 
-            <p className="text-base sm:text-lg text-[#CBC5B9] leading-relaxed max-w-2xl">
+            <p className="text-sm sm:text-lg text-[#CBC5B9] leading-relaxed max-w-2xl">
               {settings.heroSubtitle}
             </p>
 
-            <div className="flex flex-wrap items-center gap-4 pt-2">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 sm:gap-4 pt-1 sm:pt-2">
               <a
                 href="#products"
-                className="btn-gold-wave inline-flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-xl text-sm sm:text-base whitespace-nowrap shrink-0"
+                className="btn-gold-wave w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 sm:px-7 py-3 sm:py-3.5 rounded-xl text-sm sm:text-base whitespace-nowrap shrink-0"
               >
                 <span>{settings.heroCtaText || 'تصفح المنتجات الآن'}</span>
                 <ArrowDownLeft className="w-4 h-4" />
@@ -150,7 +156,7 @@ export function LandingHero({
                 href={`https://wa.me/${settings.whatsappNumber.replace(/\D/g, '')}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl border border-[#D4AF37]/40 bg-[#141418]/80 hover:bg-[#1B1912] text-[#F5F2EB] hover:text-[#E5C158] text-sm sm:text-base font-medium transition-colors whitespace-nowrap shrink-0"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 sm:px-6 py-3 sm:py-3.5 rounded-xl border border-[#D4AF37]/40 bg-[#141418]/80 hover:bg-[#1B1912] text-[#F5F2EB] hover:text-[#E5C158] text-sm sm:text-base font-medium transition-colors whitespace-nowrap shrink-0"
               >
                 <span>استشارة فنية عبر واتساب</span>
               </a>
