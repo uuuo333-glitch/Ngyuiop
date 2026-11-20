@@ -49,7 +49,7 @@ import type {
 } from './types';
 
 const INITIAL_PUBLIC_SETTINGS: PublicSettings = {
-  storeName: 'مصنع التاج الذهبي لدبات التلوث',
+  storeName: 'دبات التلوث للديزل والبنزين ورصاص الشكمان',
   storeTagline: 'إنتاج دبات التلوث للديزل والبنزين',
   storeOpen: true,
   storeClosedTitle: 'المتجر مغلق مؤقتاً للصيانة والتحديث',
@@ -100,9 +100,9 @@ const INITIAL_PUBLIC_SETTINGS: PublicSettings = {
   marquee2TextColor: '#F5E1A4',
   marquee2Speed: 24,
   heroEnabled: true,
-  heroTitle: 'إنتاج دبات التلوث للديزل والبنزين بدقة هندسية فائقة',
+  heroTitle: 'دبات تلوث أصلية وسيراميك رصاص الشكمان لجميع السيارات، دبات كاتم صوت ودبات إلكترونية، وقطع غيار الشكمان والفلاتر',
   heroSubtitle:
-    'نصنع ونوفر أحدث دبات التلوث وفلاتر الجسيمات (DPF) والمحولات الحفازة من الفولاذ المقاوم للصدأ وخلايا البلاتين عالية الكفاءة لتنقية العادم وحماية المحرك.',
+    'نوفر أحدث دبات التلوث وفلاتر الجسيمات (DPF) والمحولات الحفازة بقلوب رصاص الشكمان المشبعة بالمعادن الثمينة، ومنها البلاتينيوم والبلاديوم والروديوم، لمختلف السيارات.',
   heroCtaText: 'تصفح المنتجات الآن',
   heroBackdropMode: 'auto',
   heroVideoUrl: '',
@@ -399,7 +399,14 @@ export default function App() {
         if (!fbConfig) return;
         setSettings((prev) => ({
           ...prev,
-          ...(fbConfig.storeName ? { storeName: fbConfig.storeName } : {}),
+          ...(fbConfig.storeName
+            ? {
+                storeName:
+                  fbConfig.storeName === 'مصنع التاج الذهبي لدبات التلوث'
+                    ? 'دبات التلوث للديزل والبنزين ورصاص الشكمان'
+                    : fbConfig.storeName,
+              }
+            : {}),
           ...(fbConfig.storeTagline !== undefined ? { storeTagline: fbConfig.storeTagline } : {}),
           ...(fbConfig.storeLogoUrl !== undefined ? { storeLogoUrl: fbConfig.storeLogoUrl } : {}),
           ...(fbConfig.themePreset
