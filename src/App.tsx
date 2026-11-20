@@ -49,7 +49,7 @@ import type {
 } from './types';
 
 const INITIAL_PUBLIC_SETTINGS: PublicSettings = {
-  storeName: 'مصنع التاج الذهبي لدبات التلوث',
+  storeName: 'دبات التلوث للديزل والبنزين ورصاص الشكمان',
   storeTagline: 'إنتاج دبات التلوث للديزل والبنزين',
   storeOpen: true,
   storeClosedTitle: 'المتجر مغلق مؤقتاً للصيانة والتحديث',
@@ -399,7 +399,14 @@ export default function App() {
         if (!fbConfig) return;
         setSettings((prev) => ({
           ...prev,
-          ...(fbConfig.storeName ? { storeName: fbConfig.storeName } : {}),
+          ...(fbConfig.storeName
+            ? {
+                storeName:
+                  fbConfig.storeName === 'مصنع التاج الذهبي لدبات التلوث'
+                    ? 'دبات التلوث للديزل والبنزين ورصاص الشكمان'
+                    : fbConfig.storeName,
+              }
+            : {}),
           ...(fbConfig.storeTagline !== undefined ? { storeTagline: fbConfig.storeTagline } : {}),
           ...(fbConfig.storeLogoUrl !== undefined ? { storeLogoUrl: fbConfig.storeLogoUrl } : {}),
           ...(fbConfig.themePreset

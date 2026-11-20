@@ -201,7 +201,7 @@ export function GoogleDriveWorkspace({
       const fileName = `taj-store-backup-${timestamp}.json`;
       const snapshot = {
         exportedAt: new Date().toISOString(),
-        storeName: storeData?.settings?.storeName || 'مصنع التاج الذهبي لدبات التلوث',
+        storeName: storeData?.settings?.storeName || 'دبات التلوث للديزل والبنزين ورصاص الشكمان',
         products: storeData?.products || [],
         banners: storeData?.banners || [],
         reviews: storeData?.reviews || [],

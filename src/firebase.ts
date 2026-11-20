@@ -591,7 +591,7 @@ export async function saveStorefrontConfigToFirestore(
 
   const payload: Record<string, unknown> = {
     configId: 'public',
-    storeName: (input.storeName || 'مصنع التاج الذهبي لدبات التلوث').trim().slice(0, 160),
+    storeName: (input.storeName || 'دبات التلوث للديزل والبنزين ورصاص الشكمان').trim().slice(0, 160),
     storeTagline: (input.storeTagline || '').trim().slice(0, 300),
     updatedByUid: uid,
     updatedAt: serverTimestamp(),
