@@ -97,6 +97,7 @@ import { SquareImageCropModal } from './SquareImageCropModal';
 
 interface AdminDashboardProps {
   open: boolean;
+  externalAdminToken?: string | null;
   onClose: () => void;
   onStorefrontUpdated: () => void;
 }
@@ -280,6 +281,7 @@ function getStoredOwnerPassword(): string {
 
 export function AdminDashboard({
   open,
+  externalAdminToken,
   onClose,
   onStorefrontUpdated,
 }: AdminDashboardProps) {
@@ -299,6 +301,8 @@ export function AdminDashboard({
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
+  const [googleOwnerBusy, setGoogleOwnerBusy] = useState(false);
+  const [manualLoggedOut, setManualLoggedOut] = useState(false);
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -727,6 +731,21 @@ export function AdminDashboard({
     [ensureAdminSessionToken, loadFallbackDashboardData]
   );
 
+  const consumedExternalTokenRef = useRef<string | null>(null);
+
+  // Sync external admin token granted via direct owner Google Sign-In
+  useEffect(() => {
+    if (!externalAdminToken || consumedExternalTokenRef.current === externalAdminToken) return;
+    consumedExternalTokenRef.current = externalAdminToken;
+    persistAuthTokens(externalAdminToken);
+    setAdminToken(externalAdminToken);
+    setManualLoggedOut(false);
+    setIsOwnerAuthenticated(true);
+    if (open) {
+      void fetchDashboard(externalAdminToken);
+    }
+  }, [externalAdminToken, open, persistAuthTokens, fetchDashboard]);
+
   // Sync background server token when owner_authenticated is already active
   useEffect(() => {
     if (!open || !isOwnerAuthenticated) return;
@@ -740,7 +759,83 @@ export function AdminDashboard({
     return () => unsub();
   }, []);
 
+  // Automatically enter Owner Admin without password when dbattloth.221@gmail.com is signed in via Google
+  useEffect(() => {
+    if (!open || isOwnerAuthenticated || manualLoggedOut) return;
+    if (!firebaseUser) return;
+    const activeOwnerUser = firebaseUser;
+    const email = activeOwnerUser.email?.trim().toLowerCase();
+    if (email !== 'dbattloth.221@gmail.com') return;
+
+    let cancelled = false;
+    const autoSignInOwner = async () => {
+      setGoogleOwnerBusy(true);
+      try {
+        const idToken = await activeOwnerUser.getIdToken();
+        const res = await fetch('/api/admin/google-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ idToken }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok && data?.token) {
+          persistAuthTokens(data.token as string);
+          setAdminToken(data.token as string);
+          setLoginError('');
+          setIsOwnerAuthenticated(true);
+          await fetchDashboard(data.token as string);
+        }
+      } catch {
+        // leave login screen available if offline
+      } finally {
+        if (!cancelled) setGoogleOwnerBusy(false);
+      }
+    };
+    void autoSignInOwner();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isOwnerAuthenticated, manualLoggedOut, firebaseUser, persistAuthTokens, fetchDashboard]);
+
   if (!open) return null;
+
+  const handleAdminGoogleLogin = async () => {
+    setLoginError('');
+    setGoogleOwnerBusy(true);
+    try {
+      const res = await googleSignIn();
+      if (!res?.user) return;
+      const email = res.user.email?.trim().toLowerCase() || '';
+      if (email !== 'dbattloth.221@gmail.com') {
+        setLoginError(
+          `الحساب (${res.user.email || 'غير معروف'}) غير مخوّل للدخول المباشر كمالك. البريد المعتمد: dbattloth.221@gmail.com`
+        );
+        return;
+      }
+      const idToken = await res.user.getIdToken();
+      const apiRes = await fetch('/api/admin/google-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await apiRes.json().catch(() => ({}));
+      if (!apiRes.ok || !data?.token) {
+        setLoginError(data.error || 'تعذر التحقق من حساب المالك عبر Google.');
+        return;
+      }
+      persistAuthTokens(data.token as string);
+      setAdminToken(data.token as string);
+      setManualLoggedOut(false);
+      setIsOwnerAuthenticated(true);
+      await fetchDashboard(data.token as string);
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : 'تعذر تسجيل الدخول بحساب Google.');
+    } finally {
+      setGoogleOwnerBusy(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -756,6 +851,7 @@ export function AdminDashboard({
       if (isAcceptedOwnerPassword(entered)) {
         persistAuthTokens(null, entered);
         setPasswordInput('');
+        setManualLoggedOut(false);
         setIsOwnerAuthenticated(true);
         const token = await requestServerAdminToken(entered);
         await fetchDashboard(token || undefined);
@@ -776,12 +872,14 @@ export function AdminDashboard({
 
       persistAuthTokens(data.token, entered);
       setPasswordInput('');
+      setManualLoggedOut(false);
       setIsOwnerAuthenticated(true);
       setAdminToken(data.token);
       await fetchDashboard(data.token);
     } catch {
       if (isAcceptedOwnerPassword(entered)) {
         persistAuthTokens(null, entered);
+        setManualLoggedOut(false);
         setIsOwnerAuthenticated(true);
         setPasswordInput('');
         await fetchDashboard();
@@ -800,6 +898,7 @@ export function AdminDashboard({
     safeStorageRemove('local', 'taj_admin_token');
     safeStorageRemove('session', 'taj_admin_token');
     tokenRef.current = null;
+    setManualLoggedOut(true);
     setIsOwnerAuthenticated(false);
     setAdminToken(null);
     setNotifOpen(false);
@@ -2566,10 +2665,31 @@ export function AdminDashboard({
             </div>
           )}
 
-          <p className="text-xs text-[#9E988C] leading-relaxed">
-            أدخل كلمة المرور الثابتة الخاصة بالمالك للدخول المباشر إلى إدارة المنتجات، الطلبات،
-            وإعدادات المتجر. يتم حفظ تسجيل الدخول تلقائياً في المتصفح.
-          </p>
+          {/* Direct Google Sign-In for Verified Owner Email (No Password Required) */}
+          <div className="p-3.5 rounded-xl border border-[#D4AF37]/40 bg-gradient-to-l from-[#1A150B] to-[#141418] space-y-2.5">
+            <div className="text-xs font-bold text-[#E5C158]">
+              دخول المالك المباشر بحساب Google
+            </div>
+            <p className="text-[11px] text-[#C5BFB2] leading-relaxed">
+              سجّل دخولك بالبريد المعتمد <span dir="ltr" className="text-[#F5E1A4] font-bold">dbattloth.221@gmail.com</span> للانتقال مباشرة إلى لوحة التحكم دون طلب أي كلمة مرور.
+            </p>
+            <GoogleSignInButton
+              onClick={handleAdminGoogleLogin}
+              disabled={googleOwnerBusy}
+              label={
+                googleOwnerBusy
+                  ? 'جاري التحقق والدخول المباشر...'
+                  : 'الدخول المباشر بحساب Google'
+              }
+              className="w-full h-11 text-sm font-bold"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 text-[11px] text-[#9E988C]">
+            <span className="h-px flex-1 bg-white/10" />
+            <span>أو الدخول بكلمة مرور المالك</span>
+            <span className="h-px flex-1 bg-white/10" />
+          </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
@@ -2577,7 +2697,6 @@ export function AdminDashboard({
               <input
                 type="password"
                 required
-                autoFocus
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 placeholder="••••••••"

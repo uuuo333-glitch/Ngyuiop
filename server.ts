@@ -520,8 +520,8 @@ app.post('/api/customers/register', (req, res) => {
     res.status(400).json({ error: 'يرجى إدخال الاسم الكامل (حرفين على الأقل).' });
     return;
   }
-  if (!phone?.trim()) {
-    res.status(400).json({ error: 'يرجى إدخال رقم الجوال.' });
+  if (!email?.trim() && !phone?.trim()) {
+    res.status(400).json({ error: 'يرجى إدخال البريد الإلكتروني.' });
     return;
   }
   if (!password || password.length < 4) {
@@ -538,19 +538,68 @@ app.post('/api/customers/register', (req, res) => {
 });
 
 app.post('/api/customers/login', (req, res) => {
-  const { phone, password } = req.body as { phone?: string; password?: string };
-  if (!phone?.trim() || !password) {
-    res.status(400).json({ error: 'يرجى إدخال رقم الجوال (أو البريد) وكلمة المرور.' });
+  const { phone, email, password } = req.body as {
+    phone?: string;
+    email?: string;
+    password?: string;
+  };
+  const identifier = (email || phone || '').trim();
+  if (!identifier || !password) {
+    res.status(400).json({ error: 'يرجى إدخال البريد الإلكتروني وكلمة المرور.' });
     return;
   }
-  const customer = loginCustomer(phone, password);
+  const customer = loginCustomer(identifier, password);
   if (!customer) {
-    res.status(401).json({ error: 'بيانات الدخول غير صحيحة. تأكد من الرقم وكلمة المرور.' });
+    res.status(401).json({ error: 'بيانات الدخول غير صحيحة. تأكد من البريد الإلكتروني وكلمة المرور.' });
     return;
   }
   const token = createSignedToken({ role: 'customer', customerId: customer.id });
   res.json({ token, customer });
 });
+
+async function verifyFirebaseGoogleIdToken(idToken: string): Promise<{
+  localId: string;
+  email: string;
+  displayName?: string;
+  emailVerified?: boolean;
+} | { error: string; status: number }> {
+  let firebaseApiKey = process.env.VITE_FIREBASE_API_KEY || '';
+  if (!firebaseApiKey) {
+    const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(cfgPath)) {
+      const parsed = JSON.parse(fs.readFileSync(cfgPath, 'utf8')) as { apiKey?: string };
+      firebaseApiKey = parsed.apiKey || '';
+    }
+  }
+  if (!firebaseApiKey) {
+    return { error: 'إعدادات Firebase غير مكتملة على الخادم.', status: 500 };
+  }
+
+  const verifyResp = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseApiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: idToken.trim() }),
+    }
+  );
+  if (!verifyResp.ok) {
+    return { error: 'تعذر التحقق من جلسة Google. يرجى المحاولة مجدداً.', status: 401 };
+  }
+  const verifyJson = (await verifyResp.json()) as {
+    users?: { localId?: string; email?: string; displayName?: string; emailVerified?: boolean }[];
+  };
+  const fbUser = verifyJson.users?.[0];
+  if (!fbUser?.localId || !fbUser?.email) {
+    return { error: 'بيانات حساب Google غير مكتملة أو غير موثقة.', status: 401 };
+  }
+  return {
+    localId: fbUser.localId,
+    email: fbUser.email,
+    displayName: fbUser.displayName,
+    emailVerified: fbUser.emailVerified,
+  };
+}
 
 app.post('/api/customers/google-auth', async (req, res, next) => {
   try {
@@ -560,37 +609,9 @@ app.post('/api/customers/google-auth', async (req, res, next) => {
       return;
     }
 
-    let firebaseApiKey = process.env.VITE_FIREBASE_API_KEY || '';
-    if (!firebaseApiKey) {
-      const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
-      if (fs.existsSync(cfgPath)) {
-        const parsed = JSON.parse(fs.readFileSync(cfgPath, 'utf8')) as { apiKey?: string };
-        firebaseApiKey = parsed.apiKey || '';
-      }
-    }
-    if (!firebaseApiKey) {
-      res.status(500).json({ error: 'إعدادات Firebase غير مكتملة على الخادم.' });
-      return;
-    }
-
-    const verifyResp = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseApiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken: idToken.trim() }),
-      }
-    );
-    if (!verifyResp.ok) {
-      res.status(401).json({ error: 'تعذر التحقق من جلسة Google. يرجى المحاولة مجدداً.' });
-      return;
-    }
-    const verifyJson = (await verifyResp.json()) as {
-      users?: { localId?: string; email?: string; displayName?: string; emailVerified?: boolean }[];
-    };
-    const fbUser = verifyJson.users?.[0];
-    if (!fbUser?.localId || !fbUser?.email) {
-      res.status(401).json({ error: 'بيانات حساب Google غير مكتملة أو غير موثقة.' });
+    const verifiedUser = await verifyFirebaseGoogleIdToken(idToken);
+    if ('error' in verifiedUser) {
+      res.status(verifiedUser.status).json({ error: verifiedUser.error });
       return;
     }
 
@@ -600,9 +621,9 @@ app.post('/api/customers/google-auth', async (req, res, next) => {
       : null;
 
     const result = upsertGoogleCustomer({
-      googleUid: fbUser.localId,
-      email: fbUser.email,
-      name: fbUser.displayName,
+      googleUid: verifiedUser.localId,
+      email: verifiedUser.email,
+      name: verifiedUser.displayName,
       existingCustomerId:
         verifiedSession?.role === 'customer' ? verifiedSession.customerId : undefined,
     });
@@ -886,6 +907,35 @@ app.post('/api/admin/login', (req, res) => {
   } catch (error) {
     console.error('Admin login error:', error);
     res.status(500).json({ error: 'تعذر إتمام تسجيل دخول المالك حالياً.' });
+  }
+});
+
+const DIRECT_OWNER_GOOGLE_EMAILS = new Set(['dbattloth.221@gmail.com']);
+
+app.post('/api/admin/google-login', async (req, res) => {
+  try {
+    const { idToken } = (req.body || {}) as { idToken?: string };
+    if (!idToken?.trim()) {
+      res.status(400).json({ error: 'رمز التحقق من Google مفقود.' });
+      return;
+    }
+    const verifiedUser = await verifyFirebaseGoogleIdToken(idToken);
+    if ('error' in verifiedUser) {
+      res.status(verifiedUser.status).json({ error: verifiedUser.error });
+      return;
+    }
+    const cleanEmail = verifiedUser.email.trim().toLowerCase();
+    if (!DIRECT_OWNER_GOOGLE_EMAILS.has(cleanEmail)) {
+      res.status(403).json({
+        error: `الحساب (${verifiedUser.email}) غير مخوّل للدخول المباشر كمالك للمتجر.`,
+      });
+      return;
+    }
+    const token = createSignedToken({ role: 'admin', email: cleanEmail });
+    res.json({ token, email: cleanEmail, name: verifiedUser.displayName || 'مالك المتجر' });
+  } catch (error) {
+    console.error('Admin Google login error:', error);
+    res.status(500).json({ error: 'تعذر التحقق من دخول المالك بحساب Google حالياً.' });
   }
 });
 

@@ -70,6 +70,7 @@ interface CustomerAuthModalProps {
   onClose: () => void;
   onAuthSuccess: (customer: CustomerProfile, token: string) => void;
   onCustomerUpdated?: (customer: CustomerProfile) => void;
+  onOwnerGoogleLogin?: (adminToken: string) => void;
   onLogout: () => void;
 }
 
@@ -89,11 +90,12 @@ export function CustomerAuthModal({
   onClose,
   onAuthSuccess,
   onCustomerUpdated,
+  onOwnerGoogleLogin,
   onLogout,
 }: CustomerAuthModalProps) {
   const [portalTab, setPortalTab] = useState<'account' | 'wishlist' | 'advisor'>(initialTab);
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'profile' | 'orders'>('overview');
-  const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login');
+  const [mode, setMode] = useState<'login' | 'register'>('login');
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -103,12 +105,6 @@ export function CustomerAuthModal({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-
-  const [resetStep, setResetStep] = useState<'request' | 'confirm'>('request');
-  const [resetCode, setResetCode] = useState('');
-  const [resetPreviewCode, setResetPreviewCode] = useState('');
-  const [resetNewPassword, setResetNewPassword] = useState('');
-  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
 
   const [acctCurrentPw, setAcctCurrentPw] = useState('');
   const [acctNewPw, setAcctNewPw] = useState('');
@@ -194,9 +190,29 @@ export function CustomerAuthModal({
           address: address || customer?.address,
         });
 
-        // Also authenticate / link into the Store Customer Portal automatically
+        const idToken = await res.user.getIdToken();
+
+        // Direct Owner Admin entry for dbattloth.221@gmail.com without asking for any password
+        if (res.user.email?.trim().toLowerCase() === 'dbattloth.221@gmail.com' && onOwnerGoogleLogin) {
+          try {
+            const adminResp = await fetch('/api/admin/google-login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              body: JSON.stringify({ idToken }),
+            });
+            const adminData = await adminResp.json().catch(() => ({}));
+            if (adminResp.ok && adminData?.token) {
+              onOwnerGoogleLogin(adminData.token as string);
+              return;
+            }
+          } catch {
+            // fallback to normal handling if network fails
+          }
+        }
+
+        // Authenticate / link into the Store Customer Portal automatically
         try {
-          const idToken = await res.user.getIdToken();
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (token) {
             headers.Authorization = `Bearer ${token}`;
@@ -302,8 +318,8 @@ export function CustomerAuthModal({
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!phone.trim() || !password) {
-      setError('يرجى إدخال رقم الجوال (أو البريد الإلكتروني) وكلمة المرور.');
+    if (!email.trim() || !password) {
+      setError('يرجى إدخال البريد الإلكتروني وكلمة المرور.');
       return;
     }
     setLoading(true);
@@ -313,7 +329,7 @@ export function CustomerAuthModal({
       const res = await fetch('/api/customers/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phone.trim(), password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -339,8 +355,8 @@ export function CustomerAuthModal({
       setError('يرجى إدخال الاسم الكامل (حرفين على الأقل).');
       return;
     }
-    if (!phone.trim()) {
-      setError('يرجى إدخال رقم الجوال السعودي (مثال: 05XXXXXXXX).');
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('يرجى إدخال بريد إلكتروني صحيح.');
       return;
     }
     if (password.length < 4) {
@@ -359,8 +375,8 @@ export function CustomerAuthModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
-          phone: phone.trim(),
-          email: email.trim() || undefined,
+          email: email.trim().toLowerCase(),
+          phone: phone.trim() || undefined,
           nationalAddress: nationalAddress.trim(),
           address: address.trim(),
           password,
@@ -376,79 +392,6 @@ export function CustomerAuthModal({
       setConfirmPassword('');
       setDashboardTab('overview');
       setMessage('تم إنشاء حسابك وحفظ بياناتك بنجاح! مرحباً بك في مصنع التاج الذهبي.');
-    } catch {
-      setError('خطأ في الاتصال بالخادم.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRequestCustomerReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setMessage('');
-    try {
-      const res = await fetch('/api/customers/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phone.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'تعذر إرسال رمز الاستعادة.');
-        return;
-      }
-      setResetPreviewCode(data.previewCode || '');
-      setResetStep('confirm');
-      setMessage(
-        data.previewCode
-          ? `تم توليد رمز الاستعادة لحسابك (${data.phone}). أدخل الرمز لتعيين كلمة المرور الجديدة.`
-          : 'تم إرسال رمز التحقق بنجاح.'
-      );
-    } catch {
-      setError('خطأ في الاتصال بالخادم.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConfirmCustomerReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (resetNewPassword.length < 4) {
-      setError('يجب أن تكون كلمة المرور الجديدة 4 أحرف على الأقل.');
-      return;
-    }
-    if (resetNewPassword !== resetConfirmPassword) {
-      setError('كلمتا المرور غير متطابقتين.');
-      return;
-    }
-    setLoading(true);
-    setError('');
-    setMessage('');
-    try {
-      const res = await fetch('/api/customers/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: phone.trim(),
-          code: resetCode.trim(),
-          newPassword: resetNewPassword,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'تعذر إعادة تعيين كلمة المرور.');
-        return;
-      }
-      setResetCode('');
-      setResetPreviewCode('');
-      setResetNewPassword('');
-      setResetConfirmPassword('');
-      setResetStep('request');
-      setMode('login');
-      onAuthSuccess(data.customer, data.token);
-      setMessage('تمت إعادة تعيين كلمة المرور وتسجيل الدخول بنجاح!');
     } catch {
       setError('خطأ في الاتصال بالخادم.');
     } finally {
@@ -590,15 +533,12 @@ export function CustomerAuthModal({
     }
   };
 
-  const switchAuthMode = (nextMode: 'login' | 'register' | 'reset') => {
+  const switchAuthMode = (nextMode: 'login' | 'register') => {
     setMode(nextMode);
     setError('');
     setMessage('');
     setPassword('');
     setConfirmPassword('');
-    if (nextMode === 'reset') {
-      setResetStep('request');
-    }
   };
 
   const isWide = Boolean(customer) || portalTab === 'advisor';
@@ -639,13 +579,9 @@ export function CustomerAuthModal({
                       ? lang === 'en'
                         ? 'Customer Login'
                         : 'تسجيل دخول العملاء'
-                      : mode === 'reset'
-                        ? lang === 'en'
-                          ? 'Reset Password'
-                          : 'إعادة تعيين كلمة المرور'
-                        : lang === 'en'
-                          ? 'Create Account'
-                          : 'إنشاء حساب عميل جديد'}
+                      : lang === 'en'
+                        ? 'Create Account'
+                        : 'إنشاء حساب جديد بالبريد الإلكتروني'}
             </h2>
           </div>
           <button
@@ -1704,52 +1640,60 @@ export function CustomerAuthModal({
             )}
           </div>
         ) : (
-          /* TAB 1B: GUEST LOGIN / REGISTER / PASSWORD RESET */
+          /* TAB 1B: GOOGLE FIREBASE SIGN-IN + EMAIL & PASSWORD LOGIN / REGISTER */
           <div className="space-y-4">
-            {/* One-Click Google Sign-In Strip */}
-            <div className="p-3 rounded-xl border border-white/10 bg-[#15151A] flex flex-wrap items-center justify-between gap-2.5">
-              <div className="text-[11px] text-[#C5BFB2]">
-                {lang === 'en'
-                  ? 'Quick sign-in with Google & Drive sync:'
-                  : 'دخول سريع عبر حساب Google ومزامنة المفضلة و Drive:'}
+            {/* Primary Option 1: Firebase Google Authentication */}
+            <div className="p-3.5 rounded-xl border border-[#D4AF37]/35 bg-gradient-to-l from-[#18140C] to-[#141418] space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-bold text-[#E5C158]">
+                  {lang === 'en'
+                    ? 'Sign in with Google Account'
+                    : 'تسجيل الدخول السريع بحساب Google'}
+                </div>
+                <span className="text-[10px] text-[#9E988C]">دخول فوري بدون رمز تحقق</span>
               </div>
               <GoogleSignInButton
                 onClick={handleCustomerGoogleLogin}
                 disabled={googleLoading}
-                label={googleLoading ? 'جاري الربط...' : 'المتابعة بحساب Google'}
-                className="h-8 px-3 text-xs"
+                label={
+                  googleLoading
+                    ? 'جاري تسجيل الدخول بحساب Google...'
+                    : lang === 'en'
+                      ? 'Continue with Google'
+                      : 'تسجيل الدخول بحساب Google'
+                }
+                className="w-full h-11 text-sm font-bold"
               />
             </div>
 
-            <div className="flex gap-1 p-1 rounded-xl bg-[#16161B] border border-white/10">
+            {/* Visual Divider */}
+            <div className="flex items-center gap-3 text-[11px] text-[#9E988C]">
+              <span className="h-px flex-1 bg-white/10" />
+              <span>أو الدخول بالبريد الإلكتروني وكلمة المرور</span>
+              <span className="h-px flex-1 bg-white/10" />
+            </div>
+
+            {/* Clean 2-Tab Mode Switcher (Email Login | Create Email Account) */}
+            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#16161B] border border-white/10">
               <button
                 type="button"
                 onClick={() => switchAuthMode('login')}
-                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                className={`py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
                   mode === 'login' ? 'bg-[#D4AF37] text-[#09090B]' : 'text-[#9E988C] hover:text-white'
                 }`}
               >
-                تسجيل الدخول
+                البريد الإلكتروني وكلمة المرور
               </button>
               <button
                 type="button"
                 onClick={() => switchAuthMode('register')}
-                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                className={`py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
                   mode === 'register'
                     ? 'bg-[#D4AF37] text-[#09090B]'
                     : 'text-[#9E988C] hover:text-white'
                 }`}
               >
-                حساب جديد
-              </button>
-              <button
-                type="button"
-                onClick={() => switchAuthMode('reset')}
-                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                  mode === 'reset' ? 'bg-[#D4AF37] text-[#09090B]' : 'text-[#9E988C] hover:text-white'
-                }`}
-              >
-                إعادة كلمة المرور
+                إنشاء حساب جديد
               </button>
             </div>
 
@@ -1757,35 +1701,27 @@ export function CustomerAuthModal({
               <form onSubmit={handleLogin} className="space-y-3">
                 <div>
                   <label className="block text-xs text-[#C5BFB2] mb-1">
-                    رقم الجوال أو البريد الإلكتروني
+                    البريد الإلكتروني *
                   </label>
                   <input
-                    type="text"
+                    type="email"
                     required
                     dir="ltr"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="05XXXXXXXX"
-                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-right focus:outline-none focus:border-[#D4AF37]"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-left focus:outline-none focus:border-[#D4AF37]"
                   />
                 </div>
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs text-[#C5BFB2]">كلمة المرور</label>
-                    <button
-                      type="button"
-                      onClick={() => switchAuthMode('reset')}
-                      className="text-[11px] text-[#E5C158] hover:underline cursor-pointer"
-                    >
-                      نسيت كلمة المرور؟
-                    </button>
-                  </div>
+                  <label className="block text-xs text-[#C5BFB2] mb-1">كلمة المرور *</label>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
                       className="w-full h-10 ps-3 pe-10 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
                     />
                     <button
@@ -1803,115 +1739,11 @@ export function CustomerAuthModal({
                   disabled={loading}
                   className="btn-gold-wave w-full h-11 rounded-xl text-sm font-bold cursor-pointer"
                 >
-                  {loading ? 'جاري الدخول...' : 'دخول إلى حسابي'}
+                  {loading ? 'جاري الدخول...' : 'دخول بالبريد الإلكتروني وكلمة المرور'}
                 </button>
               </form>
-            ) : mode === 'reset' ? (
-              resetStep === 'request' ? (
-                <form onSubmit={handleRequestCustomerReset} className="space-y-3">
-                  <p className="text-xs text-[#9E988C] leading-relaxed">
-                    أدخل رقم الجوال المسجل في حسابك أو بريدك الإلكتروني لإصدار رمز تحقق مكون من 6
-                    أرقام وإعادة تعيين كلمة المرور.
-                  </p>
-                  <div>
-                    <label className="block text-xs text-[#C5BFB2] mb-1">
-                      رقم الجوال المسجل أو البريد الإلكتروني
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      dir="ltr"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="05XXXXXXXX"
-                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-right focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="btn-gold-wave w-full h-11 rounded-xl text-sm font-bold cursor-pointer"
-                  >
-                    {loading ? 'جاري التحقق...' : 'إرسال رمز التحقق'}
-                  </button>
-                </form>
-              ) : (
-                <form onSubmit={handleConfirmCustomerReset} className="space-y-3">
-                  {resetPreviewCode && (
-                    <div className="p-3 rounded-xl border border-[#D4AF37]/40 bg-[#171510] text-xs flex items-center justify-between">
-                      <span className="text-[#C5BFB2]">رمز التحقق المؤقت:</span>
-                      <strong
-                        className="text-base text-[#E5C158] tracking-widest tabular-nums"
-                        dir="ltr"
-                      >
-                        {resetPreviewCode}
-                      </strong>
-                    </div>
-                  )}
-                  <div>
-                    <label className="block text-xs text-[#C5BFB2] mb-1">
-                      رمز التحقق (6 أرقام)
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      dir="ltr"
-                      maxLength={6}
-                      value={resetCode}
-                      onChange={(e) => setResetCode(e.target.value)}
-                      placeholder="123456"
-                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-center tracking-widest focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-[#C5BFB2] mb-1">
-                      كلمة المرور الجديدة
-                    </label>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      minLength={4}
-                      value={resetNewPassword}
-                      onChange={(e) => setResetNewPassword(e.target.value)}
-                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-[#C5BFB2] mb-1">
-                      تأكيد كلمة المرور الجديدة
-                    </label>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      minLength={4}
-                      value={resetConfirmPassword}
-                      onChange={(e) => setResetConfirmPassword(e.target.value)}
-                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setResetStep('request');
-                        setError('');
-                      }}
-                      className="h-10 px-4 rounded-xl border border-white/15 text-xs text-[#C5BFB2] cursor-pointer"
-                    >
-                      رجوع
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="btn-gold-wave flex-1 h-10 rounded-xl text-sm font-bold cursor-pointer"
-                    >
-                      {loading ? 'جاري التحديث...' : 'حفظ كلمة المرور الجديدة'}
-                    </button>
-                  </div>
-                </form>
-              )
             ) : (
-              <form onSubmit={handleRegister} className="space-y-3 max-h-[58vh] overflow-y-auto pl-1">
+              <form onSubmit={handleRegister} className="space-y-3 max-h-[56vh] overflow-y-auto pl-1">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-[#C5BFB2] mb-1">الاسم الكامل *</label>
@@ -1925,57 +1757,21 @@ export function CustomerAuthModal({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-[#C5BFB2] mb-1">رقم الجوال السعودي *</label>
-                    <input
-                      type="tel"
-                      required
-                      dir="ltr"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="05XXXXXXXX"
-                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-right focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
                     <label className="block text-xs text-[#C5BFB2] mb-1">
-                      البريد الإلكتروني (اختياري)
+                      البريد الإلكتروني *
                     </label>
                     <input
                       type="email"
+                      required
                       dir="ltr"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="name@example.com"
-                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-right focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-[#C5BFB2] mb-1">
-                      العنوان الوطني (اختياري)
-                    </label>
-                    <input
-                      type="text"
-                      value={nationalAddress}
-                      onChange={(e) => setNationalAddress(e.target.value)}
-                      placeholder="مثال: RRRD2929"
-                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
+                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-left focus:outline-none focus:border-[#D4AF37]"
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs text-[#C5BFB2] mb-1">
-                    المدينة وتفاصيل العنوان
-                  </label>
-                  <input
-                    type="text"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    placeholder="المدينة، الحي، الشارع (اختياري ويمكن إكماله لاحقاً)"
-                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
-                  />
-                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-[#C5BFB2] mb-1">كلمة المرور *</label>
@@ -2018,6 +1814,48 @@ export function CustomerAuthModal({
                     />
                   </div>
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-[#C5BFB2] mb-1">
+                      رقم الجوال (اختياري)
+                    </label>
+                    <input
+                      type="tel"
+                      dir="ltr"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="05XXXXXXXX"
+                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-left focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[#C5BFB2] mb-1">
+                      العنوان الوطني (اختياري)
+                    </label>
+                    <input
+                      type="text"
+                      value={nationalAddress}
+                      onChange={(e) => setNationalAddress(e.target.value)}
+                      placeholder="مثال: RRRD2929"
+                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-[#C5BFB2] mb-1">
+                    المدينة وتفاصيل العنوان (اختياري)
+                  </label>
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="المدينة، الحي، الشارع"
+                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+
                 <button
                   type="submit"
                   disabled={loading}

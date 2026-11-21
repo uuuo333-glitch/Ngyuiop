@@ -1285,21 +1285,29 @@ function appendLoyaltyHistory(
 
 export function registerCustomer(input: {
   name: string;
-  phone: string;
+  phone?: string;
   email?: string;
   nationalAddress?: string;
   address?: string;
   password: string;
 }): { customer?: CustomerProfile; error?: string } {
   const db = ensureDb();
-  const normalizedPhone = normalizeSaudiPhone(input.phone);
-  if (normalizedPhone.length < 9) {
+  const rawPhone = (input.phone || '').trim();
+  const normalizedPhone = rawPhone ? normalizeSaudiPhone(rawPhone) : '';
+  const cleanEmail = (input.email || '').trim().toLowerCase();
+
+  if (!cleanEmail && normalizedPhone.length < 9) {
+    return { error: 'يرجى إدخال البريد الإلكتروني أو رقم جوال صحيح.' };
+  }
+  if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return { error: 'يرجى إدخال بريد إلكتروني صحيح.' };
+  }
+  if (rawPhone && normalizedPhone.length < 9) {
     return { error: 'يرجى إدخال رقم جوال صحيح (مثال: 05XXXXXXXX).' };
   }
-  if (db.customers.some((c) => phonesMatch(c.phone, normalizedPhone))) {
-    return { error: 'رقم الجوال مسجل مسبقاً. يرجى تسجيل الدخول أو استعادة كلمة المرور.' };
+  if (normalizedPhone && db.customers.some((c) => c.phone && phonesMatch(c.phone, normalizedPhone))) {
+    return { error: 'رقم الجوال مسجل مسبقاً. يرجى تسجيل الدخول.' };
   }
-  const cleanEmail = input.email?.trim().toLowerCase() || '';
   if (cleanEmail && db.customers.some((c) => c.email?.toLowerCase() === cleanEmail)) {
     return { error: 'البريد الإلكتروني مسجل مسبقاً. يرجى تسجيل الدخول.' };
   }

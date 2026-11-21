@@ -34,9 +34,11 @@ import { HeaderBars } from './components/HeaderBars';
 import { LandingHero } from './components/LandingHero';
 import { ProductCard } from './components/ProductCard';
 import { ProductModal } from './components/ProductModal';
+import { MobileAppInstallBanner, PWAInstallModal } from './components/PWAInstallUI';
 import { ShareButton } from './components/ShareButton';
 import { ShippingCarriersLogos } from './components/ShippingCarriersLogos';
 import { VideoSidebarRail } from './components/VideoSidebarRail';
+import { usePWAInstall } from './hooks/usePWAInstall';
 import { DEFAULT_CURRENCY_RATES, t, type StoreLanguage } from './i18n';
 import type {
   CartItem,
@@ -304,8 +306,10 @@ export default function App() {
   const [customerModalTab, setCustomerModalTab] = useState<'account' | 'wishlist'>('account');
   const [pendingCouponCode, setPendingCouponCode] = useState<string | null>(null);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [ownerGoogleAdminToken, setOwnerGoogleAdminToken] = useState<string | null>(null);
   const [cartNotice, setCartNotice] = useState('');
   const [bgMediaError, setBgMediaError] = useState(false);
+  const pwa = usePWAInstall();
 
   // Sync HTML dir/lang with active storefront language
   useEffect(() => {
@@ -910,6 +914,7 @@ export default function App() {
 
         <AdminDashboard
           open={adminOpen}
+          externalAdminToken={ownerGoogleAdminToken}
           onClose={() => setAdminOpen(false)}
           onStorefrontUpdated={loadStorefront}
         />
@@ -1010,6 +1015,10 @@ export default function App() {
           }}
           onOpenAdmin={() => setAdminOpen(true)}
           onSelectProduct={(p) => setSelectedProduct(p)}
+          showInstallApp={!pwa.isInstalled}
+          onInstallApp={() => {
+            void pwa.triggerInstall();
+          }}
         />
 
         <main className="flex-1">
@@ -1210,7 +1219,11 @@ export default function App() {
 
         {/* Floating Product Comparison Bar */}
         {comparedProducts.length > 0 && (
-          <div className="fixed bottom-20 md:bottom-4 inset-x-3 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 z-40 max-w-xl rounded-2xl border border-[#D4AF37]/50 bg-[#121216]/95 backdrop-blur-md p-2.5 sm:p-3 shadow-2xl flex items-center justify-between gap-2 sm:gap-3">
+          <div
+            className={`fixed md:bottom-4 inset-x-3 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 z-40 max-w-xl rounded-2xl border border-[#D4AF37]/50 bg-[#121216]/95 backdrop-blur-md p-2.5 sm:p-3 shadow-2xl flex items-center justify-between gap-2 sm:gap-3 ${
+              !pwa.isInstalled && !pwa.bannerDismissed ? 'bottom-[138px]' : 'bottom-20'
+            }`}
+          >
             <div className="flex items-center gap-2 min-w-0">
               <Scale className="w-4 h-4 text-[#E5C158] shrink-0" />
               <span className="text-xs font-bold text-[#F5F2EB] truncate">
@@ -1384,13 +1397,36 @@ export default function App() {
           onClose={() => setCustomerModalOpen(false)}
           onAuthSuccess={handleCustomerAuthSuccess}
           onCustomerUpdated={handleCustomerUpdated}
+          onOwnerGoogleLogin={(adminTk) => {
+            setOwnerGoogleAdminToken(adminTk);
+            setCustomerModalOpen(false);
+            setAdminOpen(true);
+          }}
           onLogout={handleCustomerLogout}
         />
 
         <AdminDashboard
           open={adminOpen}
+          externalAdminToken={ownerGoogleAdminToken}
           onClose={() => setAdminOpen(false)}
           onStorefrontUpdated={loadStorefront}
+        />
+
+        <MobileAppInstallBanner
+          visible={!pwa.isInstalled && !pwa.bannerDismissed}
+          lang={lang}
+          storeName={settings.storeName}
+          onInstall={() => {
+            void pwa.triggerInstall();
+          }}
+          onDismiss={pwa.dismissBanner}
+        />
+
+        <PWAInstallModal
+          mode={pwa.modalMode}
+          lang={lang}
+          storeName={settings.storeName}
+          onClose={pwa.closeModal}
         />
       </div>
     </div>

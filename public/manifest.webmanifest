@@ -1,0 +1,35 @@
+{
+  "id": "/",
+  "name": "مصنع التاج الذهبي لدبات التلوث",
+  "short_name": "التاج الذهبي",
+  "description": "المتجر الرسمي لمصنع التاج الذهبي لدبات التلوث للديزل والبنزين بالريال السعودي",
+  "start_url": "/",
+  "scope": "/",
+  "dir": "rtl",
+  "lang": "ar",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#09090B",
+  "background_color": "#09090B",
+  "categories": ["shopping", "automotive"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

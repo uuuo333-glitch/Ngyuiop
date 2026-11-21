@@ -25,6 +25,7 @@ import type {
   PublicSettings,
 } from '../types';
 import { ResilientImage } from './ResilientImage';
+import { PhoneDownloadIcon } from './PWAInstallUI';
 
 interface HeaderBarsProps {
   settings: PublicSettings;
@@ -42,6 +43,8 @@ interface HeaderBarsProps {
   onOpenWishlist: () => void;
   onOpenAdmin: () => void;
   onSelectProduct: (product: PublicProduct) => void;
+  showInstallApp?: boolean;
+  onInstallApp?: () => void;
   editMode?: boolean;
   onEditSection?: (section: 'marquee' | 'identity') => void;
 }
@@ -64,6 +67,8 @@ export function HeaderBars({
   onOpenWishlist,
   onOpenAdmin,
   onSelectProduct,
+  showInstallApp = false,
+  onInstallApp,
   editMode = false,
   onEditSection,
 }: HeaderBarsProps) {
@@ -366,9 +371,36 @@ export function HeaderBars({
               type="button"
               onClick={() => setMobileSearchOpen((v) => !v)}
               aria-label="Search"
-              className="md:hidden w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-white/10 bg-[#141418] flex items-center justify-center text-[#F5F2EB] hover:border-[#D4AF37]/50 cursor-pointer"
+              className="md:hidden w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl border border-white/10 bg-[#141418] flex items-center justify-center text-[#F5F2EB] hover:border-[#D4AF37]/50 cursor-pointer shrink-0"
             >
               <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#D4AF37]" />
+            </button>
+
+            {/* Golden Install Mobile App CTA Button (Auto-hides inside installed standalone app) */}
+            {showInstallApp && onInstallApp && (
+              <button
+                type="button"
+                onClick={onInstallApp}
+                title={lang === 'en' ? 'Install Mobile App' : 'حمّل التطبيق على جوالك'}
+                aria-label={lang === 'en' ? 'Install App' : 'حمّل التطبيق'}
+                className="h-7 sm:h-9 px-2 sm:px-3 rounded-lg sm:rounded-xl border border-[#F5E1A4]/70 bg-gradient-to-l from-[#D4AF37] via-[#E5C158] to-[#D4AF37] text-[#09090B] hover:brightness-110 text-[10px] sm:text-xs font-extrabold flex items-center gap-1 sm:gap-1.5 shadow-[0_0_16px_rgba(212,175,55,0.28)] transition-all whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <PhoneDownloadIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span>{lang === 'en' ? 'Get App' : 'حمّل التطبيق'}</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onOpenCart}
+              aria-label={t(lang, 'cart')}
+              className="relative h-7 sm:h-9 px-1.5 sm:px-3 rounded-lg sm:rounded-xl border border-[#D4AF37]/40 bg-[#171510] hover:border-[#D4AF37] text-xs font-medium text-[#F5F2EB] flex items-center gap-1 sm:gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#E5C158]" />
+              <span className="hidden sm:inline">{t(lang, 'cart')}</span>
+              <span className="inline-flex items-center justify-center min-w-4 sm:min-w-5 h-4 sm:h-5 px-1 rounded-md bg-[#D4AF37] text-[#09090B] text-[10px] sm:text-xs font-bold tabular-nums">
+                {cartCount}
+              </span>
             </button>
 
             {/* Gulf Currency Switcher */}
@@ -377,7 +409,7 @@ export function HeaderBars({
                 value={currency}
                 onChange={(e) => onCurrencyChange(e.target.value as CurrencyCode)}
                 aria-label="Currency"
-                className="h-8 sm:h-9 px-1.5 sm:px-2 rounded-xl border border-white/10 bg-[#141418] text-[10px] sm:text-xs font-bold text-[#E5C158] focus:outline-none focus:border-[#D4AF37] cursor-pointer max-w-[74px] sm:max-w-none"
+                className="h-7 sm:h-9 px-1 sm:px-2 rounded-lg sm:rounded-xl border border-white/10 bg-[#141418] text-[10px] sm:text-xs font-bold text-[#E5C158] focus:outline-none focus:border-[#D4AF37] cursor-pointer max-w-[48px] sm:max-w-none shrink-0"
               >
                 {CURRENCY_KEYS.map((code) => (
                   <option key={code} value={code}>
@@ -393,20 +425,20 @@ export function HeaderBars({
                 type="button"
                 onClick={() => onLanguageChange(lang === 'ar' ? 'en' : 'ar')}
                 title={lang === 'ar' ? 'Switch to English' : 'التبديل للعربية'}
-                className="h-8 sm:h-9 px-1.5 sm:px-2.5 rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 text-[10px] sm:text-xs font-bold text-[#F5F2EB] flex items-center gap-1 cursor-pointer"
+                className="h-7 sm:h-9 px-1.5 sm:px-2.5 rounded-lg sm:rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 text-[10px] sm:text-xs font-bold text-[#F5F2EB] flex items-center gap-1 cursor-pointer shrink-0"
               >
                 <Globe className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#D4AF37]" />
                 <span>{lang === 'ar' ? 'EN' : 'AR'}</span>
               </button>
             )}
 
-            {/* Wishlist Shortcut */}
+            {/* Wishlist Shortcut (desktop/tablet header; also inside Account modal on mobile) */}
             <button
               type="button"
               onClick={onOpenWishlist}
               title={t(lang, 'wishlistTitle')}
               aria-label={t(lang, 'wishlistTitle')}
-              className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-white/10 bg-[#141418] hover:border-red-400/50 flex items-center justify-center text-[#F5F2EB] cursor-pointer"
+              className="hidden sm:flex relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-white/10 bg-[#141418] hover:border-red-400/50 items-center justify-center text-[#F5F2EB] cursor-pointer shrink-0"
             >
               <Heart className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${wishlistCount > 0 ? 'text-red-400 fill-red-400' : 'text-[#C5BFB2]'}`} />
               {wishlistCount > 0 && (
@@ -419,7 +451,7 @@ export function HeaderBars({
             <button
               type="button"
               onClick={onOpenCustomerAuth}
-              className="h-8 sm:h-9 px-2 sm:px-3 rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 text-xs font-medium text-[#F5F2EB] flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="h-7 sm:h-9 px-1.5 sm:px-3 rounded-lg sm:rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 text-xs font-medium text-[#F5F2EB] flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#D4AF37] shrink-0" />
               <span className="hidden lg:inline">
@@ -438,23 +470,10 @@ export function HeaderBars({
 
             <button
               type="button"
-              onClick={onOpenCart}
-              aria-label={t(lang, 'cart')}
-              className="relative h-8 sm:h-9 px-2 sm:px-3 rounded-xl border border-[#D4AF37]/40 bg-[#171510] hover:border-[#D4AF37] text-xs font-medium text-[#F5F2EB] flex items-center gap-1 sm:gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#E5C158]" />
-              <span className="hidden sm:inline">{t(lang, 'cart')}</span>
-              <span className="inline-flex items-center justify-center min-w-4 sm:min-w-5 h-4 sm:h-5 px-1 rounded-md bg-[#D4AF37] text-[#09090B] text-[10px] sm:text-xs font-bold tabular-nums">
-                {cartCount}
-              </span>
-            </button>
-
-            <button
-              type="button"
               onClick={onOpenAdmin}
               title={lang === 'en' ? 'Owner Portal' : 'لوحة تحكم المالك'}
               aria-label="لوحة تحكم المالك"
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 flex items-center justify-center text-[#9E988C] hover:text-[#E5C158] transition-colors shrink-0 cursor-pointer"
+              className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl border border-white/10 bg-[#141418] hover:border-[#D4AF37]/50 flex items-center justify-center text-[#9E988C] hover:text-[#E5C158] transition-colors shrink-0 cursor-pointer"
             >
               <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
