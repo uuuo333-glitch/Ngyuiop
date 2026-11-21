@@ -114,8 +114,8 @@ type AdminTab =
   | 'appearance'
   | 'settings';
 
-const DEFAULT_OWNER_PASSWORD = '604608';
-const FIXED_OWNER_PASSWORDS = ['604608', '2026'];
+const DEFAULT_OWNER_PASSWORD = '60460';
+const FIXED_OWNER_PASSWORDS = ['60460', '2026'];
 
 // Strict in-memory fallbacks so Preview iframes with partitioned/blocked storage never lose session state
 let memoryOwnerAuthenticated = false;
@@ -149,8 +149,15 @@ function safeStorageRemove(store: 'local' | 'session', key: string): void {
   }
 }
 
+function normalizeOwnerDigits(raw: string): string {
+  return String(raw || '')
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .trim();
+}
+
 function isAcceptedOwnerPassword(candidate: string): boolean {
-  const trimmed = candidate.trim();
+  const trimmed = normalizeOwnerDigits(candidate);
   if (!trimmed) return false;
   return FIXED_OWNER_PASSWORDS.includes(trimmed) || trimmed === getStoredOwnerPassword();
 }
@@ -272,7 +279,7 @@ function createFallbackAdminSettings(): StoreSettings {
 function getStoredOwnerPassword(): string {
   if (memoryOwnerSecret) return memoryOwnerSecret;
   const stored = safeStorageGet('local', 'taj_owner_secret');
-  if (stored === 'Admin@2026') {
+  if (stored === 'Admin@2026' || stored === '604608') {
     safeStorageSet('local', 'taj_owner_secret', DEFAULT_OWNER_PASSWORD);
     return DEFAULT_OWNER_PASSWORD;
   }
@@ -299,6 +306,7 @@ export function AdminDashboard({
   const tokenRef = useRef<string | null>(adminToken);
   const inflightTokenRef = useRef<Promise<string | null> | null>(null);
   const [passwordInput, setPasswordInput] = useState('');
+  const [showOwnerPassword, setShowOwnerPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
   const [googleOwnerBusy, setGoogleOwnerBusy] = useState(false);
@@ -840,7 +848,7 @@ export function AdminDashboard({
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-    const entered = passwordInput.trim();
+    const entered = normalizeOwnerDigits(passwordInput);
     if (!entered) {
       setLoginError('يرجى إدخال كلمة مرور المالك');
       return;
@@ -866,7 +874,7 @@ export function AdminDashboard({
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data?.token) {
-        setLoginError('كلمة المرور غير صحيحة. يرجى إدخال 604608 أو 2026.');
+        setLoginError('كلمة المرور غير صحيحة. يرجى إدخال 60460 أو 2026.');
         return;
       }
 
@@ -884,7 +892,7 @@ export function AdminDashboard({
         setPasswordInput('');
         await fetchDashboard();
       } else {
-        setLoginError('كلمة المرور غير صحيحة. يرجى إدخال 604608 أو 2026.');
+        setLoginError('كلمة المرور غير صحيحة. يرجى إدخال 60460 أو 2026.');
       }
     } finally {
       setLoggingIn(false);
@@ -2694,14 +2702,26 @@ export function AdminDashboard({
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-xs text-[#C5BFB2] mb-1.5">كلمة مرور المالك</label>
-              <input
-                type="password"
-                required
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="••••••••"
-                className="w-full h-11 px-3.5 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
-              />
+              <div className="relative">
+                <input
+                  type={showOwnerPassword ? 'text' : 'password'}
+                  dir="ltr"
+                  autoComplete="current-password"
+                  required
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="•••••"
+                  className="w-full h-11 px-3.5 pe-11 rounded-xl bg-[#16161B] border border-white/15 text-sm text-start focus:outline-none focus:border-[#D4AF37]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowOwnerPassword((v) => !v)}
+                  aria-label={showOwnerPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+                  className="absolute inset-y-0 end-0 px-3 flex items-center text-[#9E988C] hover:text-[#E5C158] cursor-pointer"
+                >
+                  {showOwnerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             <button

@@ -129,7 +129,7 @@ export function CartDrawer({
 
         const refreshTk = async (): Promise<string | null> => {
           const candidates = Array.from(
-            new Set([savedSecret, '604608', '2026'].filter(Boolean))
+            new Set([savedSecret, '60460', '2026'].filter(Boolean))
           ) as string[];
           for (const pw of candidates) {
             try {

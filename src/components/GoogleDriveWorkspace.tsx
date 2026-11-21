@@ -21,8 +21,8 @@ import {
 import {
   archiveDriveBackupInFirestore,
   getAccessToken,
+  googleDriveSignIn,
   googleLogout,
-  googleSignIn,
   initAuth,
   recordDriveBackupInFirestore,
   subscribeDriveBackups,
@@ -162,7 +162,7 @@ export function GoogleDriveWorkspace({
     setLoggingIn(true);
     setErrorMsg('');
     try {
-      const res = await googleSignIn();
+      const res = await googleDriveSignIn();
       if (res) {
         setGoogleUser(res.user);
         setAccessToken(res.accessToken);

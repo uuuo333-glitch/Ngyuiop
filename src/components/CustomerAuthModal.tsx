@@ -184,31 +184,33 @@ export function CustomerAuthModal({
       if (res) {
         setGoogleUser(res.user);
         setGoogleToken(res.accessToken);
-        await ensureFirestoreUserProfile(res.user, {
-          phone: phone || customer?.phone,
-          nationalAddress: nationalAddress || customer?.nationalAddress,
-          address: address || customer?.address,
-        });
-
         const idToken = await res.user.getIdToken();
 
         // Direct Owner Admin entry for dbattloth.221@gmail.com without asking for any password
         if (res.user.email?.trim().toLowerCase() === 'dbattloth.221@gmail.com' && onOwnerGoogleLogin) {
-          try {
-            const adminResp = await fetch('/api/admin/google-login', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'same-origin',
-              body: JSON.stringify({ idToken }),
-            });
-            const adminData = await adminResp.json().catch(() => ({}));
-            if (adminResp.ok && adminData?.token) {
-              onOwnerGoogleLogin(adminData.token as string);
-              return;
-            }
-          } catch {
-            // fallback to normal handling if network fails
+          const adminResp = await fetch('/api/admin/google-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ idToken }),
+          });
+          const adminData = await adminResp.json().catch(() => ({}));
+          if (adminResp.ok && adminData?.token) {
+            onOwnerGoogleLogin(adminData.token as string);
+            return;
           }
+          setError(adminData.error || 'تعذر فتح لوحة المالك بحساب Google.');
+          return;
+        }
+
+        try {
+          await ensureFirestoreUserProfile(res.user, {
+            phone: phone || customer?.phone,
+            nationalAddress: nationalAddress || customer?.nationalAddress,
+            address: address || customer?.address,
+          });
+        } catch {
+          // Non-blocking profile sync
         }
 
         // Authenticate / link into the Store Customer Portal automatically
@@ -334,6 +336,11 @@ export function CustomerAuthModal({
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || 'تعذر تسجيل الدخول.');
+        return;
+      }
+      if (data.isOwner && data.adminToken && onOwnerGoogleLogin) {
+        setPassword('');
+        onOwnerGoogleLogin(data.adminToken as string);
         return;
       }
       onAuthSuccess(data.customer, data.token);

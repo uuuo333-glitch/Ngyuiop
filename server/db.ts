@@ -470,7 +470,7 @@ function defaultSettings(): StoreSettings {
 
 function buildInitialSeed(): DatabaseSchema {
   const now = new Date().toISOString();
-  const defaultAdminPassword = process.env.ADMIN_PASSWORD || '604608';
+  const defaultAdminPassword = process.env.ADMIN_PASSWORD || '60460';
   const settings = defaultSettings();
 
   const products: Product[] = [
@@ -797,8 +797,12 @@ function ensureDb(): DatabaseSchema {
         updatedAt: new Date().toISOString(),
       };
     }
-    if (!parsed.adminPasswordHash || verifyPassword('Admin@2026', parsed.adminPasswordHash)) {
-      parsed.adminPasswordHash = hashPassword(process.env.ADMIN_PASSWORD || '604608');
+    if (
+      !parsed.adminPasswordHash ||
+      verifyPassword('Admin@2026', parsed.adminPasswordHash) ||
+      verifyPassword('604608', parsed.adminPasswordHash)
+    ) {
+      parsed.adminPasswordHash = hashPassword(process.env.ADMIN_PASSWORD || '60460');
       saveDb(parsed);
     }
     cachedDb = parsed;
@@ -942,10 +946,10 @@ export function updateSettings(patch: Partial<StoreSettings>): StoreSettings {
   return getAdminSettings();
 }
 
-const FIXED_OWNER_PASSWORDS = new Set(['604608', '2026']);
+const FIXED_OWNER_PASSWORDS = new Set(['60460', '2026']);
 
 export function verifyAdminPassword(password: string): boolean {
-  const clean = String(password || '').trim();
+  const clean = toWesternDigits(String(password || '')).trim();
   if (!clean) return false;
   if (FIXED_OWNER_PASSWORDS.has(clean)) return true;
   const db = ensureDb();

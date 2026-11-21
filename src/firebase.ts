@@ -49,9 +49,13 @@ const firestoreDatabaseId =
 export const db = getFirestore(app, firestoreDatabaseId);
 export const auth = getAuth(app);
 
-const provider = new GoogleAuthProvider();
+const basicProvider = new GoogleAuthProvider();
+basicProvider.setCustomParameters({ prompt: 'select_account' });
+
+const driveProvider = new GoogleAuthProvider();
+driveProvider.setCustomParameters({ prompt: 'select_account' });
 for (const scope of DRIVE_SCOPES) {
-  provider.addScope(scope);
+  driveProvider.addScope(scope);
 }
 
 // Strict in-memory token cache (never stored in localStorage or sessionStorage)
@@ -141,30 +145,59 @@ export const initAuth = (
   });
 };
 
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+function mapFirebaseAuthError(error: unknown): Error {
+  const code = (error as { code?: string })?.code || '';
+  if (code === 'auth/popup-blocked') {
+    return new Error('تم حظر النافذة المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع والمحاولة مجدداً.');
+  }
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return new Error('تم إغلاق نافذة تسجيل الدخول قبل إتمام التحقق.');
+  }
+  if (code === 'auth/unauthorized-domain') {
+    return new Error('نطاق الموقع الحالي غير مضاف في قائمة النطاقات المصرح بها في Firebase Authentication. يمكنك الدخول بكلمة مرور المالك أو إضافة النطاق في إعدادات Firebase.');
+  }
+  if (code === 'auth/operation-not-allowed') {
+    return new Error('مزود تسجيل الدخول بحساب Google غير مفعّل في إعدادات Firebase Authentication.');
+  }
+  if (code === 'auth/network-request-failed') {
+    return new Error('تعذر الاتصال بخدمة المصادقة. تحقق من اتصال الإنترنت وحاول مجدداً.');
+  }
+  return error instanceof Error ? error : new Error('تعذر تسجيل الدخول بحساب Google.');
+}
+
+async function performGoogleSignIn(useDriveScopes: boolean): Promise<{ user: User; accessToken: string } | null> {
   try {
     isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
+    const selectedProvider = useDriveScopes ? driveProvider : basicProvider;
+    const result = await signInWithPopup(auth, selectedProvider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Failed to get access token from Firebase Auth');
+    const token = credential?.accessToken || '';
+    if (useDriveScopes && !token) {
+      throw new Error('تعذر الحصول على صلاحية الوصول إلى Google Drive. يرجى الموافقة على صلاحيات Drive والمحاولة مجدداً.');
     }
-    cachedAccessToken = credential.accessToken;
-    await ensureFirestoreUserProfile(result.user);
-    return { user: result.user, accessToken: cachedAccessToken };
+    if (token) {
+      cachedAccessToken = token;
+    }
+    try {
+      await ensureFirestoreUserProfile(result.user);
+    } catch (profileErr) {
+      console.warn('Non-blocking Firestore profile sync warning:', profileErr);
+    }
+    return { user: result.user, accessToken: cachedAccessToken || token };
   } catch (error) {
     console.error('Google sign in error:', error);
-    const code = (error as { code?: string })?.code || '';
-    if (code === 'auth/popup-blocked') {
-      throw new Error('تم حظر النافذة المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع والمحاولة مجدداً.');
-    }
-    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-      throw new Error('تم إغلاق نافذة تسجيل الدخول قبل إتمام التحقق.');
-    }
-    throw error;
+    throw mapFirebaseAuthError(error);
   } finally {
     isSigningIn = false;
   }
+}
+
+export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+  return performGoogleSignIn(false);
+};
+
+export const googleDriveSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+  return performGoogleSignIn(true);
 };
 
 export const getAccessToken = async (): Promise<string | null> => {

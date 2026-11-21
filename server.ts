@@ -548,6 +548,15 @@ app.post('/api/customers/login', (req, res) => {
     res.status(400).json({ error: 'يرجى إدخال البريد الإلكتروني وكلمة المرور.' });
     return;
   }
+  const cleanEmail = identifier.toLowerCase();
+  if (
+    (cleanEmail === 'dbattloth.221@gmail.com' || cleanEmail === 'uuuo333@gmail.com') &&
+    verifyAdminPassword(password)
+  ) {
+    const adminToken = createSignedToken({ role: 'admin', email: cleanEmail });
+    res.json({ isOwner: true, adminToken, email: cleanEmail });
+    return;
+  }
   const customer = loginCustomer(identifier, password);
   if (!customer) {
     res.status(401).json({ error: 'بيانات الدخول غير صحيحة. تأكد من البريد الإلكتروني وكلمة المرور.' });
@@ -557,48 +566,142 @@ app.post('/api/customers/login', (req, res) => {
   res.json({ token, customer });
 });
 
+let cachedFirebaseCerts: { certs: Record<string, string>; expiresAt: number } | null = null;
+
+async function fetchFirebasePublicCerts(): Promise<Record<string, string> | null> {
+  if (cachedFirebaseCerts && Date.now() < cachedFirebaseCerts.expiresAt) {
+    return cachedFirebaseCerts.certs;
+  }
+  try {
+    const res = await fetch(
+      'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com'
+    );
+    if (!res.ok) return null;
+    const certs = (await res.json()) as Record<string, string>;
+    cachedFirebaseCerts = { certs, expiresAt: Date.now() + 60 * 60 * 1000 };
+    return certs;
+  } catch {
+    return null;
+  }
+}
+
+function getFirebaseProjectConfig(): { apiKey: string; projectId: string } {
+  let apiKey = process.env.VITE_FIREBASE_API_KEY || '';
+  let projectId = process.env.VITE_FIREBASE_PROJECT_ID || '';
+  const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(cfgPath)) {
+    const parsed = JSON.parse(fs.readFileSync(cfgPath, 'utf8')) as {
+      apiKey?: string;
+      projectId?: string;
+    };
+    if (!apiKey) apiKey = parsed.apiKey || '';
+    if (!projectId) projectId = parsed.projectId || '';
+  }
+  return { apiKey, projectId };
+}
+
+async function verifyFirebaseJwtWithGoogleCerts(
+  idToken: string,
+  expectedProjectId: string
+): Promise<{
+  localId: string;
+  email: string;
+  displayName?: string;
+  emailVerified?: boolean;
+} | null> {
+  try {
+    const parts = idToken.trim().split('.');
+    if (parts.length !== 3) return null;
+    const [headerB64, payloadB64, sigB64] = parts;
+    const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString('utf8')) as {
+      alg?: string;
+      kid?: string;
+    };
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8')) as {
+      aud?: string;
+      iss?: string;
+      sub?: string;
+      exp?: number;
+      email?: string;
+      name?: string;
+      email_verified?: boolean;
+    };
+    if (header.alg !== 'RS256' || !header.kid) return null;
+    if (!payload.sub || !payload.email) return null;
+    if (expectedProjectId) {
+      if (payload.aud !== expectedProjectId) return null;
+      if (payload.iss !== `https://securetoken.google.com/${expectedProjectId}`) return null;
+    }
+    if (typeof payload.exp === 'number' && Math.floor(Date.now() / 1000) > payload.exp + 60) {
+      return null;
+    }
+    const certs = await fetchFirebasePublicCerts();
+    const pem = certs?.[header.kid];
+    if (!pem) return null;
+    const ok = crypto.verify(
+      'RSA-SHA256',
+      Buffer.from(`${headerB64}.${payloadB64}`),
+      pem,
+      Buffer.from(sigB64, 'base64url')
+    );
+    if (!ok) return null;
+    return {
+      localId: payload.sub,
+      email: payload.email,
+      displayName: payload.name,
+      emailVerified: payload.email_verified,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function verifyFirebaseGoogleIdToken(idToken: string): Promise<{
   localId: string;
   email: string;
   displayName?: string;
   emailVerified?: boolean;
 } | { error: string; status: number }> {
-  let firebaseApiKey = process.env.VITE_FIREBASE_API_KEY || '';
-  if (!firebaseApiKey) {
-    const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
-    if (fs.existsSync(cfgPath)) {
-      const parsed = JSON.parse(fs.readFileSync(cfgPath, 'utf8')) as { apiKey?: string };
-      firebaseApiKey = parsed.apiKey || '';
+  const { apiKey: firebaseApiKey, projectId } = getFirebaseProjectConfig();
+
+  if (firebaseApiKey) {
+    try {
+      const verifyResp = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseApiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: idToken.trim() }),
+        }
+      );
+      if (verifyResp.ok) {
+        const verifyJson = (await verifyResp.json()) as {
+          users?: { localId?: string; email?: string; displayName?: string; emailVerified?: boolean }[];
+        };
+        const fbUser = verifyJson.users?.[0];
+        if (fbUser?.localId && fbUser?.email) {
+          return {
+            localId: fbUser.localId,
+            email: fbUser.email,
+            displayName: fbUser.displayName,
+            emailVerified: fbUser.emailVerified,
+          };
+        }
+      }
+    } catch {
+      // Fallback to cryptographic public certificate check below
     }
-  }
-  if (!firebaseApiKey) {
-    return { error: 'إعدادات Firebase غير مكتملة على الخادم.', status: 500 };
   }
 
-  const verifyResp = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseApiKey)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken: idToken.trim() }),
-    }
-  );
-  if (!verifyResp.ok) {
-    return { error: 'تعذر التحقق من جلسة Google. يرجى المحاولة مجدداً.', status: 401 };
+  const jwtUser = await verifyFirebaseJwtWithGoogleCerts(idToken, projectId);
+  if (jwtUser) {
+    return jwtUser;
   }
-  const verifyJson = (await verifyResp.json()) as {
-    users?: { localId?: string; email?: string; displayName?: string; emailVerified?: boolean }[];
-  };
-  const fbUser = verifyJson.users?.[0];
-  if (!fbUser?.localId || !fbUser?.email) {
-    return { error: 'بيانات حساب Google غير مكتملة أو غير موثقة.', status: 401 };
+
+  if (!firebaseApiKey && !projectId) {
+    return { error: 'إعدادات Firebase غير مكتملة على الخادم.', status: 500 };
   }
-  return {
-    localId: fbUser.localId,
-    email: fbUser.email,
-    displayName: fbUser.displayName,
-    emailVerified: fbUser.emailVerified,
-  };
+  return { error: 'تعذر التحقق من جلسة Google. يرجى المحاولة مجدداً.', status: 401 };
 }
 
 app.post('/api/customers/google-auth', async (req, res, next) => {
