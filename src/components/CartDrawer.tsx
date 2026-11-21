@@ -69,6 +69,7 @@ export function CartDrawer({
   const [phone, setPhone] = useState('');
   const [nationalAddress, setNationalAddress] = useState('');
   const [address, setAddress] = useState('');
+  const [googleMapsUrl, setGoogleMapsUrl] = useState('');
   const [shippingCompany, setShippingCompany] = useState(
     settings.shippingCarriers?.[0] || 'زاجل (Zajil)'
   );
@@ -212,6 +213,7 @@ export function CartDrawer({
       setPhone((prev) => prev || customer.phone);
       setNationalAddress((prev) => prev || customer.nationalAddress || '');
       setAddress((prev) => prev || customer.address);
+      setGoogleMapsUrl((prev) => prev || customer.googleMapsUrl || '');
       setBankSenderName((prev) => prev || customer.name);
     }
   }, [customer]);
@@ -264,6 +266,12 @@ export function CartDrawer({
       : 0;
   const discountSar = appliedPromo ? promoDiscountSar : loyaltyDiscountSar;
   const totalSar = Number(Math.max(0, subtotalSar - discountSar).toFixed(2));
+  const normalizedBankIban = (settings.bankIban || '').replace(/\s/g, '').toUpperCase();
+  const bankTransferReady =
+    settings.bankTransferEnabled !== false &&
+    Boolean(settings.bankName?.trim() && settings.bankAccountHolder?.trim()) &&
+    normalizedBankIban.length >= 15 &&
+    !/^SA0{22}$/.test(normalizedBankIban);
   const estimatedCoinsEarned =
     customer && settings.loyaltyEnabled !== false
       ? Math.floor((totalSar / 100) * (settings.coinsPer100SarPurchase ?? 50))
@@ -380,6 +388,7 @@ export function CartDrawer({
           customerPhone: phone.trim(),
           nationalAddress: nationalAddress.trim(),
           customerAddress: address.trim(),
+          googleMapsUrl: googleMapsUrl.trim() || undefined,
           shippingCompany: shippingCompany.trim(),
           items: items.map((i) => ({ productId: i.product.id, quantity: i.quantity })),
           paymentMethod,
@@ -438,6 +447,10 @@ export function CartDrawer({
 
   const handleOpenBankTransfer = () => {
     if (!validateCustomerForm()) return;
+    if (!bankTransferReady) {
+      setError('التحويل البنكي غير متاح حالياً حتى تكتمل بيانات الحساب البنكي.');
+      return;
+    }
     setStep('bank');
   };
 
@@ -881,6 +894,28 @@ export function CartDrawer({
                     className="w-full p-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-[#F5F2EB] focus:outline-none focus:border-[#D4AF37]"
                   />
                 </div>
+                <div className="space-y-2">
+                  <label htmlFor="checkout-google-maps-url" className="block text-xs text-[#C5BFB2]">
+                    رابط موقع التسليم من Google Maps (اختياري)
+                  </label>
+                  <input
+                    id="checkout-google-maps-url"
+                    type="url"
+                    dir="ltr"
+                    value={googleMapsUrl}
+                    onChange={(e) => setGoogleMapsUrl(e.target.value)}
+                    placeholder="https://maps.app.goo.gl/..."
+                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-left focus:outline-none focus:border-[#D4AF37]"
+                  />
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || 'موقعي')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex text-[11px] text-sky-300 underline"
+                  >
+                    اختر دبوس التسليم في خرائط Google ثم انسخ رابط المشاركة هنا
+                  </a>
+                </div>
                 <ShippingCarriersLogos
                   settings={settings}
                   interactive
@@ -911,7 +946,7 @@ export function CartDrawer({
                   </button>
                 )}
 
-                {settings.bankTransferEnabled !== false && (
+                {bankTransferReady && (
                   <button
                     type="button"
                     disabled={submitting}
@@ -921,6 +956,26 @@ export function CartDrawer({
                     <Landmark className="w-4 h-4" />
                     <span>التحويل البنكي ({totalSar.toLocaleString('ar-SA')} ر.س)</span>
                   </button>
+                )}
+
+                {(settings.tabbyEnabled === true || settings.tamaraEnabled === true) && (
+                  <div className="rounded-xl border border-white/10 bg-[#121216] p-3 space-y-2">
+                    <p className="text-[11px] text-[#9E988C]">خيارات التقسيط التي أتاحها المتجر</p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      {settings.tabbyEnabled === true && (
+                        <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white px-3 py-2">
+                          <img src="https://thesvg.org/icons/tabby/default.svg" width="38" height="20" alt="Tabby" />
+                          <span className="text-[10px] text-[#6B655B]">يتطلب ربط حساب التاجر</span>
+                        </span>
+                      )}
+                      {settings.tamaraEnabled === true && (
+                        <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white px-3 py-2">
+                          <img src="https://thesvg.org/icons/tamara/default.svg" width="44" height="20" alt="Tamara" />
+                          <span className="text-[10px] text-[#6B655B]">يتطلب ربط حساب التاجر</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 )}
 
                 {ownerTokenValue && ownerWalletBalance !== null && (

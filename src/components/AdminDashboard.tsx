@@ -239,8 +239,10 @@ function createFallbackAdminSettings(): StoreSettings {
     paypalClientId: '',
     paypalButtonsEnabled: true,
     paypalCardEnabled: true,
-    bankTransferEnabled: true,
-    bankName: '',
+  bankTransferEnabled: true,
+  tabbyEnabled: false,
+  tamaraEnabled: false,
+  bankName: '',
     bankAccountHolder: '',
     bankIban: '',
     bankAccountNumber: '',
@@ -353,6 +355,7 @@ export function AdminDashboard({
   const [translatingProduct, setTranslatingProduct] = useState(false);
   const [uploadingProductImages, setUploadingProductImages] = useState(false);
   const [uploadingDirectImage, setUploadingDirectImage] = useState(false);
+  const [uploadingProductVideo, setUploadingProductVideo] = useState(false);
   const [modalImportUrl, setModalImportUrl] = useState('');
   const [modalManualText, setModalManualText] = useState('');
   const [showManualPasteBox, setShowManualPasteBox] = useState(false);
@@ -367,13 +370,19 @@ export function AdminDashboard({
   // Secret AI Scraper
   const [scraperMode, setScraperMode] = useState<'similar' | 'single'>('single');
   const [scrapeUrl, setScrapeUrl] = useState('');
+  const [scrapeSourceMode, setScrapeSourceMode] = useState<'products' | 'category'>('products');
   const [scrapeProductName, setScrapeProductName] = useState('');
   const [scrapeCategory, setScrapeCategory] = useState('دبات تلوث البنزين');
+  const [scrapeFallbackFile, setScrapeFallbackFile] = useState<File | null>(null);
+  const scrapeFallbackInputRef = useRef<HTMLInputElement>(null);
   const [scrapeAiGeneratedImg, setScrapeAiGeneratedImg] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [lastScraped, setLastScraped] = useState<Product | null>(null);
+  const [lastScrapedProducts, setLastScrapedProducts] = useState<Product[]>([]);
   const [similarStoreUrl, setSimilarStoreUrl] = useState('');
   const [similarHint, setSimilarHint] = useState('');
+  const [similarReferenceFile, setSimilarReferenceFile] = useState<File | null>(null);
+  const similarReferenceInputRef = useRef<HTMLInputElement>(null);
   const [similarCategory, setSimilarCategory] = useState('دبات تلوث البنزين');
   const [profitMarginPercent, setProfitMarginPercent] = useState(30);
   const [extraProfitSar, setExtraProfitSar] = useState(100);
@@ -386,6 +395,9 @@ export function AdminDashboard({
   const [enhancingStore, setEnhancingStore] = useState(false);
   const [enhancingProductCopy, setEnhancingProductCopy] = useState(false);
   const [optimizingBg, setOptimizingBg] = useState(false);
+  const [editingBg, setEditingBg] = useState(false);
+  const [aiBackgroundTarget, setAiBackgroundTarget] = useState<'site' | 'hero'>('site');
+  const [aiBackgroundPrompt, setAiBackgroundPrompt] = useState('حسّن الإضاءة والتباين، أضف لمسة ذهبية هادئة واترك مساحة واضحة للنصوص مع الحفاظ على موضوع الصورة.');
   const [studioTarget, setStudioTarget] = useState<{
     productId?: string;
     fromEditorModal: boolean;
@@ -397,6 +409,7 @@ export function AdminDashboard({
 
   // AI SEO & Google Ads
   const [refreshingSeo, setRefreshingSeo] = useState(false);
+  const [generatingStoreSeoKeywords, setGeneratingStoreSeoKeywords] = useState(false);
   const [adsProductId, setAdsProductId] = useState('');
   const [adsGoal, setAdsGoal] = useState('');
   const [generatingAds, setGeneratingAds] = useState(false);
@@ -438,6 +451,8 @@ export function AdminDashboard({
   const [savingSettings, setSavingSettings] = useState(false);
   const [uploadingTarget, setUploadingTarget] = useState('');
   const [coinDrafts, setCoinDrafts] = useState<Record<string, string>>({});
+  const [customerPasswordDrafts, setCustomerPasswordDrafts] = useState<Record<string, string>>({});
+  const [savingCustomerPasswordId, setSavingCustomerPasswordId] = useState('');
   const [adjustingCoinId, setAdjustingCoinId] = useState('');
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
@@ -1126,6 +1141,39 @@ export function AdminDashboard({
     }
   };
 
+  const handleProductVideoUpload = async (file: File | null) => {
+    if (!file || !editingProduct) return;
+    if (!file.type.startsWith('video/') || file.size > 100 * 1024 * 1024) {
+      showToast('اختر ملف فيديو صحيحاً لا يتجاوز حجمه 100 ميجابايت.');
+      return;
+    }
+    setUploadingProductVideo(true);
+    try {
+      const response = await adminFetch('/api/admin/upload-binary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': file.type || 'video/mp4',
+          'X-Filename': encodeURIComponent(file.name),
+          'X-Mime-Type': file.type || 'video/mp4',
+        },
+        body: file,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.url) {
+        showToast(data.error || 'تعذر رفع فيديو المنتج.');
+        return;
+      }
+      setEditingProduct((previous) =>
+        previous ? { ...previous, videoUrl: String(data.url), showProductVideo: true } : previous
+      );
+      showToast('تم رفع الفيديو؛ احفظ المنتج لنشره في صفحة المنتج.');
+    } catch {
+      showToast('تعذر رفع فيديو المنتج من الجهاز.');
+    } finally {
+      setUploadingProductVideo(false);
+    }
+  };
+
   const handleAddSizeTag = (raw: string) => {
     const cleaned = raw.trim().slice(0, 120);
     if (!cleaned || !editingProduct) return;
@@ -1403,6 +1451,42 @@ export function AdminDashboard({
       showToast('تعذر الاتصال بخدمة ضبط الخلفية.');
     } finally {
       setOptimizingBg(false);
+    }
+  };
+
+  const handleEditUploadedBackgroundWithAi = async () => {
+    if (!settings) return;
+    const sourceImageUrl = aiBackgroundTarget === 'site' ? settings.siteBackgroundUrl : settings.heroImageUrl;
+    if (!sourceImageUrl?.startsWith('/uploads/')) {
+      showToast('ارفع صورة الخلفية من جهازك أولاً ثم اخترها للتعديل بالذكاء الاصطناعي.');
+      return;
+    }
+
+    setEditingBg(true);
+    try {
+      const res = await adminFetch('/api/admin/ai/edit-background', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceImageUrl,
+          target: aiBackgroundTarget,
+          prompt: aiBackgroundPrompt.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        showToast(data.error || 'تعذر تعديل الصورة بالذكاء الاصطناعي.');
+        return;
+      }
+      const nextSettings: StoreSettings = aiBackgroundTarget === 'site'
+        ? { ...settings, siteBackgroundUrl: data.url, siteBackgroundType: 'image' }
+        : { ...settings, heroImageUrl: data.url, heroBackdropMode: 'image' };
+      setSettings(nextSettings);
+      await persistSettingsObject(nextSettings, 'تم تعديل الخلفية المرفوعة بالذكاء الاصطناعي وحفظها في المتجر.');
+    } catch {
+      showToast('حدث خطأ أثناء تعديل الخلفية بالذكاء الاصطناعي.');
+    } finally {
+      setEditingBg(false);
     }
   };
 
@@ -1706,6 +1790,35 @@ export function AdminDashboard({
     }
   };
 
+  const handleSetCustomerPassword = async (customerId: string) => {
+    const password = (customerPasswordDrafts[customerId] || '').trim();
+    if (password.length < 8) {
+      showToast('كلمة المرور التي يعيّنها المالك يجب ألا تقل عن 8 أحرف.');
+      return;
+    }
+
+    setSavingCustomerPasswordId(customerId);
+    try {
+      const res = await adminFetch(`/api/admin/customers/${customerId}/password`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'تعذر تعيين كلمة المرور للعميل.');
+        return;
+      }
+      setCustomers((prev) => prev.map((customer) => (customer.id === customerId ? data.customer : customer)));
+      setCustomerPasswordDrafts((prev) => ({ ...prev, [customerId]: '' }));
+      showToast('تم تعيين كلمة مرور العميل بأمان. أبلغ العميل بها مباشرة.');
+    } catch {
+      showToast('تعذر الاتصال بالخادم لتعيين كلمة المرور.');
+    } finally {
+      setSavingCustomerPasswordId('');
+    }
+  };
+
   const handleAdjustCustomerCoins = async (customerId: string, rawAmount: string) => {
     const parsed = Math.max(0, Math.round(Number(rawAmount)));
     if (Number.isNaN(parsed)) {
@@ -1862,44 +1975,93 @@ export function AdminDashboard({
 
   const handleScrapeProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanUrl = scrapeUrl.trim();
+    const cleanUrls = Array.from(
+      new Set(scrapeUrl.split(/\r?\n/).map((value) => value.trim()).filter(Boolean))
+    );
     const cleanName = scrapeProductName.trim();
-    if (!cleanUrl && !cleanName) {
-      showToast('يرجى إدخال رابط المنتج أو كتابة اسم المنتج لتوليده وحفظه تلقائياً.');
+    if (!cleanUrls.length && !cleanName) {
+      showToast('أدخل رابطاً واحداً على الأقل أو اكتب اسم المنتج لتوليده.');
       return;
     }
+    if (scrapeSourceMode === 'category' && cleanUrls.length !== 1) {
+      showToast('في وضع صفحة القسم، أدخل رابط صفحة واحدة فقط.');
+      return;
+    }
+    if (scrapeSourceMode === 'products' && cleanUrls.length > 10) {
+      showToast('يمكن سحب 10 روابط منتجات كحد أقصى في الدفعة الواحدة.');
+      return;
+    }
+
     setScraping(true);
     setLastScraped(null);
+    setLastScrapedProducts([]);
     setScrapeAiGeneratedImg(false);
     try {
+      let fallbackImageUrl: string | undefined;
+      if (scrapeFallbackFile) {
+        if (
+          !['image/png', 'image/jpeg', 'image/webp', 'image/avif', 'image/gif'].includes(scrapeFallbackFile.type) ||
+          scrapeFallbackFile.size > 12 * 1024 * 1024
+        ) {
+          showToast('اختر صورة صحيحة لا يتجاوز حجمها 12 ميجابايت.');
+          return;
+        }
+        const dataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('فشل قراءة الصورة من الجهاز.'));
+          reader.readAsDataURL(scrapeFallbackFile);
+        });
+        const uploadResponse = await adminFetch('/api/admin/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: scrapeFallbackFile.name,
+            mimeType: scrapeFallbackFile.type,
+            dataBase64,
+          }),
+        });
+        const uploadData = await uploadResponse.json();
+        if (!uploadResponse.ok || !uploadData.url) {
+          showToast(uploadData.error || 'تعذر رفع الصورة الاحتياطية.');
+          return;
+        }
+        fallbackImageUrl = String(uploadData.url);
+      }
+
       const res = await adminFetch('/api/admin/scrape-product', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          url: cleanUrl || undefined,
+          urls: cleanUrls,
+          sourceMode: scrapeSourceMode,
           productName: cleanName || undefined,
           category: scrapeCategory,
+          fallbackImageUrl,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        showToast(data.error || 'تعذر سحب أو توليد المنتج.');
+        showToast(data.error || 'تعذر سحب أو توليد المنتجات.');
         return;
       }
-      const saved = data.product as Product;
-      setProducts((prev) => [saved, ...prev]);
-      setLastScraped(saved);
+      const savedProducts = (Array.isArray(data.products) ? data.products : [data.product]).filter(
+        Boolean
+      ) as Product[];
+      if (savedProducts.length === 0) {
+        showToast('لم يُرجع المصدر أي منتجات قابلة للنشر.');
+        return;
+      }
+      setProducts((prev) => [...savedProducts, ...prev]);
+      setLastScraped(savedProducts[0]);
+      setLastScrapedProducts(savedProducts);
       setScrapeAiGeneratedImg(Boolean(data.aiGeneratedImage));
       setScrapeUrl('');
       setScrapeProductName('');
+      setScrapeFallbackFile(null);
+      if (scrapeFallbackInputRef.current) scrapeFallbackInputRef.current.value = '';
       onStorefrontUpdated();
-      showToast(
-        data.aiGeneratedImage
-          ? 'تم إنشاء المنتج وتوليد صورة احترافية (1000×1000) ونشره في المتجر وقسم المنتجات فوراً!'
-          : 'تم سحب المنتج وصياغة وصفه العربي ونشره في المتجر وقسم المنتجات فوراً!'
-      );
+      showToast(`تم سحب ${savedProducts.length} منتج${savedProducts.length > 1 ? 'ات' : ''} ونشرها بصورها في المتجر.`);
     } catch {
       showToast('حدث خطأ أثناء السحب أو التوليد بالذكاء الاصطناعي.');
     } finally {
@@ -1909,18 +2071,55 @@ export function AdminDashboard({
 
   const handleScrapeSimilar = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!similarStoreUrl.trim() || !similarHint.trim()) return;
+    if (!similarStoreUrl.trim()) {
+      showToast('أدخل رابط المتجر الذي تريد البحث فيه عن المنتجات المشابهة.');
+      return;
+    }
+    if (!similarHint.trim() && !similarReferenceFile) {
+      showToast('اكتب وصف المنتج أو ارفع صورته للعثور على منتجات مشابهة.');
+      return;
+    }
+
     setScraping(true);
     setSimilarBatch([]);
     try {
+      let referenceImageUrl: string | undefined;
+      if (similarReferenceFile) {
+        const allowedImageTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/avif', 'image/gif'];
+        if (!allowedImageTypes.includes(similarReferenceFile.type) || similarReferenceFile.size > 12 * 1024 * 1024) {
+          showToast('اختر صورة PNG أو JPEG أو WebP أو AVIF أو GIF لا يتجاوز حجمها 12 ميجابايت.');
+          return;
+        }
+        const dataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('فشل قراءة الصورة المرجعية.'));
+          reader.readAsDataURL(similarReferenceFile);
+        });
+        const uploadResponse = await adminFetch('/api/admin/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: similarReferenceFile.name,
+            mimeType: similarReferenceFile.type,
+            dataBase64,
+          }),
+        });
+        const uploadData = await uploadResponse.json();
+        if (!uploadResponse.ok || !uploadData.url) {
+          showToast(uploadData.error || 'تعذر رفع الصورة المرجعية.');
+          return;
+        }
+        referenceImageUrl = String(uploadData.url);
+      }
+
       const res = await adminFetch('/api/admin/scrape-similar', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           storeUrl: similarStoreUrl.trim(),
-          targetProductHint: similarHint.trim(),
+          targetProductHint: similarHint.trim() || undefined,
+          referenceImageUrl,
           profitMarginPercent,
           extraProfitSar,
           category: similarCategory,
@@ -1934,9 +2133,9 @@ export function AdminDashboard({
       const list = (data.products || []) as Product[];
       setProducts((prev) => [...list, ...prev]);
       setSimilarBatch(list);
-      showToast(
-        `تم سحب ${list.length} منتج مشابه مع زيادة الأرباح وحفظها في المسودات السرية.`
-      );
+      setSimilarReferenceFile(null);
+      if (similarReferenceInputRef.current) similarReferenceInputRef.current.value = '';
+      showToast(`تم سحب ${list.length} منتج مشابه وحفظها كمسودات للمراجعة.`);
     } catch {
       showToast('حدث خطأ أثناء تحليل المتجر وسحب المنتجات المشابهة.');
     } finally {
@@ -2155,11 +2354,41 @@ export function AdminDashboard({
           prev.map((p) => (p.id === studioTarget.productId ? data.product : p))
         );
         if (lastScraped?.id === studioTarget.productId) setLastScraped(data.product);
+        setLastScrapedProducts((prev) =>
+          prev.map((product) => (product.id === studioTarget.productId ? data.product : product))
+        );
         onStorefrontUpdated();
         showToast('تم حفظ الصورة المعدّلة الجذابة في المنتج!');
       }
     }
     setStudioTarget(null);
+  };
+
+  const handleGenerateStoreSeoKeywords = async () => {
+    setGeneratingStoreSeoKeywords(true);
+    try {
+      const res = await adminFetch('/api/admin/seo/keywords/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'تعذر توليد اقتراحات الكلمات المفتاحية.');
+        return;
+      }
+      const suggestions = Array.isArray(data.keywords) ? data.keywords.slice(0, 15) : [];
+      if (suggestions.length === 0) {
+        showToast('لم يتم إنشاء كلمات مناسبة. جرّب مجدداً.');
+        return;
+      }
+      setStoreSeoKeywordsInput(suggestions.join('، '));
+      showToast('وُلّدت كلمات بحث مقترحة؛ راجعها وعدّلها ثم اضغط حفظ.');
+    } catch {
+      showToast('تعذر الاتصال بخدمة توليد الكلمات المفتاحية.');
+    } finally {
+      setGeneratingStoreSeoKeywords(false);
+    }
   };
 
   const handleRefreshSeo = async () => {
@@ -3055,6 +3284,11 @@ export function AdminDashboard({
                                       </div>
                                     )}
                                     <div>{order.customerAddress}</div>
+                                    {order.googleMapsUrl && (
+                                      <a href={order.googleMapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex text-sky-300 underline">
+                                        فتح موقع التسليم في Google Maps
+                                      </a>
+                                    )}
                                   </td>
                                   <td className="px-4 py-3 text-xs space-y-1.5 min-w-[230px]">
                                     <select
@@ -3203,9 +3437,10 @@ export function AdminDashboard({
                           <thead className="bg-[#0D0D10] text-[#9E988C] border-b border-white/10">
                             <tr>
                               <th className="px-4 py-3">الاسم</th>
-                              <th className="px-4 py-3">الجوال</th>
+                              <th className="px-4 py-3">الجوال / البريد</th>
                               <th className="px-4 py-3">العنوان الوطني</th>
                               <th className="px-4 py-3">العنوان التفصيلي المحفوظ</th>
+                              <th className="px-4 py-3">كلمة المرور (تعيين المالك)</th>
                               <th className="px-4 py-3">العملات الذهبية (تعديل الرصيد)</th>
                             </tr>
                           </thead>
@@ -3219,13 +3454,45 @@ export function AdminDashboard({
                               return (
                                 <tr key={c.id}>
                                   <td className="px-4 py-3 font-medium">{c.name}</td>
-                                  <td className="px-4 py-3 tabular-nums" dir="ltr">
-                                    {c.phone}
+                                  <td className="px-4 py-3 tabular-nums space-y-1" dir="ltr">
+                                    <div>{c.phone || '—'}</div>
+                                    {c.email && <div className="text-[11px] text-[#9E988C]">{c.email}</div>}
                                   </td>
                                   <td className="px-4 py-3 text-xs text-[#E5C158]">
                                     {c.nationalAddress || '—'}
                                   </td>
-                                  <td className="px-4 py-3 text-xs text-[#C5BFB2]">{c.address}</td>
+                                  <td className="px-4 py-3 text-xs text-[#C5BFB2]">
+                                    <div>{c.address || '—'}</div>
+                                    {c.googleMapsUrl && (
+                                      <a href={c.googleMapsUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-sky-300 underline">
+                                        فتح موقع العميل في Google Maps
+                                      </a>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 space-y-1.5 min-w-[220px]">
+                                    <div className={`text-[10px] ${c.hasPassword ? 'text-emerald-300' : 'text-amber-300'}`}>
+                                      {c.hasPassword ? 'كلمة مرور معيّنة' : 'بانتظار تعيين المالك'}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="password"
+                                        minLength={8}
+                                        autoComplete="new-password"
+                                        value={customerPasswordDrafts[c.id] || ''}
+                                        onChange={(event) => setCustomerPasswordDrafts((prev) => ({ ...prev, [c.id]: event.target.value }))}
+                                        placeholder="8 أحرف على الأقل"
+                                        className="w-32 h-8 px-2 rounded-lg bg-[#16161B] border border-white/15 text-xs"
+                                      />
+                                      <button
+                                        type="button"
+                                        disabled={savingCustomerPasswordId === c.id}
+                                        onClick={() => void handleSetCustomerPassword(c.id)}
+                                        className="h-8 px-2 rounded-lg bg-[#D4AF37] text-[#09090B] text-[10px] font-bold disabled:opacity-50"
+                                      >
+                                        {savingCustomerPasswordId === c.id ? 'جاري...' : 'تعيين'}
+                                      </button>
+                                    </div>
+                                  </td>
                                   <td className="px-4 py-3">
                                     <div className="flex items-center gap-2 min-w-[200px]">
                                       <span className="inline-flex items-center gap-1 text-xs font-bold text-[#E5C158] shrink-0">
@@ -4477,7 +4744,7 @@ export function AdminDashboard({
                           : 'border border-white/15 bg-[#121216] text-[#C5BFB2]'
                       }`}
                     >
-                      سحب رابط منتج محدد واحد
+                      سحب روابط متعددة أو صفحة قسم
                     </button>
                   </div>
 
@@ -4494,10 +4761,7 @@ export function AdminDashboard({
                           </h3>
                         </div>
                         <p className="text-xs sm:text-sm text-[#C5BFB2] leading-relaxed">
-                          ضع رابط المتجر الإلكتروني وحدد نوع المنتج ("مثل هذا المنتج") ليقوم الذكاء
-                          الاصطناعي بسحب المنتجات المشابهة، كتابة عناوين وأوصاف جذابة يفهمها
-                          العميل، وحساب السعر تلقائياً مع هامش الربح المحدد وحفظها كمسودات سرية
-                          لتعديل صورها ونشرها.
+                          ضع رابط المتجر وارفع صورة المنتج المرجعي أو اكتب وصفه. يحلل الذكاء الاصطناعي الصورة والنص، ثم يستخرج منتجات مشابهة من المصدر ويحسب هامش الربح ويحفظها كمسودات للمراجعة.
                         </p>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -4518,11 +4782,10 @@ export function AdminDashboard({
 
                           <div>
                             <label className="block text-xs text-[#C5BFB2] mb-1">
-                              المنتج المحدد المطلوب سحب المشابه له
+                              وصف المنتج المطلوب (اختياري عند رفع صورة)
                             </label>
                             <input
                               type="text"
-                              required
                               value={similarHint}
                               onChange={(e) => setSimilarHint(e.target.value)}
                               placeholder="مثال: دبة تلوث تويوتا هايلكس ديزل Euro-6"
@@ -4530,9 +4793,41 @@ export function AdminDashboard({
                             />
                           </div>
 
+                          <div className="sm:col-span-2">
+                            <label htmlFor="similar-reference-image" className="block text-xs text-[#C5BFB2] mb-1">
+                              صورة المنتج المرجعي (اختياري)
+                            </label>
+                            <label
+                              htmlFor="similar-reference-image"
+                              className="min-h-10 px-3 rounded-xl border border-white/15 bg-[#16161B] text-xs text-[#E5C158] inline-flex items-center gap-2 cursor-pointer hover:border-[#D4AF37]/50"
+                            >
+                              <Upload className="w-4 h-4" />
+                              <span>{similarReferenceFile?.name || 'رفع صورة المنتج من الجهاز'}</span>
+                            </label>
+                            <input
+                              ref={similarReferenceInputRef}
+                              id="similar-reference-image"
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp,image/avif,image/gif"
+                              className="sr-only"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0] || null;
+                                const allowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/avif', 'image/gif'];
+                                if (file && !allowedTypes.includes(file.type)) {
+                                  showToast('اختر صورة PNG أو JPEG أو WebP أو AVIF أو GIF.');
+                                  e.target.value = '';
+                                  setSimilarReferenceFile(null);
+                                  return;
+                                }
+                                setSimilarReferenceFile(file);
+                              }}
+                            />
+                          </div>
+
                           <div>
                             <label className="block text-xs text-[#C5BFB2] mb-1">
                               حفظ داخل القسم
+
                             </label>
                             <select
                               value={similarCategory}
@@ -4680,13 +4975,7 @@ export function AdminDashboard({
                           </h3>
                         </div>
                         <p className="text-xs sm:text-sm text-[#C5BFB2] leading-relaxed">
-                          أدخل <strong className="text-[#E5C158]">رابط المنتج</strong> أو اكتب{' '}
-                          <strong className="text-[#E5C158]">اسم المنتج مباشرة</strong> ليقوم
-                          Gemini AI تلقائياً بتوليد صورة منتج احترافية بمقاس{' '}
-                          <span dir="ltr">1000×1000</span> بكسل إذا لم تتوفر صورة من الرابط، وكتابة
-                          وصف تسويقي عربي متكامل والمواصفات، ثم{' '}
-                          <strong className="text-emerald-300">حفظه ونشره مباشرة</strong> ليظهر في
-                          قسم (المنتجات والمسودات) وفي واجهة المتجر فوراً.
+                          أدخل روابط منتجات متعددة (رابط في كل سطر) أو اختر صفحة قسم لاكتشاف منتجاتها تلقائياً. تُستخرج الصور الرئيسية وتُحفظ على خادم المتجر لتفادي حظر الصور الخارجية، ثم تُنقّح البيانات إلى وصف عربي وتُنشر المنتجات دفعة واحدة. عند غياب صورة صالحة، تُستخدم الصورة المرفوعة من جهازك أو تُولّد صورة احتياطية بالذكاء الاصطناعي.
                         </p>
 
                         <form onSubmit={handleScrapeProduct} className="space-y-3">
@@ -4722,100 +5011,148 @@ export function AdminDashboard({
                             </div>
                           </div>
 
-                          <div className="flex flex-col sm:flex-row gap-3">
-                            <input
-                              type="url"
-                              dir="ltr"
-                              value={scrapeUrl}
-                              onChange={(e) => setScrapeUrl(e.target.value)}
-                              placeholder="https://example.com/product-page (اختياري عند كتابة اسم المنتج)"
-                              className="flex-1 h-11 px-4 rounded-xl bg-[#16161B] border border-white/15 text-sm text-left focus:outline-none focus:border-[#D4AF37]"
-                            />
+                          <div className="space-y-3">
+                            <div>
+                              <label htmlFor="scrape-source-mode" className="block text-xs text-[#C5BFB2] mb-1">
+                                نوع المصدر
+                              </label>
+                              <select
+                                id="scrape-source-mode"
+                                value={scrapeSourceMode}
+                                onChange={(e) => setScrapeSourceMode(e.target.value as 'products' | 'category')}
+                                className="w-full h-11 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm"
+                              >
+                                <option value="products">روابط منتجات (حتى 10 روابط، كل رابط في سطر)</option>
+                                <option value="category">صفحة قسم كاملة (يُكتشف منها حتى 10 منتجات)</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label htmlFor="scrape-product-urls" className="block text-xs text-[#C5BFB2] mb-1">
+                                روابط المنتجات أو رابط صفحة القسم
+                              </label>
+                              <textarea
+                                id="scrape-product-urls"
+                                dir="ltr"
+                                rows={5}
+                                value={scrapeUrl}
+                                onChange={(e) => setScrapeUrl(e.target.value)}
+                                placeholder={
+                                  scrapeSourceMode === 'category'
+                                    ? 'https://example.com/category/filters'
+                                    : 'https://example.com/product/one\nhttps://example.com/product/two'
+                                }
+                                className="w-full min-h-28 resize-y px-4 py-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-left focus:outline-none focus:border-[#D4AF37]"
+                              />
+                              <p className="mt-1 text-[11px] text-[#9E988C]">
+                                اتركها فارغة واكتب اسم المنتج أعلاه للتوليد المباشر. عند غياب صورة صالحة، تُستخدم الصورة الاحتياطية المرفوعة.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="space-y-1">
+                              <label htmlFor="scrape-fallback-image" className="block text-xs text-[#C5BFB2]">
+                                صورة احتياطية من الجهاز (اختيارية)
+                              </label>
+                              <label
+                                htmlFor="scrape-fallback-image"
+                                className="h-10 px-3 rounded-xl border border-white/15 bg-[#16161B] text-xs text-[#E5C158] inline-flex items-center gap-2 cursor-pointer hover:border-[#D4AF37]/50"
+                              >
+                                <Upload className="w-4 h-4" />
+                                <span>{scrapeFallbackFile?.name || 'رفع صورة من الجهاز'}</span>
+                              </label>
+                              <input
+                                ref={scrapeFallbackInputRef}
+                                id="scrape-fallback-image"
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp,image/avif,image/gif"
+                                className="sr-only"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0] || null;
+                                  if (file && !['image/png', 'image/jpeg', 'image/webp', 'image/avif', 'image/gif'].includes(file.type)) {
+                                    showToast('اختر صورة بصيغة PNG أو JPEG أو WebP أو AVIF أو GIF.');
+                                    e.target.value = '';
+                                    setScrapeFallbackFile(null);
+                                    return;
+                                  }
+                                  setScrapeFallbackFile(file);
+                                }}
+                              />
+                            </div>
                             <button
                               type="submit"
                               disabled={scraping}
-                              className="btn-gold-wave h-11 px-6 rounded-xl text-sm flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer disabled:opacity-50"
+                              className="btn-gold-wave min-h-11 px-6 rounded-xl text-sm flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer disabled:opacity-50"
                             >
                               <Sparkles className="w-4 h-4" />
                               <span>
                                 {scraping
-                                  ? 'جاري التوليد والسحب عبر Gemini...'
-                                  : 'سحب / توليد ونشر المنتج فوراً'}
+                                  ? 'جاري سحب المنتجات والصور وصياغتها...'
+                                  : 'سحب المنتجات ونشرها دفعة واحدة'}
                               </span>
                             </button>
                           </div>
                         </form>
                       </div>
 
-                      {lastScraped && (
-                        <div className="p-6 rounded-2xl border border-emerald-500/40 bg-[#101813] space-y-4">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-xs font-bold text-emerald-300">
-                                ✓ تم الحفظ والنشر في قسم (المنتجات والمسودات) وفي واجهة المتجر مباشرة
+                      {lastScrapedProducts.length > 0 && (
+                        <section className="p-5 rounded-2xl border border-emerald-500/40 bg-[#101813] space-y-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-bold text-emerald-300">
+                              تم حفظ ونشر {lastScrapedProducts.length} منتجاً مع صورها
+                            </span>
+                            {scrapeAiGeneratedImg && (
+                              <span className="px-2 py-0.5 rounded-md bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[11px] text-[#E5C158] font-bold">
+                                تم توليد صورة احتياطية لبعض المنتجات
                               </span>
-                              {scrapeAiGeneratedImg && (
-                                <span className="px-2 py-0.5 rounded-md bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[11px] text-[#E5C158] font-bold">
-                                  صورة مولدة بـ Gemini 1000×1000
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setStudioTarget({
-                                    productId: lastScraped.id,
-                                    fromEditorModal: false,
-                                    imageUrl: (lastScraped.images || [])[0] || '',
-                                    name: lastScraped.name,
-                                    category: lastScraped.category,
-                                    priceSar: lastScraped.priceSar,
-                                  })
-                                }
-                                className="px-3 py-2 rounded-lg border border-[#D4AF37]/40 bg-[#171510] text-xs text-[#E5C158] cursor-pointer"
-                              >
-                                تحسين الصورة
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openProductEditor(lastScraped)}
-                                className="btn-gold-wave px-4 py-2 rounded-lg text-xs cursor-pointer"
-                              >
-                                تعديل البيانات والسعر
-                              </button>
-                            </div>
+                            )}
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div className="aspect-square rounded-xl overflow-hidden border border-white/10 bg-[#09090B]">
-                              <ResilientImage
-                                src={(lastScraped.images || [])[0] || ''}
-                                alt={lastScraped.name}
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                            <div className="sm:col-span-2 space-y-2 text-xs">
-                              <div className="text-base font-bold text-[#F5F2EB]">
-                                {lastScraped.name}
-                              </div>
-                              <div className="text-[#E5C158] font-bold tabular-nums">
-                                السعر المعتمد: {Number(lastScraped.priceSar || 0).toLocaleString('ar-SA')}{' '}
-                                ر.س
-                                {lastScraped.originalExtractedPrice
-                                  ? ` (الأصل: ${lastScraped.originalExtractedPrice})`
-                                  : ''}
-                              </div>
-                              <p className="text-[#C5BFB2] leading-relaxed">
-                                {lastScraped.description}
-                              </p>
-                              {lastScraped.sourceUrl && (
-                                <div className="text-sky-400 break-all">
-                                  المصدر المحفوظ سرياً: {lastScraped.sourceUrl}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                            {lastScrapedProducts.map((product) => (
+                              <article key={product.id} className="rounded-xl border border-white/10 bg-[#0D1110] p-3 space-y-3">
+                                <div className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-[#09090B]">
+                                  <ResilientImage
+                                    src={(product.images || [])[0] || ''}
+                                    alt={product.name}
+                                    className="w-full h-full object-cover"
+                                  />
                                 </div>
-                              )}
-                            </div>
+                                <div className="space-y-1.5">
+                                  <h4 className="text-sm font-bold text-[#F5F2EB] line-clamp-2">{product.name}</h4>
+                                  <p className="text-xs font-bold text-[#E5C158] tabular-nums">
+                                    {Number(product.priceSar || 0).toLocaleString('ar-SA')} ر.س
+                                  </p>
+                                  <p className="text-xs leading-relaxed text-[#C5BFB2] line-clamp-3">{product.description}</p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setStudioTarget({
+                                        productId: product.id,
+                                        fromEditorModal: false,
+                                        imageUrl: (product.images || [])[0] || '',
+                                        name: product.name,
+                                        category: product.category,
+                                        priceSar: product.priceSar,
+                                      })
+                                    }
+                                    className="px-3 py-2 rounded-lg border border-[#D4AF37]/40 bg-[#171510] text-xs text-[#E5C158] cursor-pointer"
+                                  >
+                                    تحسين الصورة
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openProductEditor(product)}
+                                    className="btn-gold-wave px-3 py-2 rounded-lg text-xs cursor-pointer"
+                                  >
+                                    تعديل البيانات والسعر
+                                  </button>
+                                </div>
+                              </article>
+                            ))}
                           </div>
-                        </div>
+                        </section>
                       )}
                     </div>
                   )}
@@ -4844,6 +5181,16 @@ export function AdminDashboard({
                         {parseSeoKeywordsText(storeSeoKeywordsInput).length} / 15
                       </span>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleGenerateStoreSeoKeywords()}
+                      disabled={generatingStoreSeoKeywords}
+                      className="h-10 px-4 rounded-xl border border-[#D4AF37]/45 bg-[#171510] text-xs text-[#E5C158] font-bold inline-flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Wand2 className={`w-4 h-4 ${generatingStoreSeoKeywords ? 'animate-pulse' : ''}`} />
+                      {generatingStoreSeoKeywords ? 'جاري اقتراح الكلمات...' : 'توليد كلمات بحث مقترحة بالذكاء الاصطناعي'}
+                    </button>
 
                     <div className="flex flex-col sm:flex-row gap-3">
                       <input
@@ -7227,6 +7574,45 @@ export function AdminDashboard({
                           />
                         </div>
                       </div>
+
+                      <div className="p-4 rounded-xl border border-[#D4AF37]/30 bg-[#14120E] space-y-3">
+                        <div className="flex items-center gap-2 text-sm font-bold text-[#E5C158]">
+                          <Wand2 className="w-4 h-4" />
+                          <h3>تعديل خلفية رفعتها بالذكاء الاصطناعي</h3>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <label className="space-y-1 text-xs text-[#C5BFB2]">
+                            <span className="block">الخلفية المطلوب تعديلها</span>
+                            <select
+                              value={aiBackgroundTarget}
+                              onChange={(e) => setAiBackgroundTarget(e.target.value as 'site' | 'hero')}
+                              className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15"
+                            >
+                              <option value="site">خلفية المتجر العامة</option>
+                              <option value="hero">خلفية الواجهة الرئيسية</option>
+                            </select>
+                          </label>
+                          <div className="text-[11px] text-[#9E988C] flex items-center">
+                            ارفع الصورة من الجهاز في القسم المناسب أولاً؛ يحتفظ النظام بالأصل ويستخدم النسخة الجديدة بعد الحفظ.
+                          </div>
+                        </div>
+                        <textarea
+                          rows={2}
+                          value={aiBackgroundPrompt}
+                          onChange={(e) => setAiBackgroundPrompt(e.target.value)}
+                          placeholder="اكتب التعديل المطلوب على الخلفية"
+                          className="w-full p-3 rounded-xl bg-[#16161B] border border-white/15 text-xs"
+                        />
+                        <button
+                          type="button"
+                          disabled={editingBg}
+                          onClick={() => void handleEditUploadedBackgroundWithAi()}
+                          className="h-10 px-4 rounded-xl border border-[#D4AF37]/45 bg-[#171510] text-xs font-bold text-[#E5C158] flex items-center gap-2 disabled:opacity-50"
+                        >
+                          <Wand2 className={`w-4 h-4 ${editingBg ? 'animate-pulse' : ''}`} />
+                          {editingBg ? 'جاري إنشاء الخلفية...' : 'تعديل الصورة المرفوعة بالذكاء الاصطناعي'}
+                        </button>
+                      </div>
                     </section>
 
                     {/* Left Sidebar Video Rail (Desktop 260x620/460 + Mobile Strip) */}
@@ -7596,6 +7982,9 @@ export function AdminDashboard({
                             <span>تفعيل التحويل البنكي للعملاء</span>
                           </label>
                         </div>
+                        <p className="text-[11px] text-[#9E988C]">
+                          يظهر التحويل البنكي للعملاء فقط بعد إدخال اسم البنك وصاحب الحساب وآيبان حقيقي؛ لن تُعرض بيانات placeholder.
+                        </p>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
@@ -7657,6 +8046,33 @@ export function AdminDashboard({
                             />
                           </div>
                         </div>
+                      </div>
+
+                      <div className="p-4 rounded-xl border border-white/10 bg-[#0D0D10] space-y-3">
+                        <div className="text-sm font-bold text-[#E5C158]">شعارات خيارات التقسيط</div>
+                        <div className="flex flex-wrap gap-4">
+                          <label className="inline-flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settings.tabbyEnabled === true}
+                              onChange={(e) => setSettings({ ...settings, tabbyEnabled: e.target.checked })}
+                            />
+                            <img src="https://thesvg.org/icons/tabby/default.svg" width="24" height="16" alt="Tabby" loading="lazy" />
+                            <span>إظهار شعار Tabby</span>
+                          </label>
+                          <label className="inline-flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settings.tamaraEnabled === true}
+                              onChange={(e) => setSettings({ ...settings, tamaraEnabled: e.target.checked })}
+                            />
+                            <img src="https://thesvg.org/icons/tamara/default.svg" width="24" height="16" alt="Tamara" loading="lazy" />
+                            <span>إظهار شعار Tamara</span>
+                          </label>
+                        </div>
+                        <p className="text-[11px] text-[#9E988C]">
+                          هذه الإعدادات تعرض الشعارات فقط؛ قبول دفعات Tabby أو Tamara فعلياً يتطلب ربط حساب التاجر لكل مزود.
+                        </p>
                       </div>
 
                       {/* Shipping Carriers & Badges Settings */}
@@ -8798,6 +9214,48 @@ export function AdminDashboard({
                   className="w-full p-2.5 rounded-xl bg-[#16161B] border border-white/15 text-xs"
                 />
               </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl border border-white/10 bg-[#0D0D10] space-y-3">
+              <div className="text-xs font-bold text-[#E5C158]">فيديو المنتج (اختياري)</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="product-video-url" className="block text-xs text-[#C5BFB2] mb-1">رابط الفيديو</label>
+                  <input
+                    id="product-video-url"
+                    type="url"
+                    dir="ltr"
+                    value={editingProduct.videoUrl || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, videoUrl: e.target.value })}
+                    placeholder="https://.../product-demo.mp4"
+                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-xs text-left"
+                  />
+                </div>
+                <label className="h-10 px-3 rounded-xl border border-white/15 bg-[#16161B] text-xs text-[#E5C158] inline-flex items-center justify-center gap-2 cursor-pointer">
+                  <Upload className="w-4 h-4" />
+                  <span>{uploadingProductVideo ? 'جاري الرفع...' : 'رفع فيديو من الجهاز'}</span>
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm,video/quicktime"
+                    className="sr-only"
+                    onChange={(e) => {
+                      void handleProductVideoUpload(e.target.files?.[0] || null);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-[#C5BFB2] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editingProduct.showProductVideo !== false}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, showProductVideo: e.target.checked })}
+                />
+                <span>عرض الفيديو للعملاء في صفحة المنتج</span>
+              </label>
+              {editingProduct.videoUrl && (
+                <video src={editingProduct.videoUrl} controls playsInline className="w-full max-h-64 rounded-xl bg-black" />
+              )}
             </div>
 
             {/* Vertical Mobile-Friendly Product Form Grid */}

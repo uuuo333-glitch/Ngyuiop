@@ -161,6 +161,8 @@ const INITIAL_PUBLIC_SETTINGS: PublicSettings = {
   paypalCardEnabled: true,
   paypalMerchantLabel: 'PayPal Official',
   bankTransferEnabled: true,
+  tabbyEnabled: false,
+  tamaraEnabled: false,
   bankName: 'مصرف الراجحي',
   bankAccountHolder: 'مصنع التاج الذهبي لدبات التلوث',
   bankIban: 'SA0000000000000000000000',
@@ -357,7 +359,9 @@ export default function App() {
 
   const loadStorefront = useCallback(async () => {
     try {
-      const res = await fetch('/api/storefront', { cache: 'no-store' });
+      const headers: Record<string, string> = {};
+      if (customerToken) headers.Authorization = `Bearer ${customerToken}`;
+      const res = await fetch('/api/storefront', { cache: 'no-store', headers });
       if (!res.ok) return;
       const data = await res.json();
       if (data.settings) {
@@ -366,7 +370,11 @@ export default function App() {
           setLang(data.settings.defaultLanguage);
         }
       }
-      setProducts(data.products || []);
+      const storefrontProducts = (data.products || []) as PublicProduct[];
+      setProducts(storefrontProducts);
+      setSelectedProduct((current) =>
+        current ? storefrontProducts.find((product) => product.id === current.id) || current : current
+      );
       setBanners(data.banners || []);
       setReviews(data.reviews || []);
       try {
@@ -374,7 +382,7 @@ export default function App() {
           'taj_storefront_cache',
           JSON.stringify({
             settings: data.settings,
-            products: data.products || [],
+            products: storefrontProducts.map((product) => ({ ...product, myReaction: null })),
             banners: data.banners || [],
             reviews: data.reviews || [],
           })
@@ -385,7 +393,7 @@ export default function App() {
     } catch {
       // keep instant fallback/cached storefront visible
     }
-  }, []);
+  }, [customerToken]);
 
   useEffect(() => {
     loadStorefront();
@@ -636,6 +644,19 @@ export default function App() {
           160
         )
       : settings.aboutUsText.slice(0, 160);
+    const pageUrlForProduct = selectedProduct
+      ? `${window.location.origin}${window.location.pathname}?product=${encodeURIComponent(selectedProduct.id)}`
+      : window.location.origin;
+    const makeAbsoluteImageUrl = (url: string) => {
+      try {
+        return new URL(url, window.location.origin).toString();
+      } catch {
+        return url;
+      }
+    };
+    const socialImageUrl = makeAbsoluteImageUrl(
+      selectedProduct?.images?.[0] || settings.heroImageUrl || '/src/assets/images/hero_catalytic_gold_1794821492784.jpg'
+    );
 
     document.title = pageTitle;
 
@@ -645,8 +666,11 @@ export default function App() {
     }
     upsertMeta('property', 'og:title', pageTitle);
     upsertMeta('property', 'og:description', pageDesc);
+    upsertMeta('property', 'og:url', pageUrlForProduct);
+    upsertMeta('property', 'og:image', socialImageUrl);
     upsertMeta('name', 'twitter:title', pageTitle);
     upsertMeta('name', 'twitter:description', pageDesc);
+    upsertMeta('name', 'twitter:image', socialImageUrl);
 
     let scriptEl = document.getElementById('products-schema-jsonld') as HTMLScriptElement | null;
     if (!scriptEl) {
@@ -662,12 +686,13 @@ export default function App() {
           '@type': 'Product',
           name: selectedProduct.name,
           sku: selectedProduct.sku || selectedProduct.id,
+          url: pageUrlForProduct,
           description: selectedProduct.seoDescription || selectedProduct.description,
           category: selectedProduct.category,
           ...(combinedKeywords.length > 0 ? { keywords: combinedKeywords.join(', ') } : {}),
-          image: (selectedProduct.images || []).filter(
-            (u) => typeof u === 'string' && u.length > 0 && !u.startsWith('data:')
-          ),
+          image: (selectedProduct.images || [])
+            .filter((u) => typeof u === 'string' && u.length > 0 && !u.startsWith('data:'))
+            .map(makeAbsoluteImageUrl),
           offers: {
             '@type': 'Offer',
             priceCurrency: 'SAR',
@@ -683,13 +708,15 @@ export default function App() {
           name: settings.storeName,
           ...(storeKeywords.length > 0 ? { keywords: storeKeywords.join(', ') } : {}),
           itemListElement: products.map((p, idx) => {
-            const cleanImgs = (p.images || []).filter(
-              (u) => typeof u === 'string' && u.length > 0 && !u.startsWith('data:')
-            );
+            const cleanImgs = (p.images || [])
+              .filter((u) => typeof u === 'string' && u.length > 0 && !u.startsWith('data:'))
+              .map(makeAbsoluteImageUrl);
+            const itemUrl = `${window.location.origin}${window.location.pathname}?product=${encodeURIComponent(p.id)}`;
             const fallbackItem = {
               '@type': 'Product',
               name: p.name,
               sku: p.sku || p.id,
+              url: itemUrl,
               description: p.seoDescription || p.description,
               category: p.category,
               ...(p.seoKeywords?.length ? { keywords: p.seoKeywords.slice(0, 15).join(', ') } : {}),
@@ -709,6 +736,7 @@ export default function App() {
               item: p.schemaMarkup
                 ? {
                     ...p.schemaMarkup,
+                    url: itemUrl,
                     ...(cleanImgs.length > 0 ? { image: cleanImgs } : {}),
                   }
                 : fallbackItem,
@@ -1332,6 +1360,19 @@ export default function App() {
           isCompared={selectedProduct ? compareIds.includes(selectedProduct.id) : false}
           onToggleWishlist={handleToggleWishlist}
           onToggleCompare={handleToggleCompare}
+          customerToken={customerToken}
+          onRequestLogin={() => {
+            setCustomerModalTab('account');
+            setCustomerModalOpen(true);
+          }}
+          onReactionUpdated={(productId, summary) => {
+            setProducts((previous) =>
+              previous.map((item) => (item.id === productId ? { ...item, ...summary } : item))
+            );
+            setSelectedProduct((previous) =>
+              previous?.id === productId ? { ...previous, ...summary } : previous
+            );
+          }}
           onClose={() => setSelectedProduct(null)}
           onAddToCart={handleAddToCart}
         />

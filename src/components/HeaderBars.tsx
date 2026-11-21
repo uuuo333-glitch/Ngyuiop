@@ -173,7 +173,7 @@ export function HeaderBars({
         >
           <div className="w-full overflow-hidden whitespace-nowrap">
             <div
-              className="animate-marquee-ltr gap-12 px-4"
+              className="animate-marquee-rtl gap-12 px-4"
               style={
                 {
                   '--marquee-duration': `${Math.max(6, Number(settings.marquee2Speed) || 24)}s`,

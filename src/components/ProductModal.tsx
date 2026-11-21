@@ -8,6 +8,8 @@ import {
   Scale,
   ShoppingBag,
   Star,
+  ThumbsDown,
+  ThumbsUp,
   Wrench,
   X,
 } from 'lucide-react';
@@ -38,6 +40,9 @@ interface ProductModalProps {
   onToggleCompare?: (productId: string) => void;
   onClose: () => void;
   onAddToCart: (product: PublicProduct) => void;
+  customerToken?: string | null;
+  onRequestLogin?: () => void;
+  onReactionUpdated?: (productId: string, summary: { likeCount: number; dislikeCount: number; reaction: 'like' | 'dislike' | null }) => void;
 }
 
 export function ProductModal({
@@ -52,8 +57,16 @@ export function ProductModal({
   onToggleCompare,
   onClose,
   onAddToCart,
+  customerToken,
+  onRequestLogin,
+  onReactionUpdated,
 }: ProductModalProps) {
   const [selectedImageIdx, setSelectedImageIdx] = useState(0);
+  const [productReaction, setProductReaction] = useState<'like' | 'dislike' | null>(null);
+  const [likeCount, setLikeCount] = useState(0);
+  const [dislikeCount, setDislikeCount] = useState(0);
+  const [reactionBusy, setReactionBusy] = useState(false);
+  const [reactionNotice, setReactionNotice] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
   const [monthlyFuelSpend, setMonthlyFuelSpend] = useState(800);
 
@@ -72,7 +85,11 @@ export function ProductModal({
     );
     setReviewNotice('');
     setReviewError('');
-  }, [product?.id, product?.sizes]);
+    setProductReaction(product?.myReaction || null);
+    setLikeCount(product?.likeCount || 0);
+    setDislikeCount(product?.dislikeCount || 0);
+    setReactionNotice('');
+  }, [product?.id, product?.sizes, product?.myReaction, product?.likeCount, product?.dislikeCount]);
 
   if (!product) return null;
 
@@ -101,12 +118,6 @@ export function ProductModal({
         )
       : null;
 
-  const installmentQuarter = formatCurrencyPrice(
-    effectiveSar / 4,
-    currency,
-    settings.currencyRates,
-    lang
-  );
 
   const usdEquivalent = (effectiveSar * settings.sarToUsdRate).toFixed(2);
 
@@ -149,6 +160,40 @@ export function ProductModal({
   const hasInstallGuide =
     Boolean(product.installationGuidePdfUrl) ||
     (product.installationGuideImages && product.installationGuideImages.length > 0);
+
+  const handleProductReaction = async (reaction: 'like' | 'dislike') => {
+    if (!customerToken) {
+      setReactionNotice('سجّل الدخول بحساب العميل للمشاركة برأيك.');
+      onRequestLogin?.();
+      return;
+    }
+
+    setReactionBusy(true);
+    setReactionNotice('');
+    try {
+      const res = await fetch(`/api/products/${product.id}/reaction`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${customerToken}`,
+        },
+        body: JSON.stringify({ reaction }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReactionNotice(data.error || 'تعذر حفظ تفاعلك.');
+        return;
+      }
+      setLikeCount(Number(data.likeCount) || 0);
+      setDislikeCount(Number(data.dislikeCount) || 0);
+      setProductReaction(data.reaction || null);
+      onReactionUpdated?.(product.id, data);
+    } catch {
+      setReactionNotice('تعذر الاتصال بالخادم لحفظ تفاعلك.');
+    } finally {
+      setReactionBusy(false);
+    }
+  };
 
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -235,6 +280,18 @@ export function ProductModal({
               </div>
             )}
 
+            {product.videoUrl && product.showProductVideo !== false && (
+              <video
+                src={product.videoUrl}
+                poster={product.images?.[0]}
+                controls
+                playsInline
+                preload="metadata"
+                aria-label={`فيديو ${displayName}`}
+                className="w-full max-h-72 rounded-xl border border-white/10 bg-black"
+              />
+            )}
+
             {/* Quick Wishlist & Compare Actions */}
             <div className="flex flex-wrap gap-2 pt-1">
               {onToggleWishlist && (
@@ -310,30 +367,60 @@ export function ProductModal({
                 )}
               </div>
 
-              {/* Tamara & Tabby Interest-Free 4-Installments Widget */}
-              {settings.installmentsEnabled !== false && (
+              {settings.installmentsEnabled !== false &&
+                (settings.tabbyEnabled === true || settings.tamaraEnabled === true) && (
                 <div className="p-3.5 rounded-xl border border-[#D4AF37]/30 bg-[#15130E] flex flex-wrap items-center justify-between gap-3">
-                  <div className="space-y-0.5 text-xs">
-                    <div className="font-bold text-[#F5E1A4]">{t(lang, 'installmentsTitle')}</div>
-                    <div className="text-[#C5BFB2] tabular-nums">
-                      {t(lang, 'installmentsText')}{' '}
-                      <strong className="text-[#E5C158]">
-                        {installmentQuarter.valueText} {installmentQuarter.unit}
-                      </strong>
-                    </div>
+                  <div className="space-y-1 text-xs">
+                    <div className="font-bold text-[#F5E1A4]">شعارات خيارات التقسيط</div>
+                    <div className="text-[10px] text-[#9E988C]">التفعيل الفعلي يتطلب ربط حساب التاجر لدى المزود.</div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="px-2.5 py-1 rounded-lg bg-[#3BFFC0]/15 border border-[#3BFFC0]/40 text-[#3BFFC0] text-[11px] font-bold">
-                      tabby
-                    </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-[#D4A5FF]/15 border border-[#D4A5FF]/40 text-[#E6C7FF] text-[11px] font-bold">
-                      tamara
-                    </span>
+                    {settings.tabbyEnabled === true && (
+                      <span className="px-2.5 py-1 rounded-lg bg-white text-[#09090B] text-[11px] font-bold inline-flex items-center gap-1">
+                        <img src="https://thesvg.org/icons/tabby/default.svg" alt="Tabby" width="30" height="16" />
+                        <span>تقسيط</span>
+                      </span>
+                    )}
+                    {settings.tamaraEnabled === true && (
+                      <span className="px-2.5 py-1 rounded-lg bg-white text-[#09090B] text-[11px] font-bold inline-flex items-center gap-1">
+                        <img src="https://thesvg.org/icons/tamara/default.svg" alt="Tamara" width="34" height="16" />
+                        <span>تقسيط</span>
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
 
               <p className="text-sm text-[#C5BFB2] leading-relaxed">{displayDesc}</p>
+
+              <div className="p-3 rounded-xl border border-white/10 bg-[#15151A] space-y-2">
+                <p className="text-xs font-bold text-[#C5BFB2]">ما رأيك بهذا المنتج؟</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={reactionBusy}
+                    aria-pressed={productReaction === 'like'}
+                    onClick={() => void handleProductReaction('like')}
+                    className={`min-h-9 px-3 rounded-lg border text-xs inline-flex items-center gap-2 disabled:opacity-50 ${productReaction === 'like' ? 'border-emerald-400/60 bg-emerald-950/50 text-emerald-200' : 'border-white/10 bg-[#111115] text-[#C5BFB2]'}`}
+                  >
+                    <ThumbsUp className="w-4 h-4" />
+                    <span>أعجبني</span>
+                    <span className="tabular-nums">{likeCount.toLocaleString('ar-SA')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={reactionBusy}
+                    aria-pressed={productReaction === 'dislike'}
+                    onClick={() => void handleProductReaction('dislike')}
+                    className={`min-h-9 px-3 rounded-lg border text-xs inline-flex items-center gap-2 disabled:opacity-50 ${productReaction === 'dislike' ? 'border-red-400/60 bg-red-950/40 text-red-200' : 'border-white/10 bg-[#111115] text-[#C5BFB2]'}`}
+                  >
+                    <ThumbsDown className="w-4 h-4" />
+                    <span>لم يعجبني</span>
+                    <span className="tabular-nums">{dislikeCount.toLocaleString('ar-SA')}</span>
+                  </button>
+                </div>
+                {reactionNotice && <p role="status" className="text-[11px] text-amber-200">{reactionNotice}</p>}
+              </div>
 
               {/* Product Sizes / Dimensions Selector */}
               {productSizes.length > 0 && (
@@ -384,6 +471,7 @@ export function ProductModal({
                     title={displayName}
                     text={`${priceDisplay.valueText} ${priceDisplay.unit}`}
                     productId={product.id}
+                    imageUrl={(product.images || [])[0]}
                   />
                 </div>
 

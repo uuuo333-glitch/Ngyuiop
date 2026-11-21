@@ -207,6 +207,7 @@ export async function ensureFirestoreUserProfile(
     phone?: string;
     nationalAddress?: string;
     address?: string;
+    googleMapsUrl?: string;
   }
 ): Promise<void> {
   if (!user.uid || !user.emailVerified) return;
@@ -256,6 +257,7 @@ export async function ensureFirestoreUserProfile(
         pPayload.nationalAddress = privatePatch.nationalAddress.slice(0, 60);
       }
       if (privatePatch?.address) pPayload.address = privatePatch.address.slice(0, 300);
+      if (privatePatch?.googleMapsUrl) pPayload.googleMapsUrl = privatePatch.googleMapsUrl.slice(0, 1000);
       await setDoc(privateRef, pPayload);
     } else if (privatePatch || emailVal) {
       const pPayload: Record<string, unknown> = {
@@ -267,6 +269,7 @@ export async function ensureFirestoreUserProfile(
         pPayload.nationalAddress = privatePatch.nationalAddress.slice(0, 60);
       }
       if (privatePatch?.address !== undefined) pPayload.address = privatePatch.address.slice(0, 300);
+      if (privatePatch?.googleMapsUrl !== undefined) pPayload.googleMapsUrl = privatePatch.googleMapsUrl.slice(0, 1000);
       await updateDoc(privateRef, pPayload);
     }
   } catch (error) {
@@ -443,6 +446,8 @@ export interface SaveFirestoreProductInput {
   priceSar: number;
   description?: string;
   images?: string[];
+  videoUrl?: string;
+  showProductVideo?: boolean;
   sizes?: string[];
   inStock?: boolean;
   isPublished?: boolean;
@@ -485,6 +490,10 @@ export async function saveProductToFirestore(
     isPublished: Boolean(product.isPublished),
   };
 
+  if (product.videoUrl?.trim()) baseFields.videoUrl = product.videoUrl.trim().slice(0, 1500);
+  if (typeof product.showProductVideo === 'boolean') {
+    baseFields.showProductVideo = product.showProductVideo;
+  }
   if (product.sku?.trim()) {
     baseFields.sku = product.sku.trim().slice(0, 64);
   }

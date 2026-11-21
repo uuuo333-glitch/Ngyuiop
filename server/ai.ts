@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { type FunctionDeclaration, GoogleGenAI, Type } from '@google/genai';
 import type {
   GeneratedAdsCampaign,
@@ -9,6 +11,7 @@ import type {
   VehicleCompatibilityResult,
 } from '../src/types.ts';
 import {
+  UPLOADS_DIR,
   createProduct,
   deleteProduct,
   getAdminSettings,
@@ -317,6 +320,13 @@ interface ExtractedPageSignals {
   detectedPriceSar?: number;
 }
 
+function getHtmlAttribute(tag: string, attributeName: string): string {
+  const match = tag.match(
+    new RegExp(`(?:^|\\s)${attributeName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i')
+  );
+  return (match?.[1] ?? match?.[2] ?? match?.[3] ?? '').replace(/&amp;/g, '&').trim();
+}
+
 function detectPriceHintFromText(text: string): { text?: string; sar?: number } {
   const patterns: Array<{ regex: RegExp; currency: string }> = [
     { regex: /(?:SAR|ر\.س\.?|ريال(?:\s*سعودي)?)\s*[:：]?\s*(\d{1,6}(?:[.,]\d{1,2})?)/i, currency: 'SAR' },
@@ -350,13 +360,28 @@ function extractHtmlSignals(html: string, baseUrl: string): ExtractedPageSignals
     if (normalized) images.add(normalized);
   };
 
-  const ogTitleMatch = html.match(
-    /<meta[^>]+(?:property|name)=["'](?:og:title|twitter:title)["'][^>]+content=["']([^"']+)["']/i
-  );
-  const ogImgRegex =
-    /<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image|og:image:secure_url)["'][^>]+content=["']([^"']+)["']/gi;
-  for (const match of html.matchAll(ogImgRegex)) {
-    addUrl(match[1]);
+  const metaTags = Array.from(html.matchAll(/<meta\b[^>]*>/gi), (match) => match[0]);
+  const getMetaContent = (acceptedNames: string[]) => {
+    for (const tag of metaTags) {
+      const key = (
+        getHtmlAttribute(tag, 'property') ||
+        getHtmlAttribute(tag, 'name') ||
+        getHtmlAttribute(tag, 'itemprop')
+      ).toLowerCase();
+      if (acceptedNames.includes(key)) return getHtmlAttribute(tag, 'content');
+    }
+    return '';
+  };
+  const ogTitle = getMetaContent(['og:title', 'twitter:title']);
+  const metaDescription = getMetaContent(['og:description', 'description', 'twitter:description']);
+  const primaryMetaImageNames = ['og:image', 'og:image:secure_url', 'twitter:image', 'twitter:image:src'];
+  for (const tag of metaTags) {
+    const key = (
+      getHtmlAttribute(tag, 'property') ||
+      getHtmlAttribute(tag, 'name') ||
+      getHtmlAttribute(tag, 'itemprop')
+    ).toLowerCase();
+    if (primaryMetaImageNames.includes(key)) addUrl(getHtmlAttribute(tag, 'content'));
   }
 
   // Meta price hints
@@ -396,17 +421,32 @@ function extractHtmlSignals(html: string, baseUrl: string): ExtractedPageSignals
     html.match(/"minActivityAmount"\s*:\s*\{[^}]*"value"\s*:\s*([0-9.]+)/i)?.[1] ||
     '';
 
-  const imgTagRegex =
-    /<img[^>]+(?:src|data-src|data-zoom-image|data-large_image|data-old-hires)=["']([^"']+)["'][^>]*>/gi;
-  for (const match of html.matchAll(imgTagRegex)) {
-    addUrl(match[1]);
+  const imageTagRegex = /<(?:img|source)\b[^>]*>/gi;
+  for (const match of html.matchAll(imageTagRegex)) {
+    const tag = match[0];
+    for (const attribute of [
+      'data-zoom-image',
+      'data-large_image',
+      'data-old-hires',
+      'data-original',
+      'data-lazy-src',
+      'data-src',
+      'src',
+    ]) {
+      addUrl(getHtmlAttribute(tag, attribute));
+      if (images.size >= 14) break;
+    }
+    const srcset = getHtmlAttribute(tag, 'data-srcset') || getHtmlAttribute(tag, 'srcset');
+    const largestCandidate = srcset
+      .split(',')
+      .map((candidate) => candidate.trim().split(/\s+/)[0])
+      .filter(Boolean)
+      .at(-1);
+    addUrl(largestCandidate);
     if (images.size >= 14) break;
   }
 
   const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  const metaDescMatch = html.match(
-    /<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([^"']+)["']/i
-  );
 
   const jsonLdMatches = [
     ...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi),
@@ -456,8 +496,8 @@ function extractHtmlSignals(html: string, baseUrl: string): ExtractedPageSignals
   }
 
   return {
-    title: (ogTitleMatch?.[1] || aliSubject || titleMatch?.[1] || '').trim(),
-    metaDescription: metaDescMatch?.[1]?.trim() ?? '',
+    title: (ogTitle || aliSubject || titleMatch?.[1] || '').trim(),
+    metaDescription,
     jsonLd: jsonLdMatches.slice(0, 3500),
     textSnippet: plainText,
     foundImages: Array.from(images).slice(0, 12),
@@ -670,6 +710,7 @@ export async function scrapeProductFromUrlOrName(input: {
   url?: string;
   productName?: string;
   category?: string;
+  fallbackImageUrl?: string;
 }): Promise<ScrapedProductResult> {
   const ai = getAiClient();
   const cleanUrl = sanitizeAndNormalizeProductUrl(input.url || '');
@@ -758,9 +799,12 @@ ${fetchedSignals.detectedPriceSar ? `السعر المكتشف والمحوّل 
     });
 
     const parsed = safeParseAiJson<Partial<ScrapedProductResult>>(response.text, {});
+    const parsedImages = (parsed.images ?? [])
+      .map((image) => normalizeExtractedImageUrl(String(image || ''), cleanUrl))
+      .filter((image): image is string => Boolean(image));
     const mergedImages = Array.from(
-      new Set([...(parsed.images ?? []), ...(fetchedSignals.foundImages ?? [])])
-    ).filter((img) => typeof img === 'string' && /^https?:\/\//i.test(img));
+      new Set([...(fetchedSignals.foundImages ?? []), ...parsedImages])
+    ).filter((image) => /^https?:\/\//i.test(image));
 
     baseResult = {
       name: parsed.name?.trim() || cleanName || fetchedSignals.title || 'منتج مسحوب جديد',
@@ -906,13 +950,18 @@ ${cleanName ? `اسم مرجعي: ${cleanName}` : ''}
 
   let aiGeneratedImage = false;
   if (!baseResult.images || baseResult.images.length === 0) {
-    const generatedImgUrl = await generateProductSquareImageWithGemini({
-      name: baseResult.name,
-      category: baseResult.category,
-      description: baseResult.description,
-    });
-    baseResult.images = [generatedImgUrl];
-    aiGeneratedImage = true;
+    const fallbackImageUrl = input.fallbackImageUrl?.trim() || '';
+    if (/^\/uploads\/[a-z0-9_-][a-z0-9._-]*$/i.test(fallbackImageUrl)) {
+      baseResult.images = [fallbackImageUrl];
+    } else {
+      const generatedImgUrl = await generateProductSquareImageWithGemini({
+        name: baseResult.name,
+        category: baseResult.category,
+        description: baseResult.description,
+      });
+      baseResult.images = [generatedImgUrl];
+      aiGeneratedImage = true;
+    }
   }
 
   return {
@@ -927,7 +976,8 @@ export async function scrapeProductFromUrl(url: string): Promise<ScrapedProductR
 
 export interface SimilarScrapedDraftInput {
   storeUrl: string;
-  targetProductHint: string;
+  targetProductHint?: string;
+  referenceImageUrl?: string;
   profitMarginPercent: number;
   extraProfitSar?: number;
   category?: string;
@@ -949,7 +999,7 @@ export interface SimilarScrapedItem {
 
 function extractStoreCatalogSignals(html: string, baseUrl: string) {
   const base = extractHtmlSignals(html, baseUrl);
-  const links: { text: string; url: string }[] = [];
+  const links: { text: string; url: string; hasImage: boolean }[] = [];
   const seen = new Set<string>();
   const anchorRegex = /<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   for (const m of html.matchAll(anchorRegex)) {
@@ -961,7 +1011,7 @@ function extractStoreCatalogSignals(html: string, baseUrl: string) {
       const abs = new URL(rawHref, baseUrl).toString();
       if (!seen.has(abs)) {
         seen.add(abs);
-        links.push({ text: label, url: abs });
+        links.push({ text: label, url: abs, hasImage: /<img\b/i.test(m[2]) });
       }
     } catch {
       // ignore invalid URL
@@ -969,6 +1019,70 @@ function extractStoreCatalogSignals(html: string, baseUrl: string) {
     if (links.length >= 45) break;
   }
   return { ...base, links };
+}
+
+export async function discoverProductUrlsFromCategoryPage(
+  rawUrl: string,
+  maximumProducts = 10
+): Promise<string[]> {
+  const cleanUrl = sanitizeAndNormalizeProductUrl(rawUrl);
+  if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) {
+    throw new Error('يرجى إدخال رابط صفحة قسم صحيح يبدأ بـ http:// أو https://');
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  let response: Response;
+  try {
+    response = await fetch(cleanUrl, {
+      signal: controller.signal,
+      redirect: 'follow',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) throw new Error(`تعذر فتح صفحة القسم (HTTP ${response.status}).`);
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  if (contentLength > 5 * 1024 * 1024) throw new Error('حجم صفحة القسم أكبر من الحد المسموح.');
+  const html = await response.text();
+  if (html.length > 5 * 1024 * 1024) throw new Error('حجم صفحة القسم أكبر من الحد المسموح.');
+
+  const pageUrl = new URL(cleanUrl);
+  const pagePath = pageUrl.pathname.toLowerCase();
+  const pageIsProduct =
+    /"@type"\s*:\s*(?:"Product"|\[[^\]]*"Product")/i.test(html) ||
+    /<meta\b[^>]*(?:property|name)=["']og:type["'][^>]*content=["']product["']/i.test(html) ||
+    /\/(?:item|product|products|dp|gp\/product)\/[^/]+/i.test(pagePath);
+  if (pageIsProduct) return [cleanUrl];
+
+  const sourceHost = pageUrl.hostname.replace(/^www\./i, '').toLowerCase();
+  const productPathPattern = /\/(?:item|product|products|dp|gp\/product|p|goods|itm|detail)\/[^/?#]+/i;
+  const productUrls = new Set<string>();
+  for (const link of extractStoreCatalogSignals(html, cleanUrl).links) {
+    try {
+      const candidate = new URL(link.url);
+      if (candidate.hostname.replace(/^www\./i, '').toLowerCase() !== sourceHost) continue;
+      if (candidate.pathname === pagePath && !/(?:itemId|productId|sku)=/i.test(candidate.search)) continue;
+      if (
+        !link.hasImage &&
+        !productPathPattern.test(candidate.pathname) &&
+        !/(?:itemId|productId|sku)=/i.test(candidate.search)
+      ) continue;
+      candidate.hash = '';
+      productUrls.add(sanitizeAndNormalizeProductUrl(candidate.toString()));
+      if (productUrls.size >= Math.max(1, Math.min(20, maximumProducts))) break;
+    } catch {
+      // Ignore malformed product-card links.
+    }
+  }
+
+  return Array.from(productUrls).filter((url) => /^https?:\/\//i.test(url));
 }
 
 function defaultStudioFallbackImage(categoryOrText: string): string {
@@ -985,6 +1099,43 @@ function defaultStudioFallbackImage(categoryOrText: string): string {
   return '/src/assets/images/product_gasoline_cat_1794821493329.jpg';
 }
 
+function readUploadedReferenceImage(rawUrl: string): { mimeType: string; data: string } {
+  const match = rawUrl.trim().match(/^\/uploads\/([a-z0-9_-][a-z0-9._-]*\.(?:png|jpe?g|webp|gif|avif))$/i);
+  if (!match) throw new Error('رابط صورة المنتج المرجعية غير صالح.');
+
+  const fileName = path.basename(match[1]);
+  const imagePath = path.resolve(UPLOADS_DIR, fileName);
+  if (!imagePath.startsWith(`${path.resolve(UPLOADS_DIR)}${path.sep}`) || !fs.existsSync(imagePath)) {
+    throw new Error('تعذر العثور على صورة المنتج المرجعية المرفوعة.');
+  }
+
+  const imageBuffer = fs.readFileSync(imagePath);
+  if (imageBuffer.length === 0 || imageBuffer.length > 12 * 1024 * 1024) {
+    throw new Error('حجم الصورة المرجعية غير صالح أو يتجاوز 12 ميجابايت.');
+  }
+  const extension = path.extname(fileName).toLowerCase();
+  const mimeType = extension === '.jpg' || extension === '.jpeg'
+    ? 'image/jpeg'
+    : `image/${extension.slice(1)}`;
+  return { mimeType, data: imageBuffer.toString('base64') };
+}
+
+async function describeReferenceImageWithAi(
+  ai: GoogleGenAI,
+  referenceImage: { mimeType: string; data: string }
+): Promise<string> {
+  const response = await ai.models.generateContent({
+    model: 'gemini-4-hydrogen',
+    contents: [
+      {
+        text: 'صف المنتج الظاهر في صورة العميل باللغة العربية باختصار. استخرج الفئة، نوع القطعة، التوافق المحتمل، اللون أو الخامة الظاهرة. لا تخمّن الماركة أو المواصفات غير الواضحة.',
+      },
+      { inlineData: referenceImage },
+    ],
+  });
+  return response.text?.trim() || '';
+}
+
 export async function scrapeSimilarProductsFromUrl(
   input: SimilarScrapedDraftInput
 ): Promise<SimilarScrapedItem[]> {
@@ -992,6 +1143,18 @@ export async function scrapeSimilarProductsFromUrl(
   const marginPct = Math.max(0, Math.min(300, Number(input.profitMarginPercent) || 25));
   const extraSar = Math.max(0, Number(input.extraProfitSar) || 0);
   const targetCategory = input.category?.trim() || 'دبات تلوث البنزين';
+  const referenceImage = input.referenceImageUrl
+    ? readUploadedReferenceImage(input.referenceImageUrl)
+    : null;
+  const visualDescription = referenceImage
+    ? await describeReferenceImageWithAi(ai, referenceImage)
+    : '';
+  const targetProductHint = [input.targetProductHint?.trim(), visualDescription]
+    .filter(Boolean)
+    .join(' — ');
+  if (!targetProductHint) {
+    throw new Error('أدخل وصف المنتج أو ارفع صورة مرجعية للبحث عن منتجات مشابهة.');
+  }
 
   let signals: ReturnType<typeof extractStoreCatalogSignals> | null = null;
   try {
@@ -1030,7 +1193,7 @@ export async function scrapeSimilarProductsFromUrl(
   if (signals && (signals.textSnippet.length > 150 || signals.links.length > 3)) {
     const prompt = `أنت خبير تسويق إلكتروني وسحب بيانات منتجات للمتاجر المتخصصة.
 وضع المالك رابط المتجر/المنتج التالي: ${input.storeUrl}
-وحدد نوع المنتج المشابه المطلوب سحبه: "${input.targetProductHint}"
+وحدد نوع المنتج المشابه المطلوب سحبه: "${targetProductHint}"
 القسم الافتراضي المقترح: "${targetCategory}"
 
 البيانات المستخرجة من الصفحة:
@@ -1041,7 +1204,7 @@ JSON-LD: ${signals.jsonLd}
 النص: ${signals.textSnippet}
 
 المطلوب:
-استخرج واقترح من 3 إلى 5 منتجات متطابقة أو مشابهة تماماً للمنتج المحدد ("${input.targetProductHint}") من نفس المتجر أو نفس فئته التقنية.
+استخرج واقترح من 3 إلى 5 منتجات متطابقة أو مشابهة تماماً للمنتج المحدد ("${targetProductHint}") من نفس المتجر أو نفس فئته التقنية.
 لكل منتج:
 - name: اكتب اسماً عربياً جذاباً وواضحاً جداً يفهمه العميل فوراً (اذكر نوع السيارة أو المحرك ديزل/بنزين والميزة الأساسية).
 - category: تصنيف عربي دقيق مثل "${targetCategory}".
@@ -1097,7 +1260,7 @@ JSON-LD: ${signals.jsonLd}
   } else {
     const response = await ai.models.generateContent({
       model: 'gemini-4-hydrogen',
-      contents: `تصفح رابط المتجر التالي واستخرج 3 إلى 5 منتجات مشابهة لـ "${input.targetProductHint}" وأعد النتيجة بصيغة JSON فقط بدون أي نص إضافي:
+      contents: `تصفح رابط المتجر التالي واستخرج 3 إلى 5 منتجات مشابهة لـ "${targetProductHint}" وأعد النتيجة بصيغة JSON فقط بدون أي نص إضافي:
 الرابط: ${input.storeUrl}
 
 الصيغة المطلوبة:
@@ -1127,14 +1290,14 @@ JSON-LD: ${signals.jsonLd}
   if (rawItems.length === 0) {
     rawItems = [
       {
-        name: `${input.targetProductHint} — إصدار مطوّر عالي الكفاءة`,
+        name: `${targetProductHint} — إصدار مطوّر عالي الكفاءة`,
         category: targetCategory,
         costPriceSar: 980,
         originalExtractedPrice: 'مسحوب من المتجر المصدر',
-        description: `منتج مشابه لـ ${input.targetProductHint} مهيأ بصياغة عربية واضحة، جاهز لمراجعة السعر وتحسين الصورة قبل النشر للعملاء.`,
+        description: `منتج مشابه لـ ${targetProductHint} مهيأ بصياغة عربية واضحة، جاهز لمراجعة السعر وتحسين الصورة قبل النشر للعملاء.`,
         images: signals?.foundImages?.slice(0, 2) || [],
         specs: [
-          { label: 'الفئة المستهدفة', value: input.targetProductHint },
+          { label: 'الفئة المستهدفة', value: targetProductHint },
           { label: 'الجودة', value: 'معيار مصنع مطابق للفحص الدوري' },
         ],
         sourceUrl: input.storeUrl,
@@ -1158,7 +1321,7 @@ JSON-LD: ${signals.jsonLd}
           : [defaultStudioFallbackImage(`${item.name || ''} ${item.category || targetCategory}`)];
 
     return {
-      name: item.name?.trim() || `${input.targetProductHint} #${idx + 1}`,
+      name: item.name?.trim() || `${targetProductHint} #${idx + 1}`,
       category: item.category?.trim() || targetCategory,
       costPriceSar: cost,
       priceSar: sellingPrice,
@@ -1171,7 +1334,7 @@ JSON-LD: ${signals.jsonLd}
       specs:
         Array.isArray(item.specs) && item.specs.length > 0
           ? item.specs
-          : [{ label: 'النوع', value: input.targetProductHint }],
+          : [{ label: 'النوع', value: targetProductHint }],
       sourceUrl: item.sourceUrl?.startsWith('http') ? item.sourceUrl : input.storeUrl,
       profitMarginPercent: marginPct,
     };
@@ -1313,6 +1476,36 @@ export async function enhanceStoreIdentityWithAi(input: {
     suggestedCategoryName: 'دبات التلوث الرياضية',
     suggestedCategoryDesc: 'محولات حفازة عالية التدفق للسيارات الحديثة.',
   });
+}
+
+export async function generateStoreSeoKeywords(input: {
+  storeName: string;
+  categories: string[];
+  observedQueries: string[];
+}): Promise<string[]> {
+  const ai = getAiClient();
+  const response = await ai.models.generateContent({
+    model: 'gemini-4-hydrogen',
+    contents: `أنت خبير كلمات بحث عربية لمتجر قطع عادم سيارات في السعودية.
+اسم المتجر: ${input.storeName}
+الأقسام: ${input.categories.join('، ') || 'دبات تلوث الديزل والبنزين وقطع الشكمان'}
+عبارات بحث فعلية سجلها المتجر: ${input.observedQueries.join('، ') || 'لا توجد بيانات بحث كافية بعد'}
+
+اقترح حتى 15 عبارة قصيرة وواضحة قد يستخدمها مالك سيارة عند البحث في Google. نوّع بين القطعة ونوع السيارة والموديل ونوع الوقود، مثل: دبات التلوث كامري، دبات تلوث لكزس، دبة تلوث ديزل هايلكس. لا تدّع وجود حجم بحث أو ترتيب مضمون، ولا تكرر العبارات بصيغ طفيفة. أعد JSON فقط بمفتاح keywords يحتوي قائمة عربية.` ,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: { keywords: { type: Type.ARRAY, items: { type: Type.STRING } } },
+        required: ['keywords'],
+      },
+    },
+  });
+  const parsed = safeParseAiJson<{ keywords?: string[] }>(response.text, {});
+  const keywords = Array.isArray(parsed.keywords)
+    ? parsed.keywords.map((keyword) => keyword.trim().slice(0, 80)).filter(Boolean)
+    : [];
+  return Array.from(new Set(keywords)).slice(0, 15);
 }
 
 export async function generateProductSeoData(
@@ -1854,6 +2047,46 @@ export async function optimizeBackgroundWithAi(params: {
         'تمت تهيئة الشفافية والتباين السينمائي للخلفية تلقائياً لتتلاءم مع الهوية الملكية.',
     };
   }
+}
+
+export async function generateEditedStoreBackground(input: {
+  sourceImageUrl: string;
+  target: 'site' | 'hero';
+  prompt?: string;
+}): Promise<string> {
+  const ai = getAiClient();
+  const sourceImage = readUploadedReferenceImage(input.sourceImageUrl);
+  const prompt = [
+    'Create a refined e-commerce storefront background image based on the supplied owner-uploaded image.',
+    `Target area: ${input.target === 'site' ? 'full storefront background' : 'homepage hero background'}.`,
+    'Preserve the recognizable subject and important visual content of the source image. Improve lighting, composition and clarity for a dark black-and-gold automotive storefront. Leave calm negative space for Arabic text. Do not add words, logos, watermarks, prices or UI elements.',
+    `Owner direction: ${(input.prompt || 'Improve the image for a premium automotive storefront while keeping its original subject.').slice(0, 600)}`,
+  ].join('\n');
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3.1-flash-lite-image',
+    contents: [{ text: prompt }, { inlineData: sourceImage }],
+    config: { imageConfig: { aspectRatio: '16:9' } },
+  });
+
+  for (const part of response.candidates?.[0]?.content?.parts || []) {
+    if (!part.inlineData?.data) continue;
+    const mimeType = part.inlineData.mimeType || 'image/png';
+    const extension = mimeType.includes('jpeg') || mimeType.includes('jpg')
+      ? 'jpg'
+      : mimeType.includes('webp')
+        ? 'webp'
+        : mimeType.includes('avif')
+          ? 'avif'
+          : 'png';
+    return saveUploadedMedia(
+      `store-background-ai-${crypto.randomUUID()}.${extension}`,
+      mimeType,
+      part.inlineData.data
+    );
+  }
+
+  throw new Error('لم يُرجِع نموذج الصور نسخة معدّلة من الخلفية.');
 }
 
 export async function translateProductToEnglishWithAi(input: {

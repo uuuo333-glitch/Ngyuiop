@@ -82,12 +82,23 @@ export function ProductCard({
     >
       {/* 1:1 Studio Product Image Container */}
       <div className="relative aspect-square w-full bg-[#0B0B0F] p-1.5 sm:p-2 overflow-hidden border-b border-white/10">
-        <ResilientImage
-          src={product.images?.[0]}
-          defaultFallbackSrc={DEFAULT_PRODUCT_IMAGE}
-          alt={displayName}
-          className="w-full h-full object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.03]"
-        />
+        <a
+          href={`/?product=${encodeURIComponent(product.id)}`}
+          aria-label={`عرض ${displayName}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onSelect(product);
+          }}
+          className="block w-full h-full"
+        >
+          <ResilientImage
+            src={product.images?.[0]}
+            defaultFallbackSrc={DEFAULT_PRODUCT_IMAGE}
+            alt={displayName}
+            className="w-full h-full object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.03]"
+          />
+        </a>
 
         {/* Top Corner Actions: Share + Wishlist Heart */}
         <div
@@ -150,6 +161,7 @@ export function ProductCard({
               title={displayName}
               text={`${priceDisplay.valueText} ${priceDisplay.unit}`}
               productId={product.id}
+              imageUrl={(product.images || [])[0]}
               compact
             />
           </div>

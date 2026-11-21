@@ -100,8 +100,8 @@ export function CustomerAuthModal({
   const [email, setEmail] = useState('');
   const [nationalAddress, setNationalAddress] = useState('');
   const [address, setAddress] = useState('');
+  const [googleMapsUrl, setGoogleMapsUrl] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   const [resetStep, setResetStep] = useState<'request' | 'confirm'>('request');
@@ -165,8 +165,9 @@ export function CustomerAuthModal({
       setName(customer.name || '');
       setPhone(customer.phone || '');
       setEmail(customer.email || '');
-      setNationalAddress(customer.nationalAddress || '');
-      setAddress(customer.address || '');
+        setNationalAddress(customer.nationalAddress || '');
+        setAddress(customer.address || '');
+        setGoogleMapsUrl(customer.googleMapsUrl || '');
       fetch('/api/customers/me', {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -192,6 +193,7 @@ export function CustomerAuthModal({
           phone: phone || customer?.phone,
           nationalAddress: nationalAddress || customer?.nationalAddress,
           address: address || customer?.address,
+          googleMapsUrl: googleMapsUrl || customer?.googleMapsUrl,
         });
 
         // Also authenticate / link into the Store Customer Portal automatically
@@ -339,19 +341,10 @@ export function CustomerAuthModal({
       setError('يرجى إدخال الاسم الكامل (حرفين على الأقل).');
       return;
     }
-    if (!phone.trim()) {
-      setError('يرجى إدخال رقم الجوال السعودي (مثال: 05XXXXXXXX).');
+    if (!phone.trim() && !email.trim()) {
+      setError('أدخل رقم الجوال أو البريد الإلكتروني لإكمال التسجيل.');
       return;
     }
-    if (password.length < 4) {
-      setError('يجب أن تتكون كلمة المرور من 4 أحرف على الأقل.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('كلمتا المرور غير متطابقتين. يرجى التأكد قبل المتابعة.');
-      return;
-    }
-
     setLoading(true);
     try {
       const res = await fetch('/api/customers/register', {
@@ -363,7 +356,7 @@ export function CustomerAuthModal({
           email: email.trim() || undefined,
           nationalAddress: nationalAddress.trim(),
           address: address.trim(),
-          password,
+          googleMapsUrl: googleMapsUrl.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -373,9 +366,8 @@ export function CustomerAuthModal({
       }
       onAuthSuccess(data.customer, data.token);
       setPassword('');
-      setConfirmPassword('');
       setDashboardTab('overview');
-      setMessage('تم إنشاء حسابك وحفظ بياناتك بنجاح! مرحباً بك في مصنع التاج الذهبي.');
+      setMessage('تم إنشاء حسابك بنجاح. سيعيّن مالك المتجر كلمة مرورك، ويمكنك استخدام Google للدخول إذا كان البريد مرتبطاً بحسابك.');
     } catch {
       setError('خطأ في الاتصال بالخادم.');
     } finally {
@@ -515,6 +507,7 @@ export function CustomerAuthModal({
           email: email.trim(),
           nationalAddress: nationalAddress.trim(),
           address: address.trim(),
+          googleMapsUrl: googleMapsUrl.trim(),
         }),
       });
       const data = await res.json();
@@ -595,7 +588,6 @@ export function CustomerAuthModal({
     setError('');
     setMessage('');
     setPassword('');
-    setConfirmPassword('');
     if (nextMode === 'reset') {
       setResetStep('request');
     }
@@ -1532,10 +1524,9 @@ export function CustomerAuthModal({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-[#C5BFB2] mb-1">رقم الجوال</label>
+                      <label className="block text-xs text-[#C5BFB2] mb-1">رقم الجوال (اختياري إذا كان البريد محفوظاً)</label>
                       <input
                         type="tel"
-                        required
                         dir="ltr"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
@@ -1547,7 +1538,7 @@ export function CustomerAuthModal({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-[#C5BFB2] mb-1">
-                        البريد الإلكتروني (اختياري)
+                        البريد الإلكتروني (اختياري إذا أُدخل رقم الجوال)
                       </label>
                       <input
                         type="email"
@@ -1581,6 +1572,28 @@ export function CustomerAuthModal({
                       className="w-full p-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
                     />
                   </div>
+                  <div className="space-y-2">
+                    <label htmlFor="profile-google-maps-url" className="block text-xs text-[#C5BFB2]">
+                      رابط موقعك من Google Maps (اختياري)
+                    </label>
+                    <input
+                      id="profile-google-maps-url"
+                      type="url"
+                      dir="ltr"
+                      value={googleMapsUrl}
+                      onChange={(e) => setGoogleMapsUrl(e.target.value)}
+                      placeholder="https://maps.app.goo.gl/..."
+                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-left focus:outline-none focus:border-[#D4AF37]"
+                    />
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || 'موقعي')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex text-[11px] text-sky-300 underline"
+                    >
+                      اختر الموقع في خرائط Google وانسخ رابط المشاركة
+                    </a>
+                  </div>
 
                   <button
                     type="submit"
@@ -1591,18 +1604,18 @@ export function CustomerAuthModal({
                   </button>
                 </form>
 
-                {/* Change or Set Customer Password */}
-                <form
-                  onSubmit={handleAccountChangePassword}
-                  className="p-4 rounded-xl border border-white/10 bg-[#15151A] space-y-3"
-                >
+                {customer.hasPassword === false ? (
+                  <div className="p-4 rounded-xl border border-amber-500/25 bg-amber-950/15 text-xs leading-relaxed text-[#C5BFB2]">
+                    لم يعيّن المالك كلمة مرور لهذا الحساب بعد. تواصل مع المتجر لتعيينها، أو استخدم الدخول بحساب Google إذا كان مربوطاً بالبريد نفسه.
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={handleAccountChangePassword}
+                    className="p-4 rounded-xl border border-white/10 bg-[#15151A] space-y-3"
+                  >
                   <div className="flex items-center justify-between">
                     <div className="text-xs font-bold text-[#E5C158]">
-                      {customer.hasPassword === false
-                        ? 'تعيين كلمة مرور للدخول بالجوال لاحقاً'
-                        : lang === 'en'
-                          ? 'Change Password'
-                          : 'تغيير كلمة مرور الحساب'}
+                      {lang === 'en' ? 'Change Password' : 'تغيير كلمة مرور الحساب'}
                     </div>
                     <button
                       type="button"
@@ -1613,21 +1626,15 @@ export function CustomerAuthModal({
                       <span>{showAcctPw ? 'إخفاء' : 'إظهار'}</span>
                     </button>
                   </div>
-                  <div
-                    className={`grid grid-cols-1 ${
-                      customer.hasPassword === false ? '' : 'sm:grid-cols-2'
-                    } gap-2.5`}
-                  >
-                    {customer.hasPassword !== false && (
-                      <input
-                        type={showAcctPw ? 'text' : 'password'}
-                        required
-                        value={acctCurrentPw}
-                        onChange={(e) => setAcctCurrentPw(e.target.value)}
-                        placeholder={lang === 'en' ? 'Current password' : 'كلمة المرور الحالية'}
-                        className="h-9 px-3 rounded-lg bg-[#111115] border border-white/15 text-xs focus:outline-none focus:border-[#D4AF37]"
-                      />
-                    )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <input
+                      type={showAcctPw ? 'text' : 'password'}
+                      required
+                      value={acctCurrentPw}
+                      onChange={(e) => setAcctCurrentPw(e.target.value)}
+                      placeholder={lang === 'en' ? 'Current password' : 'كلمة المرور الحالية'}
+                      className="h-9 px-3 rounded-lg bg-[#111115] border border-white/15 text-xs focus:outline-none focus:border-[#D4AF37]"
+                    />
                     <input
                       type={showAcctPw ? 'text' : 'password'}
                       required
@@ -1647,13 +1654,10 @@ export function CustomerAuthModal({
                     disabled={loading}
                     className="h-9 px-4 rounded-lg border border-[#D4AF37]/45 bg-[#171510] text-xs font-bold text-[#E5C158] cursor-pointer"
                   >
-                    {customer.hasPassword === false
-                      ? 'تعيين كلمة المرور'
-                      : lang === 'en'
-                        ? 'Update Password'
-                        : 'تحديث كلمة المرور'}
+                    {lang === 'en' ? 'Update Password' : 'تحديث كلمة المرور'}
                   </button>
-                </form>
+                  </form>
+                )}
               </div>
             )}
 
@@ -1925,10 +1929,9 @@ export function CustomerAuthModal({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-[#C5BFB2] mb-1">رقم الجوال السعودي *</label>
-                    <input
-                      type="tel"
-                      required
+                            <label className="block text-xs text-[#C5BFB2] mb-1">رقم الجوال (اختياري إذا أُدخل البريد)</label>
+                            <input
+                              type="tel"
                       dir="ltr"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
@@ -1976,47 +1979,30 @@ export function CustomerAuthModal({
                     className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
                   />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-[#C5BFB2] mb-1">كلمة المرور *</label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        required
-                        minLength={4}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="4 أحرف على الأقل"
-                        className="w-full h-10 ps-3 pe-10 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((v) => !v)}
-                        aria-label={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
-                        className="absolute end-3 top-1/2 -translate-y-1/2 text-[#9E988C] hover:text-white cursor-pointer"
-                      >
-                        {showPassword ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-[#C5BFB2] mb-1">
-                      تأكيد كلمة المرور *
-                    </label>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      minLength={4}
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="أعد كتابة كلمة المرور"
-                      className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <label htmlFor="register-google-maps-url" className="block text-xs text-[#C5BFB2]">
+                    رابط موقعك من Google Maps (اختياري)
+                  </label>
+                  <input
+                    id="register-google-maps-url"
+                    type="url"
+                    dir="ltr"
+                    value={googleMapsUrl}
+                    onChange={(e) => setGoogleMapsUrl(e.target.value)}
+                    placeholder="https://maps.app.goo.gl/..."
+                    className="w-full h-10 px-3 rounded-xl bg-[#16161B] border border-white/15 text-sm text-left focus:outline-none focus:border-[#D4AF37]"
+                  />
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || 'موقعي')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex text-[11px] text-sky-300 underline"
+                  >
+                    اختر موقعك في خرائط Google ثم انسخ رابط المشاركة هنا
+                  </a>
+                </div>
+                <div className="rounded-xl border border-[#D4AF37]/25 bg-[#171510] px-3 py-2.5 text-xs leading-relaxed text-[#C5BFB2]">
+                  لا تدخل كلمة مرور هنا؛ سيعيّن مالك المتجر كلمة المرور من لوحة التحكم بعد إنشاء الحساب.
                 </div>
                 <button
                   type="submit"

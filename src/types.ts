@@ -22,6 +22,11 @@ export interface Product {
   description: string;
   descriptionEn?: string;
   images: string[];
+  videoUrl?: string;
+  showProductVideo?: boolean;
+  likeCount?: number;
+  dislikeCount?: number;
+  myReaction?: 'like' | 'dislike' | null;
   sizes?: string[];
   specs: ProductSpec[];
   inStock: boolean;
@@ -163,6 +168,8 @@ export interface StoreSettings {
   paypalButtonsEnabled?: boolean;
   paypalCardEnabled?: boolean;
   bankTransferEnabled: boolean;
+  tabbyEnabled?: boolean;
+  tamaraEnabled?: boolean;
   bankName: string;
   bankAccountHolder: string;
   bankIban: string;
@@ -273,6 +280,7 @@ export interface CustomerProfile {
   hasPassword?: boolean;
   nationalAddress?: string;
   address: string;
+  googleMapsUrl?: string;
   goldenCoins?: number;
   lastDailyClaimDate?: string;
   coupons?: LoyaltyCoupon[];
@@ -309,6 +317,7 @@ export interface Order {
   customerPhone: string;
   nationalAddress?: string;
   customerAddress: string;
+  googleMapsUrl?: string;
   shippingCompany?: string;
   trackingNumber?: string;
   shippingNotice?: string;

@@ -30,6 +30,13 @@ interface StoredAnalytics {
   updatedAt: string;
 }
 
+interface ProductReactionRecord {
+  productId: string;
+  customerId: string;
+  reaction: 'like' | 'dislike';
+  updatedAt: string;
+}
+
 interface StoredCustomer extends CustomerProfile {
   passwordHash: string;
   resetCodeHash?: string;
@@ -54,6 +61,7 @@ interface DatabaseSchema {
   reviews?: ProductReview[];
   customers: StoredCustomer[];
   orders: Order[];
+  productReactions?: ProductReactionRecord[];
   ownerWallet?: OwnerWallet;
   assistantMessages?: AssistantMessage[];
   analytics?: StoredAnalytics;
@@ -378,8 +386,10 @@ function defaultSettings(): StoreSettings {
     paypalClientId: '',
     paypalButtonsEnabled: true,
     paypalCardEnabled: true,
-    bankTransferEnabled: true,
-    bankName: 'مصرف الراجحي',
+      bankTransferEnabled: true,
+      tabbyEnabled: false,
+      tamaraEnabled: false,
+      bankName: 'مصرف الراجحي',
     bankAccountHolder: 'مصنع التاج الذهبي لدبات التلوث',
     bankIban: 'SA0000000000000000000000',
     bankAccountNumber: '',
@@ -654,6 +664,7 @@ function buildInitialSeed(): DatabaseSchema {
     banners,
     customers: [],
     orders: [],
+    productReactions: [],
     assistantMessages,
     analytics: {
       totalVisits: 0,
@@ -745,6 +756,9 @@ function ensureDb(): DatabaseSchema {
     parsed.settings.ownerTwoFactorEnabled = false;
     if (!Array.isArray(parsed.reviews)) {
       parsed.reviews = [];
+    }
+    if (!Array.isArray(parsed.productReactions)) {
+      parsed.productReactions = [];
     }
     parsed.customers = (parsed.customers || []).map((c) => ({
       ...c,
@@ -1152,9 +1166,57 @@ export function verifyAdminSecondFactor(
   return { ok: false, error: 'رمز التحقق الثنائي غير صحيح أو منتهي الصلاحية.' };
 }
 
-export function getPublishedProducts(): PublicProduct[] {
+export function getPublishedProducts(customerId?: string): PublicProduct[] {
   const db = ensureDb();
-  return db.products.filter((p) => p.isPublished === true).map(stripPrivateProductFields);
+  const reactions = Array.isArray(db.productReactions) ? db.productReactions : [];
+  return db.products.filter((product) => product.isPublished === true).map((product) => {
+    const productReactions = reactions.filter((reaction) => reaction.productId === product.id);
+    return {
+      ...stripPrivateProductFields(product),
+      likeCount: productReactions.filter((reaction) => reaction.reaction === 'like').length,
+      dislikeCount: productReactions.filter((reaction) => reaction.reaction === 'dislike').length,
+      myReaction: customerId
+        ? productReactions.find((reaction) => reaction.customerId === customerId)?.reaction || null
+        : null,
+    };
+  });
+}
+
+export function recordProductReaction(
+  productId: string,
+  customerId: string,
+  reaction: 'like' | 'dislike'
+): { ok: true; likeCount: number; dislikeCount: number; reaction: 'like' | 'dislike' | null } | { ok: false; error: string } {
+  const db = ensureDb();
+  if (!db.products.some((product) => product.id === productId && product.isPublished)) {
+    return { ok: false, error: 'المنتج غير متاح للتقييم.' };
+  }
+  if (!db.customers.some((customer) => customer.id === customerId)) {
+    return { ok: false, error: 'سجّل الدخول بحساب العميل أولاً.' };
+  }
+
+  const reactions = Array.isArray(db.productReactions) ? db.productReactions : [];
+  const existingIndex = reactions.findIndex(
+    (item) => item.productId === productId && item.customerId === customerId
+  );
+  if (existingIndex >= 0 && reactions[existingIndex].reaction === reaction) {
+    reactions.splice(existingIndex, 1);
+  } else if (existingIndex >= 0) {
+    reactions[existingIndex] = { ...reactions[existingIndex], reaction, updatedAt: new Date().toISOString() };
+  } else {
+    reactions.push({ productId, customerId, reaction, updatedAt: new Date().toISOString() });
+  }
+  db.productReactions = reactions;
+  saveDb(db);
+
+  const productReactions = reactions.filter((item) => item.productId === productId);
+  const currentReaction = productReactions.find((item) => item.customerId === customerId)?.reaction || null;
+  return {
+    ok: true,
+    likeCount: productReactions.filter((item) => item.reaction === 'like').length,
+    dislikeCount: productReactions.filter((item) => item.reaction === 'dislike').length,
+    reaction: currentReaction,
+  };
 }
 
 export function getAllProductsAdmin(): Product[] {
@@ -1283,23 +1345,53 @@ function appendLoyaltyHistory(
   customer.loyaltyHistory = [item, ...(customer.loyaltyHistory || [])].slice(0, 30);
 }
 
+export function sanitizeGoogleMapsUrl(rawUrl?: string): string | undefined {
+  const value = (rawUrl || '').trim();
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    const isGoogleMapsHost =
+      host === 'maps.app.goo.gl' ||
+      host === 'goo.gl' ||
+      host === 'maps.google.com' ||
+      ((host === 'google.com' || host === 'www.google.com') && url.pathname.startsWith('/maps'));
+    if (url.protocol !== 'https:' || !isGoogleMapsHost) return undefined;
+    return url.toString().slice(0, 1000);
+  } catch {
+    return undefined;
+  }
+}
+
 export function registerCustomer(input: {
   name: string;
-  phone: string;
+  phone?: string;
   email?: string;
   nationalAddress?: string;
   address?: string;
-  password: string;
+  googleMapsUrl?: string;
+  password?: string;
 }): { customer?: CustomerProfile; error?: string } {
   const db = ensureDb();
-  const normalizedPhone = normalizeSaudiPhone(input.phone);
-  if (normalizedPhone.length < 9) {
+  const cleanMapsUrl = sanitizeGoogleMapsUrl(input.googleMapsUrl);
+  if (input.googleMapsUrl?.trim() && !cleanMapsUrl) {
+    return { error: 'أدخل رابط موقع صالحاً من خرائط Google.' };
+  }
+  const rawPhone = input.phone?.trim() || '';
+  const normalizedPhone = rawPhone ? normalizeSaudiPhone(rawPhone) : '';
+  if (rawPhone && normalizedPhone.length < 9) {
     return { error: 'يرجى إدخال رقم جوال صحيح (مثال: 05XXXXXXXX).' };
   }
-  if (db.customers.some((c) => phonesMatch(c.phone, normalizedPhone))) {
+  if (normalizedPhone && db.customers.some((c) => phonesMatch(c.phone, normalizedPhone))) {
     return { error: 'رقم الجوال مسجل مسبقاً. يرجى تسجيل الدخول أو استعادة كلمة المرور.' };
   }
   const cleanEmail = input.email?.trim().toLowerCase() || '';
+  if (!normalizedPhone && !cleanEmail) {
+    return { error: 'أدخل رقم الجوال أو البريد الإلكتروني لإنشاء الحساب.' };
+  }
+  if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return { error: 'يرجى إدخال بريد إلكتروني صحيح.' };
+  }
   if (cleanEmail && db.customers.some((c) => c.email?.toLowerCase() === cleanEmail)) {
     return { error: 'البريد الإلكتروني مسجل مسبقاً. يرجى تسجيل الدخول.' };
   }
@@ -1310,11 +1402,12 @@ export function registerCustomer(input: {
     email: cleanEmail || undefined,
     nationalAddress: input.nationalAddress?.trim() || '',
     address: input.address?.trim() || '',
+    googleMapsUrl: cleanMapsUrl,
     goldenCoins: 0,
     coupons: [],
     loyaltyHistory: [],
     sharedProductsHistory: {},
-    passwordHash: hashPassword(input.password),
+    passwordHash: input.password?.trim() ? hashPassword(input.password) : '',
     createdAt: new Date().toISOString(),
   };
   db.customers.unshift(customer);
@@ -1423,6 +1516,9 @@ export function requestCustomerPasswordReset(
   if (idx === -1) {
     return { ok: false, error: 'لا يوجد حساب عميل مسجل بهذه البيانات.' };
   }
+  if (!db.customers[idx].passwordHash) {
+    return { ok: false, error: 'لم يعيّن المالك كلمة المرور لهذا الحساب بعد. تواصل مع المتجر.' };
+  }
   const code = String(crypto.randomInt(100000, 999999));
   db.customers[idx].resetCodeHash = hashPassword(code);
   db.customers[idx].resetExpiresAt = Date.now() + 15 * 60 * 1000;
@@ -1475,6 +1571,24 @@ export function changeCustomerPassword(
   return { ok: true, customer: toCustomerProfile(db.customers[idx]) };
 }
 
+export function setCustomerPasswordByAdmin(
+  customerId: string,
+  newPassword: string
+): { ok: true; customer: CustomerProfile } | { ok: false; error: string } {
+  const db = ensureDb();
+  const idx = db.customers.findIndex((customer) => customer.id === customerId);
+  if (idx === -1) return { ok: false, error: 'الحساب غير موجود.' };
+  if (newPassword.length < 8) {
+    return { ok: false, error: 'يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.' };
+  }
+
+  db.customers[idx].passwordHash = hashPassword(newPassword);
+  delete db.customers[idx].resetCodeHash;
+  delete db.customers[idx].resetExpiresAt;
+  saveDb(db);
+  return { ok: true, customer: toCustomerProfile(db.customers[idx]) };
+}
+
 export function updateCustomerProfile(
   id: string,
   patch: {
@@ -1483,6 +1597,7 @@ export function updateCustomerProfile(
     email?: string;
     nationalAddress?: string;
     address?: string;
+    googleMapsUrl?: string;
   }
 ): { customer?: CustomerProfile; error?: string } {
   const db = ensureDb();
@@ -1520,6 +1635,13 @@ export function updateCustomerProfile(
     nextEmail = cleanedEmail || undefined;
   }
 
+  const nextGoogleMapsUrl = patch.googleMapsUrl !== undefined
+    ? sanitizeGoogleMapsUrl(patch.googleMapsUrl)
+    : db.customers[idx].googleMapsUrl;
+  if (patch.googleMapsUrl?.trim() && !nextGoogleMapsUrl) {
+    return { error: 'أدخل رابط موقع صالحاً من خرائط Google.' };
+  }
+
   db.customers[idx] = {
     ...db.customers[idx],
     name: patch.name !== undefined ? patch.name.trim() : db.customers[idx].name,
@@ -1530,6 +1652,7 @@ export function updateCustomerProfile(
         ? patch.nationalAddress.trim()
         : db.customers[idx].nationalAddress,
     address: patch.address !== undefined ? patch.address.trim() : db.customers[idx].address,
+    googleMapsUrl: nextGoogleMapsUrl,
   };
   saveDb(db);
   return { customer: toCustomerProfile(db.customers[idx]) };

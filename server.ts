@@ -1,7 +1,9 @@
 import 'dotenv/config';
 process.env.VITE_CONFIG_NATIVE_IGNORE_WARNING ??= 'true';
 import crypto from 'node:crypto';
+import { lookup } from 'node:dns/promises';
 import fs from 'node:fs';
+import { isIP } from 'node:net';
 import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import nodemailer from 'nodemailer';
@@ -55,6 +57,7 @@ import {
   loginCustomer,
   notifyOwnerWebhookIfConfigured,
   purchaseWithOwnerWalletAdmin,
+  recordProductReaction,
   recordSearchQuery,
   recordStoreVisit,
   regenerateAdminBackupCodes,
@@ -63,6 +66,8 @@ import {
   requestCustomerPasswordReset,
   saveUploadedBuffer,
   saveUploadedMedia,
+  sanitizeGoogleMapsUrl,
+  setCustomerPasswordByAdmin,
   stripPrivateProductFields,
   transferSalesRevenueToWalletAdmin,
   updateAdminPassword,
@@ -81,7 +86,11 @@ import {
   enhanceProductCopyWithAi,
   enhanceStoreIdentityWithAi,
   generateAdsAndBanner,
+  generateEditedStoreBackground,
   generateProductSeoData,
+  generateProductSquareImageWithGemini,
+  generateStoreSeoKeywords,
+  discoverProductUrlsFromCategoryPage,
   generateStoreThemeWithAi,
   importProductFromUrlWithHtml,
   lookupVehicleCompatibilityWithSearch,
@@ -235,11 +244,14 @@ function requireCustomer(req: CustomerRequest, res: Response, next: NextFunction
 // PUBLIC STOREFRONT ENDPOINTS (ZERO LEAKAGE)
 // ==========================================
 
-app.get('/api/storefront', (_req, res) => {
+app.get('/api/storefront', (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  const bearer = extractBearer(req);
+  const session = bearer ? verifySignedToken<{ role?: string; customerId?: string }>(bearer) : null;
+  const customerId = session?.role === 'customer' ? session.customerId : undefined;
   res.json({
     settings: getPublicSettings(),
-    products: getPublishedProducts(),
+    products: getPublishedProducts(customerId),
     banners: getActiveBanners(),
     reviews: getAllApprovedReviews(),
   });
@@ -247,6 +259,20 @@ app.get('/api/storefront', (_req, res) => {
 
 app.get('/api/products/:id/reviews', (req, res) => {
   res.json({ reviews: getApprovedReviewsForProduct(String(req.params.id)) });
+});
+
+app.post('/api/products/:id/reaction', requireCustomer, (req: CustomerRequest, res) => {
+  const reaction = (req.body as { reaction?: string }).reaction;
+  if (reaction !== 'like' && reaction !== 'dislike') {
+    res.status(400).json({ error: 'نوع التفاعل غير صالح.' });
+    return;
+  }
+  const result = recordProductReaction(String(req.params.id), req.customerId!, reaction);
+  if (!result.ok) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(result);
 });
 
 app.post('/api/products/:id/reviews', (req, res) => {
@@ -337,6 +363,7 @@ app.post('/api/orders', async (req: CustomerRequest, res) => {
       customerPhone,
       nationalAddress,
       customerAddress,
+      googleMapsUrl,
       shippingCompany,
       items,
       paymentMethod,
@@ -349,6 +376,7 @@ app.post('/api/orders', async (req: CustomerRequest, res) => {
       customerPhone?: string;
       nationalAddress?: string;
       customerAddress?: string;
+      googleMapsUrl?: string;
       shippingCompany?: string;
       items?: { productId: string; quantity: number }[];
       paymentMethod?: 'paypal' | 'bank_transfer' | 'whatsapp' | 'owner_wallet';
@@ -384,6 +412,11 @@ app.post('/api/orders', async (req: CustomerRequest, res) => {
 
     if (!customerName?.trim() || !customerPhone?.trim() || !customerAddress?.trim()) {
       res.status(400).json({ error: 'يرجى تعبئة الاسم ورقم الجوال والعنوان بالكامل.' });
+      return;
+    }
+    const normalizedGoogleMapsUrl = sanitizeGoogleMapsUrl(googleMapsUrl);
+    if (googleMapsUrl?.trim() && !normalizedGoogleMapsUrl) {
+      res.status(400).json({ error: 'رابط موقع التسليم يجب أن يكون رابط Google Maps صالحاً.' });
       return;
     }
 
@@ -422,6 +455,18 @@ app.post('/api/orders', async (req: CustomerRequest, res) => {
     }
 
     const settings = getPublicSettings();
+    if (resolvedMethod === 'bank_transfer') {
+      const normalizedIban = (settings.bankIban || '').replace(/\s/g, '').toUpperCase();
+      const bankTransferReady =
+        settings.bankTransferEnabled !== false &&
+        Boolean(settings.bankName?.trim() && settings.bankAccountHolder?.trim()) &&
+        normalizedIban.length >= 15 &&
+        !/^SA0{22}$/.test(normalizedIban);
+      if (!bankTransferReady) {
+        res.status(400).json({ error: 'التحويل البنكي غير متاح قبل اكتمال بيانات الحساب وتفعيل المالك.' });
+        return;
+      }
+    }
 
     let customerId: string | undefined;
     const token = extractBearer(req);
@@ -467,6 +512,7 @@ app.post('/api/orders', async (req: CustomerRequest, res) => {
       customerPhone: customerPhone.trim(),
       nationalAddress: nationalAddress?.trim() || undefined,
       customerAddress: customerAddress.trim(),
+      googleMapsUrl: normalizedGoogleMapsUrl,
       shippingCompany: shippingCompany?.trim() || undefined,
       items: resolvedItems,
       subtotalSar: totalSar,
@@ -508,33 +554,48 @@ app.post('/api/orders', async (req: CustomerRequest, res) => {
 // ==========================================
 
 app.post('/api/customers/register', (req, res) => {
-  const { name, phone, email, nationalAddress, address, password } = req.body as {
+  const { name, phone, email, nationalAddress, address, googleMapsUrl } = req.body as {
     name?: string;
     phone?: string;
     email?: string;
     nationalAddress?: string;
     address?: string;
-    password?: string;
+    googleMapsUrl?: string;
   };
   if (!name?.trim() || name.trim().length < 2) {
     res.status(400).json({ error: 'يرجى إدخال الاسم الكامل (حرفين على الأقل).' });
     return;
   }
-  if (!phone?.trim()) {
-    res.status(400).json({ error: 'يرجى إدخال رقم الجوال.' });
+  if (!phone?.trim() && !email?.trim()) {
+    res.status(400).json({ error: 'أدخل رقم الجوال أو البريد الإلكتروني لإنشاء الحساب.' });
     return;
   }
-  if (!password || password.length < 4) {
-    res.status(400).json({ error: 'يرجى إدخال كلمة مرور لا تقل عن 4 أحرف.' });
+  const normalizedMapsUrl = sanitizeGoogleMapsUrl(googleMapsUrl);
+  if (googleMapsUrl?.trim() && !normalizedMapsUrl) {
+    res.status(400).json({ error: 'يرجى إدخال رابط خرائط Google صالح.' });
     return;
   }
-  const result = registerCustomer({ name, phone, email, nationalAddress, address, password });
+  const result = registerCustomer({ name, phone, email, nationalAddress, address, googleMapsUrl: normalizedMapsUrl });
   if (result.error || !result.customer) {
     res.status(400).json({ error: result.error || 'تعذر إنشاء الحساب.' });
     return;
   }
   const token = createSignedToken({ role: 'customer', customerId: result.customer.id });
   res.status(201).json({ token, customer: result.customer });
+});
+
+app.put('/api/admin/customers/:id/password', requireAdmin, (req, res) => {
+  const { password } = req.body as { password?: string };
+  if (!password?.trim()) {
+    res.status(400).json({ error: 'أدخل كلمة المرور الجديدة.' });
+    return;
+  }
+  const result = setCustomerPasswordByAdmin(String(req.params.id), password);
+  if (!result.ok) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json({ customer: result.customer });
 });
 
 app.post('/api/customers/login', (req, res) => {
@@ -700,15 +761,21 @@ app.get('/api/customers/me', requireCustomer, (req: CustomerRequest, res) => {
 });
 
 app.put('/api/customers/me', requireCustomer, (req: CustomerRequest, res) => {
-  const { name, phone, email, nationalAddress, address } = req.body as {
+  const { name, phone, email, nationalAddress, address, googleMapsUrl } = req.body as {
     name?: string;
     phone?: string;
     email?: string;
     nationalAddress?: string;
     address?: string;
+    googleMapsUrl?: string;
   };
   if (name !== undefined && name.trim().length < 2) {
     res.status(400).json({ error: 'يرجى إدخال الاسم الكامل بشكل صحيح.' });
+    return;
+  }
+  const normalizedMapsUrl = sanitizeGoogleMapsUrl(googleMapsUrl);
+  if (googleMapsUrl?.trim() && !normalizedMapsUrl) {
+    res.status(400).json({ error: 'يرجى إدخال رابط خرائط Google صالح.' });
     return;
   }
   const result = updateCustomerProfile(req.customerId!, {
@@ -717,6 +784,7 @@ app.put('/api/customers/me', requireCustomer, (req: CustomerRequest, res) => {
     email,
     nationalAddress,
     address,
+    googleMapsUrl: normalizedMapsUrl,
   });
   if (result.error || !result.customer) {
     res.status(400).json({ error: result.error || 'تعذر تحديث البيانات.' });
@@ -1276,6 +1344,30 @@ app.post('/api/admin/assistant/send-webhook', requireAdmin, async (_req, res) =>
   res.json({ sent, whatsappDigestText });
 });
 
+app.post('/api/admin/ai/edit-background', requireAdmin, async (req, res) => {
+  try {
+    const { sourceImageUrl, target, prompt } = req.body as {
+      sourceImageUrl?: string;
+      target?: 'site' | 'hero';
+      prompt?: string;
+    };
+    const sourceImage = uploadedImageUrlIfExists(sourceImageUrl);
+    if (!sourceImage) {
+      res.status(400).json({ error: 'ارفع صورة خلفية من جهازك أولاً ليتمكن الذكاء الاصطناعي من تعديلها.' });
+      return;
+    }
+    const url = await generateEditedStoreBackground({
+      sourceImageUrl: sourceImage,
+      target: target === 'hero' ? 'hero' : 'site',
+      prompt: prompt?.trim().slice(0, 600),
+    });
+    res.json({ url });
+  } catch (error) {
+    console.error('Background AI edit error:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'تعذر إنشاء نسخة الخلفية المعدلة.' });
+  }
+});
+
 app.post('/api/admin/ai/optimize-background', requireAdmin, async (req, res) => {
   try {
     const {
@@ -1452,66 +1544,319 @@ app.delete('/api/admin/products/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Secret AI Product Scraper -> Supports URL or direct product name, auto-generates 1000x1000 Gemini image when missing, writes Arabic marketing copy, and publishes directly
+const MAX_IMPORTED_PRODUCTS = 10;
+const MAX_SCRAPED_IMAGE_BYTES = 12 * 1024 * 1024;
+
+function isNonPublicIpAddress(address: string): boolean {
+  const version = isIP(address);
+  if (version === 4) {
+    const octets = address.split('.').map(Number);
+    const [first, second] = octets;
+    return (
+      first === 0 ||
+      first === 10 ||
+      first === 127 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168) ||
+      (first === 192 && second === 0) ||
+      (first === 198 && (second === 18 || second === 19)) ||
+      first >= 224
+    );
+  }
+
+  if (version === 6) {
+    const normalized = address.toLowerCase().split('%')[0];
+    return (
+      normalized === '::' ||
+      normalized === '::1' ||
+      normalized.startsWith('::ffff:') ||
+      normalized.startsWith('fc') ||
+      normalized.startsWith('fd') ||
+      /^fe[89ab]/.test(normalized) ||
+      normalized.startsWith('ff') ||
+      normalized.startsWith('2001:db8:')
+    );
+  }
+
+  return true;
+}
+
+async function assertPublicHttpUrl(rawUrl: string): Promise<URL> {
+  const url = new URL(rawUrl);
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    throw new Error('الرابط الخارجي غير صالح.');
+  }
+
+  const hostname = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) {
+    throw new Error('يُسمح فقط بروابط مواقع عامة.');
+  }
+
+  const addresses = isIP(hostname)
+    ? [{ address: hostname }]
+    : await lookup(hostname, { all: true, verbatim: true });
+  if (!addresses.length || addresses.some(({ address }) => isNonPublicIpAddress(address))) {
+    throw new Error('تعذر التحقق من أن الرابط يشير إلى موقع عام وآمن.');
+  }
+
+  return url;
+}
+
+function uploadedImageUrlIfExists(rawUrl?: string): string | null {
+  const value = (rawUrl || '').trim();
+  const match = value.match(/^\/uploads\/([a-z0-9_-][a-z0-9._-]*\.(?:png|jpe?g|webp|gif|avif))$/i);
+  if (!match) return null;
+
+  const fileName = path.basename(match[1]);
+  const resolvedPath = path.resolve(UPLOADS_DIR, fileName);
+  if (!resolvedPath.startsWith(`${path.resolve(UPLOADS_DIR)}${path.sep}`) || !fs.existsSync(resolvedPath)) {
+    return null;
+  }
+
+  return `/uploads/${fileName}`;
+}
+
+function detectImageFormat(buffer: Buffer): { extension: string; mimeType: string } | null {
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    return { extension: 'png', mimeType: 'image/png' };
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { extension: 'jpg', mimeType: 'image/jpeg' };
+  }
+  if (buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
+    return { extension: 'webp', mimeType: 'image/webp' };
+  }
+  const gifSignature = buffer.toString('ascii', 0, 6);
+  if (gifSignature === 'GIF87a' || gifSignature === 'GIF89a') {
+    return { extension: 'gif', mimeType: 'image/gif' };
+  }
+  if (buffer.length >= 12 && buffer.toString('ascii', 4, 12).startsWith('ftypavif')) {
+    return { extension: 'avif', mimeType: 'image/avif' };
+  }
+  return null;
+}
+
+async function saveExternalProductImage(rawImageUrl: string, sourcePageUrl?: string): Promise<string> {
+  let currentUrl = rawImageUrl.trim().replace(/&amp;/g, '&').replace(/^\/\//, 'https://');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+      const validatedUrl = await assertPublicHttpUrl(currentUrl);
+      const headers: Record<string, string> = {
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      };
+      if (sourcePageUrl) {
+        const sourceUrl = await assertPublicHttpUrl(sourcePageUrl);
+        headers.Referer = `${sourceUrl.origin}/`;
+      }
+
+      const response = await fetch(validatedUrl, {
+        signal: controller.signal,
+        redirect: 'manual',
+        headers,
+      });
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.get('location');
+        if (!location || redirectCount === 3) throw new Error('تعذر اتباع رابط صورة المنتج.');
+        currentUrl = new URL(location, validatedUrl).toString();
+        continue;
+      }
+      if (!response.ok || !response.body) throw new Error('تعذر تحميل صورة المنتج من المصدر.');
+
+      const declaredLength = Number(response.headers.get('content-length') || 0);
+      if (declaredLength > MAX_SCRAPED_IMAGE_BYTES) throw new Error('حجم صورة المنتج يتجاوز 12 ميجابايت.');
+
+      const reader = response.body.getReader();
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > MAX_SCRAPED_IMAGE_BYTES) {
+          await reader.cancel();
+          throw new Error('حجم صورة المنتج يتجاوز 12 ميجابايت.');
+        }
+        chunks.push(Buffer.from(value));
+      }
+
+      const imageBuffer = Buffer.concat(chunks);
+      const format = detectImageFormat(imageBuffer);
+      if (!format) throw new Error('رابط المصدر لم يُرجع ملف صورة صالحاً.');
+      return saveUploadedBuffer(`scraped-product-${crypto.randomUUID()}.${format.extension}`, format.mimeType, imageBuffer);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  throw new Error('تعذر تحميل صورة المنتج.');
+}
+
+async function createScrapedProductRecord(input: {
+  url?: string;
+  productName?: string;
+  category?: string;
+  fallbackImageUrl?: string;
+}): Promise<{ product: Product; aiGeneratedImage: boolean }> {
+  const extracted = await scrapeProductFromUrlOrName(input);
+  const imageUrls = Array.isArray(extracted.images) ? extracted.images : [];
+  const storedImages: string[] = [];
+
+  for (const imageUrl of Array.from(new Set(imageUrls)).slice(0, 4)) {
+    const localImage = uploadedImageUrlIfExists(imageUrl);
+    if (localImage) {
+      storedImages.push(localImage);
+      continue;
+    }
+    if (!/^https?:\/\//i.test(imageUrl)) continue;
+    try {
+      storedImages.push(await saveExternalProductImage(imageUrl, input.url));
+    } catch {
+      // A locally uploaded fallback or AI-created image will be used if every source image fails.
+    }
+  }
+
+  let aiGeneratedImage = Boolean(extracted.aiGeneratedImage);
+  if (storedImages.length === 0) {
+    const fallbackImage = uploadedImageUrlIfExists(input.fallbackImageUrl);
+    if (fallbackImage) {
+      storedImages.push(fallbackImage);
+    } else {
+      storedImages.push(
+        await generateProductSquareImageWithGemini({
+          name: extracted.name,
+          category: extracted.category,
+          description: extracted.description,
+        })
+      );
+      aiGeneratedImage = true;
+    }
+  }
+
+  const product: Product = {
+    id: `prod-${crypto.randomUUID().slice(0, 8)}`,
+    name: extracted.name,
+    nameEn: extracted.nameEn,
+    category: extracted.category,
+    priceSar: extracted.priceSar,
+    description: extracted.description,
+    descriptionEn: extracted.descriptionEn,
+    images: storedImages,
+    specs: extracted.specs,
+    seoKeywords: parseSeoKeywordsList(extracted.seoKeywords),
+    inStock: true,
+    isPublished: true,
+    isScrapedDraft: false,
+    sourceUrl: input.url || undefined,
+    originalExtractedPrice: extracted.originalExtractedPrice,
+    createdAt: new Date().toISOString(),
+  };
+
+  return { product, aiGeneratedImage };
+}
+
+// Secret AI Product Scraper -> Supports multiple URLs or a category page, stores source images locally, and publishes only after the full batch is ready.
 app.post('/api/admin/scrape-product', requireAdmin, async (req, res) => {
   try {
-    const { url, productName, category } = req.body as {
+    const { url, urls, productName, category, sourceMode, fallbackImageUrl } = req.body as {
       url?: string;
+      urls?: string[];
       productName?: string;
       category?: string;
+      sourceMode?: 'products' | 'category';
+      fallbackImageUrl?: string;
     };
-    const rawUrl = (url || '').trim();
-    const cleanUrl = rawUrl ? sanitizeAndNormalizeProductUrl(rawUrl) : '';
-    const cleanName = (productName || '').trim();
+    const cleanName = (productName || '').trim().slice(0, 160);
+    const rawUrls = Array.isArray(urls)
+      ? urls.map((value) => String(value || '').trim()).filter(Boolean)
+      : String(url || '').split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
 
-    if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
-      res.status(400).json({ error: 'يرجى إدخال رابط منتج صحيح يبدأ بـ http:// أو https://' });
+    if (rawUrls.length > MAX_IMPORTED_PRODUCTS) {
+      res.status(400).json({ error: `الحد الأقصى ${MAX_IMPORTED_PRODUCTS} روابط في الدفعة الواحدة.` });
       return;
     }
-    if (!cleanUrl && !cleanName) {
-      res.status(400).json({ error: 'يرجى إدخال رابط المنتج أو كتابة اسمه ليتم إنشاؤه وسحبه تلقائياً.' });
+
+    const cleanUrls = Array.from(new Set(rawUrls.map(sanitizeAndNormalizeProductUrl)));
+    if (rawUrls.length > 0 && cleanUrls.some((targetUrl) => !/^https?:\/\//i.test(targetUrl))) {
+      res.status(400).json({ error: 'تأكد أن كل رابط يبدأ بـ http:// أو https://.' });
       return;
     }
 
-    const extracted = await scrapeProductFromUrlOrName({
-      url: cleanUrl || undefined,
-      productName: cleanName || undefined,
-      category: category?.trim() || undefined,
-    });
+    const safeFallbackImage = uploadedImageUrlIfExists(fallbackImageUrl);
+    if (fallbackImageUrl && !safeFallbackImage) {
+      res.status(400).json({ error: 'تعذر العثور على الصورة المرفوعة كخيار احتياطي.' });
+      return;
+    }
 
-    const scrapedProduct: Product = {
-      id: `prod-${crypto.randomUUID().slice(0, 8)}`,
-      name: extracted.name,
-      nameEn: extracted.nameEn,
-      category: extracted.category,
-      priceSar: extracted.priceSar,
-      description: extracted.description,
-      descriptionEn: extracted.descriptionEn,
-      images: extracted.images,
-      specs: extracted.specs,
-      seoKeywords: parseSeoKeywordsList(extracted.seoKeywords),
-      inStock: true,
-      isPublished: true,
-      isScrapedDraft: false,
-      sourceUrl: cleanUrl || undefined,
-      originalExtractedPrice: extracted.originalExtractedPrice,
-      createdAt: new Date().toISOString(),
-    };
+    let targetUrls = cleanUrls;
+    if (sourceMode === 'category') {
+      if (cleanUrls.length !== 1) {
+        res.status(400).json({ error: 'أدخل رابط صفحة قسم واحدة فقط عند اختيار هذا الوضع.' });
+        return;
+      }
+      await assertPublicHttpUrl(cleanUrls[0]);
+      targetUrls = await discoverProductUrlsFromCategoryPage(cleanUrls[0], MAX_IMPORTED_PRODUCTS);
+      if (targetUrls.length === 0) {
+        res.status(422).json({ error: 'لم نعثر على روابط منتجات واضحة في صفحة القسم. جرّب لصق روابط المنتجات كل رابط في سطر.' });
+        return;
+      }
+    }
 
-    createProduct(scrapedProduct);
+    if (targetUrls.length === 0 && !cleanName) {
+      res.status(400).json({ error: 'أدخل رابط منتج واحداً أو أكثر، أو اكتب اسم المنتج لتوليده.' });
+      return;
+    }
+    if (targetUrls.some((targetUrl) => !/^https?:\/\//i.test(targetUrl))) {
+      res.status(400).json({ error: 'يوجد رابط منتج غير صالح.' });
+      return;
+    }
+
+    const targets: Array<string | undefined> = targetUrls.length > 0 ? targetUrls : [undefined];
+    for (const targetUrl of targets) {
+      if (targetUrl) await assertPublicHttpUrl(targetUrl);
+    }
+
+    const generated: Array<{ product: Product; aiGeneratedImage: boolean }> = [];
+    for (let offset = 0; offset < targets.length; offset += 2) {
+      const batch = await Promise.all(
+        targets.slice(offset, offset + 2).map((targetUrl) =>
+          createScrapedProductRecord({
+            url: targetUrl,
+            productName: targets.length === 1 ? cleanName || undefined : undefined,
+            category: category?.trim().slice(0, 120) || undefined,
+            fallbackImageUrl: safeFallbackImage || undefined,
+          })
+        )
+      );
+      generated.push(...batch);
+    }
+
+    const scrapedProducts = generated.map(({ product }) => product);
+    scrapedProducts.forEach(createProduct);
     await notifyOwnerWebhookIfConfigured(
       'scraped_product_published',
-      `تم سحب وتوليد منتج جديد بالذكاء الاصطناعي ونشره في المتجر: ${scrapedProduct.name}`
+      scrapedProducts.length === 1
+        ? `تم سحب وتوليد منتج جديد ونشره في المتجر: ${scrapedProducts[0].name}`
+        : `تم سحب ونشر ${scrapedProducts.length} منتجات جديدة في المتجر.`
     );
+
     res.status(201).json({
-      product: scrapedProduct,
-      aiGeneratedImage: Boolean(extracted.aiGeneratedImage),
+      products: scrapedProducts,
+      product: scrapedProducts[0],
+      aiGeneratedImage: generated.some((item) => item.aiGeneratedImage),
+      aiGeneratedImageCount: generated.filter((item) => item.aiGeneratedImage).length,
     });
   } catch (error) {
     console.error('AI scrape error:', error);
     res.status(500).json({
       error:
-        error instanceof Error ? error.message : 'تعذر استخراج أو توليد بيانات المنتج بالذكاء الاصطناعي.',
+        error instanceof Error ? error.message : 'تعذر استخراج أو توليد بيانات المنتجات بالذكاء الاصطناعي.',
     });
   }
 });
@@ -1618,29 +1963,38 @@ app.post('/api/admin/scrape-similar', requireAdmin, async (req, res) => {
     const {
       storeUrl,
       targetProductHint,
+      referenceImageUrl,
       profitMarginPercent,
       extraProfitSar,
       category,
     } = req.body as {
       storeUrl?: string;
       targetProductHint?: string;
+      referenceImageUrl?: string;
       profitMarginPercent?: number;
       extraProfitSar?: number;
       category?: string;
     };
 
     if (!storeUrl || !/^https?:\/\//i.test(storeUrl.trim())) {
-      res.status(400).json({ error: 'يرجى إدخال رابط متجر إلكتروني صحيح يبدأ بـ https://' });
+      res.status(400).json({ error: 'يرجى إدخال رابط متجر إلكتروني صحيح يبدأ بـ http:// أو https://' });
       return;
     }
-    if (!targetProductHint?.trim()) {
-      res.status(400).json({ error: 'يرجى تحديد نوع أو اسم المنتج المشابه المطلوب سحبه.' });
+    await assertPublicHttpUrl(storeUrl.trim());
+    const safeReferenceImage = uploadedImageUrlIfExists(referenceImageUrl);
+    if (referenceImageUrl && !safeReferenceImage) {
+      res.status(400).json({ error: 'تعذر العثور على الصورة المرجعية المرفوعة.' });
+      return;
+    }
+    if (!targetProductHint?.trim() && !safeReferenceImage) {
+      res.status(400).json({ error: 'اكتب وصف المنتج أو ارفع صورة مرجعية للبحث عن المنتجات المشابهة.' });
       return;
     }
 
     const extractedList = await scrapeSimilarProductsFromUrl({
       storeUrl: storeUrl.trim(),
-      targetProductHint: targetProductHint.trim(),
+      targetProductHint: targetProductHint?.trim() || undefined,
+      referenceImageUrl: safeReferenceImage || undefined,
       profitMarginPercent: Number(profitMarginPercent ?? 25),
       extraProfitSar: Number(extraProfitSar ?? 0),
       category,
@@ -1648,6 +2002,35 @@ app.post('/api/admin/scrape-similar', requireAdmin, async (req, res) => {
 
     const createdProducts: Product[] = [];
     for (const item of extractedList) {
+      const localImages: string[] = [];
+      for (const imageUrl of Array.from(new Set(item.images || [])).slice(0, 4)) {
+        const uploadedImage = uploadedImageUrlIfExists(imageUrl);
+        if (uploadedImage) {
+          localImages.push(uploadedImage);
+          continue;
+        }
+        if (imageUrl.startsWith('/src/assets/')) {
+          localImages.push(imageUrl);
+          continue;
+        }
+        if (/^https?:\/\//i.test(imageUrl)) {
+          try {
+            localImages.push(await saveExternalProductImage(imageUrl, item.sourceUrl));
+          } catch {
+            // Ignore blocked images; the guaranteed fallback below is stored locally.
+          }
+        }
+      }
+      if (localImages.length === 0) {
+        localImages.push(
+          await generateProductSquareImageWithGemini({
+            name: item.name,
+            category: item.category,
+            description: item.description,
+          })
+        );
+      }
+
       const draft: Product = {
         id: `draft-${crypto.randomUUID().slice(0, 8)}`,
         name: item.name,
@@ -1655,7 +2038,7 @@ app.post('/api/admin/scrape-similar', requireAdmin, async (req, res) => {
         priceSar: item.priceSar,
         compareAtPriceSar: item.compareAtPriceSar,
         description: item.description,
-        images: item.images,
+        images: localImages,
         specs: item.specs,
         inStock: true,
         isPublished: false,
@@ -1672,7 +2055,7 @@ app.post('/api/admin/scrape-similar', requireAdmin, async (req, res) => {
 
     await notifyOwnerWebhookIfConfigured(
       'scraped_similar_batch',
-      `تم سحب ${createdProducts.length} منتج مشابه لـ "${targetProductHint.trim()}" مع احتساب هامش الربح وحفظها كمسودات سرية.`
+      `تم سحب ${createdProducts.length} منتج مشابه لـ "${targetProductHint?.trim() || 'الصورة المرجعية'}" مع احتساب هامش الربح وحفظها كمسودات سرية.`
     );
 
     res.status(201).json({ products: createdProducts });
@@ -1684,6 +2067,26 @@ app.post('/api/admin/scrape-similar', requireAdmin, async (req, res) => {
           ? error.message
           : 'تعذر سحب المنتجات المشابهة من المتجر المحدد.',
     });
+  }
+});
+
+app.post('/api/admin/seo/keywords/generate', requireAdmin, async (_req, res) => {
+  try {
+    const settings = getAdminSettings();
+    const analytics = getOwnerAnalyticsAdmin();
+    const observedQueries = [...(analytics.searchQueries || [])]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15)
+      .map((entry) => entry.term);
+    const keywords = await generateStoreSeoKeywords({
+      storeName: settings.storeName,
+      categories: (settings.categories || []).map((category) => category.name),
+      observedQueries,
+    });
+    res.json({ keywords });
+  } catch (error) {
+    console.error('SEO keyword generation error:', error);
+    res.status(500).json({ error: 'تعذر توليد كلمات البحث بالذكاء الاصطناعي.' });
   }
 });
 
@@ -1932,18 +2335,21 @@ app.get('/api/seo/schema', (req, res) => {
         '@type': 'ItemList',
         name: settings.storeName,
         itemListElement: products.map((p, index) => {
-          const cleanImages = (p.images || []).filter(
-            (u) => typeof u === 'string' && u.length > 0 && !u.startsWith('data:')
-          );
+          const cleanImages = (p.images || [])
+            .filter((u) => typeof u === 'string' && u.length > 0 && !u.startsWith('data:'))
+            .map((u) => /^https?:\/\//i.test(u) ? u : `${origin}${u.startsWith('/') ? '' : '/'}${u}`);
+          const productUrl = `${origin}/?product=${encodeURIComponent(p.id)}`;
           const itemPayload = p.schemaMarkup
             ? {
                 ...p.schemaMarkup,
+                url: productUrl,
                 ...(cleanImages.length > 0 ? { image: cleanImages } : {}),
               }
             : {
                 '@type': 'Product',
                 name: p.name,
                 sku: p.sku || p.id,
+                url: productUrl,
                 description: p.seoDescription || p.description,
                 keywords: parseSeoKeywordsList(p.seoKeywords).join(', '),
                 image: cleanImages,

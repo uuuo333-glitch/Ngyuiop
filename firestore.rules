@@ -53,12 +53,13 @@ service cloud.firestore {
 
     function isValidUserPrivateInfo(data, userId) {
       return data.keys().hasAll(['uid', 'updatedAt'])
-        && data.keys().hasOnly(['uid', 'email', 'phone', 'nationalAddress', 'address', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'phone', 'nationalAddress', 'address', 'googleMapsUrl', 'updatedAt'])
         && data.uid is string && data.uid == userId && isValidId(data.uid)
         && (!('email' in data) || (data.email is string && data.email.size() <= 180))
         && (!('phone' in data) || (data.phone is string && data.phone.size() <= 40))
         && (!('nationalAddress' in data) || (data.nationalAddress is string && data.nationalAddress.size() <= 60))
         && (!('address' in data) || (data.address is string && data.address.size() <= 300))
+        && (!('googleMapsUrl' in data) || (data.googleMapsUrl is string && data.googleMapsUrl.size() <= 1000))
         && data.updatedAt is timestamp;
     }
 
@@ -91,7 +92,7 @@ service cloud.firestore {
 
     function isValidStoreProduct(data, userId, productId) {
       return data.keys().hasAll(['ownerUid', 'productId', 'name', 'category', 'priceSar', 'description', 'images', 'inStock', 'isPublished', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['ownerUid', 'productId', 'sku', 'name', 'nameEn', 'category', 'priceSar', 'description', 'images', 'sizes', 'inStock', 'isPublished', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerUid', 'productId', 'sku', 'name', 'nameEn', 'category', 'priceSar', 'description', 'images', 'videoUrl', 'showProductVideo', 'sizes', 'inStock', 'isPublished', 'createdAt', 'updatedAt'])
         && data.ownerUid is string && data.ownerUid == userId && isValidId(data.ownerUid)
         && data.productId is string && data.productId == productId && isValidId(data.productId)
         && (!('sku' in data) || (data.sku is string && data.sku.size() <= 64))
@@ -101,6 +102,8 @@ service cloud.firestore {
         && (data.priceSar is int || data.priceSar is float) && data.priceSar >= 0 && data.priceSar <= 10000000
         && data.description is string && data.description.size() <= 5000
         && data.images is list && data.images.size() <= 12 && (data.images.size() == 0 || (data.images[0] is string && data.images[0].size() <= 1500))
+        && (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 1500))
+        && (!('showProductVideo' in data) || data.showProductVideo is bool)
         && (!('sizes' in data) || (data.sizes is list && data.sizes.size() <= 20 && (data.sizes.size() == 0 || (data.sizes[0] is string && data.sizes[0].size() <= 120))))
         && data.inStock is bool
         && data.isPublished is bool
@@ -272,7 +275,7 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && (
             isAdmin() ||
-            (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'phone', 'nationalAddress', 'address', 'updatedAt']))
+            (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'phone', 'nationalAddress', 'address', 'googleMapsUrl', 'updatedAt']))
           );
         allow delete: if isAdmin() && isValidId(userId) && docId == 'info';
       }
